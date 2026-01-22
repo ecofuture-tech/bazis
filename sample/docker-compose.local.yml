@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+
+  admin:
+    ports:
+      - "${BS_ADMIN_PORT}:${BS_ADMIN_PORT}"
+
+
+  app:
+    ports:
+      - "${BS_APP_PORT}:${BS_APP_PORT}"
+

@@ -1,0 +1,121 @@
+[build-system]
+requires = ["setuptools>=80", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages.find = { include = ["bazis.*"] }
+include-package-data = true
+
+[tool.setuptools_scm]
+version_file = "bazis/core/_version.py"
+version_scheme = "no-guess-dev"
+local_scheme = "no-local-version"
+
+[project]
+name = "bazis"
+description = "A JsonAPI framework based on Django + FastAPI + Pydantic."
+keywords = ["bazis", "django", "fastapi", "pydantic", "framework", "jsonapi"]
+urls = { Home = "https://github.com/ecofuture-tech/bazis" }
+authors = [{name = "Ilya Kharyn", email = "ilya.tt07@gmail.com"}]
+maintainers = [{name = "Ilya Kharyn", email = "ilya.tt07@gmail.com"}]
+license = "Apache-2.0"
+dynamic = ["version"]
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Framework :: Django",
+    "Framework :: FastAPI",
+]
+dependencies = [
+    "django~=6.0",
+    "django-admin-autocomplete-filter~=0.7",
+    "django-clone~=5.3",
+    "django-pgtrigger>=4.15",
+    "django-pghistory~=3.1",
+    "django-sequences~=2.9",
+    "django-constance>=4.3",
+    "django-admin-rangefilter~=0.12",
+    "django-redis~=5.4",
+    "django-translated-fields~=0.13",
+    "email-validator>=2.0",
+    "fastapi~=0.128",
+    "anyio~=4.11.0",
+    "aiohttp~=3.9.1",
+    "pydantic~=2.12",
+    "pydantic-settings~=2.1",
+    "python-dotenv",
+    "python-jose~=3.3",
+    "psycopg[binary,pool]",
+    "dateparser",
+    "psutil",
+    "pytz",
+    "uvicorn[standard]",
+    "websockets",
+    "wsproto",
+    "gunicorn",
+    "itsdangerous",
+    "jsonref",
+]
+
+[project.optional-dependencies]
+test = [
+    "bazis-test-utils"
+]
+dev = [
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["migrations", ".venv", "build", "dist", "docs", "__pycache__"]
+extend-include = ["*.pyi"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "B",    # bugbear
+    "UP",   # pyupgrade
+    "C90",  # mccabe
+]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.isort]
+section-order = [
+    "future",
+    "standard-library",
+    "django",
+    "fastapi",
+    "starlette",
+    "pydantic",
+    "third-party",
+    "bazis",
+    "first-party",
+    "local-folder"
+]
+sections = { "django" = ["django"], "fastapi" = ["fastapi"], "starlette" = ["starlette"], "pydantic" = ["pydantic"], "bazis" = ["bazis"] }
+lines-after-imports = 2
+
+[tool.pytest.ini_options]
+django_settings_module = "sample.settings"

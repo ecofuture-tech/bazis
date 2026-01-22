@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  init:
+    command: bash -c "pip install -r requirements.dev.txt && /app/deploy/init.sh"
+    volumes:
+      - ../..:/opt/bazis
+      - .:/app
+    env_file:
+      - ./.env
+    networks:
+      - default-network
+
+  admin:
+    command: bash -c "pip install -r requirements.dev.txt && python manage.py runserver 0.0.0.0:${BS_ADMIN_PORT}"
+    volumes:
+      - ../..:/opt/bazis
+      - .:/app
+    env_file:
+      - ./.env
+    ports:
+      - "${BS_ADMIN_PORT}:${BS_ADMIN_PORT}"
+    networks:
+      - default-network
+
+  app:
+    command: bash -c "pip install -r requirements.dev.txt && python ./sample/main.py"
+    volumes:
+      - ../..:/opt/bazis
+      - .:/app
+    env_file:
+      - ./.env
+    ports:
+      - "${BS_APP_PORT}:${BS_APP_PORT}"
+    networks:
+      - default-network
+
+  redis:
+    networks:
+      - default-network
+
+networks:
+  default-network:
+    driver: bridge

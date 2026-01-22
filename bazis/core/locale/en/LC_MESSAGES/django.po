@@ -1,0 +1,154 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-05-24 21:15+0400\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: core/models_abstract.py:286
+msgid "Creation time"
+msgstr ""
+
+#: core/models_abstract.py:287
+msgid "Update time"
+msgstr ""
+
+#: core/models_abstract.py:322
+msgid "Unique object number"
+msgstr ""
+
+#: core/models_abstract.py:323
+msgid ""
+"This field is generated at the DB level according to the uniqueness "
+"principle specified in the model. It may not be unique across the entire "
+"table, as, for example, in the case of uniqueness only for a given type. The"
+" field should not be used directly, instead, you should use "
+":py:attr:`~number`"
+msgstr ""
+
+#: core/models_abstract.py:361
+msgid "Proxy-type of document"
+msgstr ""
+
+#: core/configure.py:113
+msgid "System time zone for generating agent report"
+msgstr ""
+
+#: core/conf.py:77
+msgid "Secret key"
+msgstr ""
+
+#: core/conf.py:78
+msgid "Application port"
+msgstr ""
+
+#: core/conf.py:99
+msgid "Maximum request body size in bytes"
+msgstr ""
+
+#: core/conf.py:101
+msgid "Trusted schemes"
+msgstr ""
+
+#: core/conf.py:105
+msgid "Default number of results in the list"
+msgstr ""
+
+#: core/conf.py:108
+msgid "Maximum number of results in the list"
+msgstr ""
+
+#: core/conf.py:111
+msgid "Default cache instance for storing CONSTANCE"
+msgstr ""
+
+#: core/conf.py:118
+msgid "Path to the GDAL library"
+msgstr ""
+
+#: core/conf.py:119
+msgid "Path to the GEOS library"
+msgstr ""
+
+#: core/conf.py:120
+msgid "Decimal rounding"
+msgstr ""
+
+#: core/schemas.py:77
+msgid "Optional"
+msgstr ""
+
+#: core/schemas.py:78
+msgid "Required"
+msgstr ""
+
+#: core/schemas.py:82
+msgid "Enabled"
+msgstr ""
+
+#: core/schemas.py:83
+msgid "Read-only"
+msgstr ""
+
+#: core/schemas.py:84
+msgid "Write-only"
+msgstr ""
+
+#: core/schemas.py:85
+msgid "Disabled"
+msgstr ""
+
+#: core/schemas.py:90
+msgid "Not null"
+msgstr ""
+
+#: core/schemas.py:94
+msgid "Blank"
+msgstr ""
+
+#: core/schemas.py:95
+msgid "Not blank"
+msgstr ""
+
+#: core/errors.py:17
+msgid "Request error"
+msgstr ""
+
+#: core/errors.py:30
+msgid "Permission denied: check token"
+msgstr ""
+
+#: core/errors.py:36
+msgid "Permission denied: check access"
+msgstr ""
+
+#: core/errors.py:42 core/errors.py:48
+msgid "Validation error"
+msgstr ""
+
+#: core/routes_abstract/jsonapi.py:282
+#, python-brace-format
+msgid ""
+"The model used in routing ({cls.model.__name__}) must be a subclass of "
+"JsonApiMixin"
+msgstr ""
+
+#: core/services/sorting.py:26
+#, python-format
+msgid "Invalid sorting parameters: `%s`"
+msgstr ""
+
+#: core/services/pagination.py:102
+msgid "Pagination"
+msgstr ""

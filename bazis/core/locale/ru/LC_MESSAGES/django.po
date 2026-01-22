@@ -1,0 +1,208 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-03-29 00:27+0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: conf.py:109
+msgid "Application port"
+msgstr "Порт приложения"
+
+#: conf.py:110
+#, fuzzy
+#| msgid "Application port"
+msgid "Admin port"
+msgstr "Порт приложения"
+
+#: conf.py:120
+msgid "Secret key"
+msgstr "Секретный ключ"
+
+#: conf.py:141
+msgid "Maximum request body size in bytes"
+msgstr "Максимальный размер тела запроса в байтах"
+
+#: conf.py:143
+msgid "Trusted schemes"
+msgstr "Доверенные схемы"
+
+#: conf.py:147
+msgid "Default number of results in the list"
+msgstr "Кол-во результатов в списке по умолчанию"
+
+#: conf.py:150
+msgid "Maximum number of results in the list"
+msgstr "Максимальное кол-во результатов в списке"
+
+#: conf.py:153
+msgid "Default cache instance for storing CONSTANCE"
+msgstr "Дефолтный инстанс кэша для хранения CONSTANCE"
+
+#: conf.py:164
+msgid "Path to the GDAL library"
+msgstr "Путь к библиотеке GDAL"
+
+#: conf.py:165
+msgid "Path to the GEOS library"
+msgstr "Путь к библиотеке GEOS"
+
+#: conf.py:167
+msgid "Decimal rounding"
+msgstr "Округление Decimal"
+
+#: conf.py:169
+msgid "Directories to reload on change"
+msgstr ""
+
+#: conf.py:170
+msgid "Use $ref in OpenAPI schema"
+msgstr ""
+
+#: conf.py:173
+msgid "Mail server backend"
+msgstr ""
+
+#: conf.py:176
+msgid "Mail server IP address"
+msgstr ""
+
+#: conf.py:179
+msgid "Mail server port number"
+msgstr ""
+
+#: conf.py:182
+msgid "Mail server user login"
+msgstr ""
+
+#: conf.py:185
+msgid "Mail server user password"
+msgstr ""
+
+#: conf.py:188
+msgid "Mail server use TLS"
+msgstr ""
+
+#: conf.py:191
+msgid "Mail server use SSL"
+msgstr ""
+
+#: conf.py:194
+msgid "Default outgoing email address"
+msgstr ""
+
+#: conf.py:196
+msgid "Export settings"
+msgstr ""
+
+#: configure.py:136
+msgid "System time zone for generating agent report"
+msgstr "Часовой пояс системы для формирования отчета агента"
+
+#: errors.py:22
+msgid "Request error"
+msgstr "Request error"
+
+#: errors.py:49
+msgid "Permission denied: check token"
+msgstr "Permission denied: check token"
+
+#: errors.py:60
+msgid "Permission denied: check access"
+msgstr "Permission denied: check access"
+
+#: errors.py:71 errors.py:82
+msgid "Validation error"
+msgstr "Validation error"
+
+#: models_abstract.py:334
+msgid "Creation time"
+msgstr "Время добавления"
+
+#: models_abstract.py:335
+msgid "Update time"
+msgstr "Время обновления"
+
+#: models_abstract.py:385
+msgid "Unique object number"
+msgstr "Уникальный номер объекта"
+
+#: models_abstract.py:388
+msgid ""
+"This field is generated at the DB level according to the uniqueness "
+"principle specified in the model. It may not be unique across the entire "
+"table, as, for example, in the case of uniqueness only for a given type. The "
+"field should not be used directly, instead, you should use :py:attr:`~number`"
+msgstr ""
+"Данное поле генерируется на уровне БД по заданному в модели принципу "
+"уникализации. Оно может не быть уникальным по всей таблице, как, например, "
+"для случая уникализации только для заданного типа. Поле не должно "
+"использоваться напрямую, вместо него следует использовать :py:attr:`~number`"
+
+#: models_abstract.py:447
+msgid "Proxy-type of document"
+msgstr "Proxy-тип документа"
+
+#: schemas.py:95
+msgid "Optional"
+msgstr "Опциональное"
+
+#: schemas.py:96
+msgid "Required"
+msgstr "Требуется"
+
+#: schemas.py:105
+msgid "Enabled"
+msgstr "Включено"
+
+#: schemas.py:106
+msgid "Read-only"
+msgstr "Только чтение"
+
+#: schemas.py:107
+msgid "Write-only"
+msgstr "Только запись"
+
+#: schemas.py:108
+msgid "Disabled"
+msgstr "Отключено"
+
+#: schemas.py:118
+msgid "Not null"
+msgstr "Не null"
+
+#: schemas.py:127
+msgid "Blank"
+msgstr "Пустое"
+
+#: schemas.py:128
+msgid "Not blank"
+msgstr "Не пустое"
+
+#: services/pagination.py:150
+msgid "Pagination"
+msgstr "Пагинация"
+
+#: services/sorting.py:38
+#, python-format
+msgid "Invalid sorting parameters: `%s`"
+msgstr "Недопустимые параметры сортировки: `%s`"
+
+#, python-brace-format
+#~ msgid ""
+#~ "The model used in routing ({cls.model.__name__}) must be a subclass of "
+#~ "JsonApiMixin"
+#~ msgstr ""
+#~ "Модель, используемая в роутинге ({cls.model.__name__}), должна быть "
+#~ "подклассом JsonApiMixin"
