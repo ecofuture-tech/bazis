@@ -18,6 +18,7 @@ Public app entrypoint for the Bazis project.
 Tags: RAG, EXPORT
 """
 
-from .app_factory import get_app
+from .app_factory import ensure_app_initialized, get_app_base
 
-app = get_app()
+app = get_app_base()
+ensure_app_initialized()

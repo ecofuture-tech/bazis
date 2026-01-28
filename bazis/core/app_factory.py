@@ -18,6 +18,8 @@ Application factory and singleton holder for the Bazis project.
 Tags: RAG, EXPORT
 """
 
+import importlib
+import logging
 import sys
 import types
 
@@ -25,17 +27,33 @@ import types
 _STATE_KEY = 'bazis.core._app_singleton'
 _state = sys.modules.get(_STATE_KEY)
 if _state is None:
-    _state = types.SimpleNamespace(app=None)
+    _state = types.SimpleNamespace(app=None, initializing=False, initialized=False)
     sys.modules[_STATE_KEY] = _state
 
 
-def get_app():
+def get_app_base():
     if _state.app is None:
-        _state.app = _create_app()
+        _state.app = _create_app_base()
     return _state.app
 
 
-def _create_app():
+def ensure_app_initialized():
+    app = get_app_base()
+    if not _state.initialized and not _state.initializing:
+        _state.initializing = True
+        try:
+            _initialize_app(app)
+            _state.initialized = True
+        finally:
+            _state.initializing = False
+    return app
+
+
+def get_app():
+    return ensure_app_initialized()
+
+
+def _create_app_base():
     # ruff: noqa: E402
     import os
     import sys as _sys
@@ -45,29 +63,9 @@ def _create_app():
     _sys.path.append(os.getcwd())
     django.setup()
 
-    import importlib
-    import logging
-    import traceback
-
     from django.conf import settings
-    from django.utils.translation import get_language, to_locale
 
-    from fastapi import FastAPI, Request
-    from fastapi.encoders import jsonable_encoder
-    from fastapi.exceptions import HTTPException, RequestValidationError
-    from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import RedirectResponse, Response
-
-    from starlette.concurrency import run_in_threadpool
-    from starlette.middleware.sessions import SessionMiddleware
-    from starlette.responses import JSONResponse
-    from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
-
-    from bazis.core.i18n import LanguageMiddleware, expand_lang
-    from bazis.core.utils.functools import get_attr
-    from bazis.core.utils.orm import close_old_connections
-
-    from .errors import JsonApiBazisException, SchemaError, SchemaErrors, SchemaErrorSource
+    from fastapi import FastAPI
 
     LOG = logging.getLogger()
 
@@ -92,6 +90,34 @@ def _create_app():
                 swagger_ui_oauth2_redirect_url=None,
                 swagger_ui_parameters={'defaultModelsExpandDepth': 0},
             )
+
+    return app
+
+
+def _initialize_app(app):
+    # ruff: noqa: E402
+    import os
+    import traceback
+
+    from django.conf import settings
+    from django.utils.translation import get_language, to_locale
+
+    from fastapi import Request
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.exceptions import HTTPException, RequestValidationError
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import RedirectResponse, Response
+
+    from starlette.concurrency import run_in_threadpool
+    from starlette.middleware.sessions import SessionMiddleware
+    from starlette.responses import JSONResponse
+    from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
+
+    from bazis.core.i18n import LanguageMiddleware, expand_lang
+    from bazis.core.utils.functools import get_attr
+    from bazis.core.utils.orm import close_old_connections
+
+    from .errors import JsonApiBazisException, SchemaError, SchemaErrors, SchemaErrorSource
 
     @app.get(f'{settings.MEDIA_URL}{{path:path}}')
     async def redirect_media(path: str):
@@ -366,5 +392,3 @@ def _create_app():
         )
 
     app.uvicorn_start = uvicorn_start
-
-    return app
