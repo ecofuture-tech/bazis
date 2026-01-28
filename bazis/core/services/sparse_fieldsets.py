@@ -122,11 +122,9 @@ class ServiceSparseFieldsets:
         )
 
         if model_class_main:
-            available_fields_main = ServiceSparseFieldsets._get_model_fields(model_class_main)
             query_param_main = Query(
                 default=None,
                 alias=f'fields[{main_type}]',
-                description=f'Available fields: {", ".join(available_fields_main)}',
             )
             class_attrs_main['__annotations__'][field_name_main] = str | None
             class_attrs_main[field_name_main] = query_param_main
@@ -148,11 +146,9 @@ class ServiceSparseFieldsets:
             )
 
             if model_class:
-                available_fields = ServiceSparseFieldsets._get_model_fields(model_class)
                 query_param = Query(
                     default=None,
                     alias=f'fields[{resource_type}]',
-                    description=f'Available fields: {", ".join(available_fields)}',
                 )
                 class_attrs_retrieve['__annotations__'][field_name] = str | None
                 class_attrs_retrieve[field_name] = query_param
@@ -184,24 +180,6 @@ class ServiceSparseFieldsets:
                     return related_model
 
         return None
-
-    @classmethod
-    def _get_model_fields(cls, model_class: type[Model]) -> list[str]:
-        """Get all field names from a model (excluding relationships and id)."""
-        fields = []
-        # Regular model fields
-        for field in model_class._meta.get_fields():
-            if field.name != 'id':
-                fields.append(field.name)
-        # Calculated fields
-        calc_fields = [
-            name for name in dir(model_class) if hasattr(getattr(model_class, name), 'fields_calc')
-        ]
-        fields.extend(calc_fields)
-        # Property fields
-        property_fields = cls.get_properties(model_class)
-        fields.extend(property_fields)
-        return sorted(fields)
 
     @staticmethod
     def get_properties(model_cls: type[Model]) -> list[str]:

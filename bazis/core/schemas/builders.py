@@ -406,13 +406,11 @@ class SchemaResourceBuilder:
                 model = type(data)
 
                 fields_data = {}
-
+                only_fields = getattr(data, 'only_fields', None)
+                if isinstance(only_fields, str):
+                    only_fields = only_fields.split(',')
                 for field in attributes_fields:
-                    if (
-                        hasattr(data, 'only_fields')
-                        and data.only_fields
-                        and field.name not in data.only_fields
-                    ):
+                    if only_fields and field.name not in only_fields:
                         continue
                     if field.name in route_calls:
                         fields_data[field.name] = route_calls[field.name](

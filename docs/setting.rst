@@ -7,7 +7,7 @@ To use the functionality described in this section:
 
 .. code-block:: python
 
-    import bazis.core.configure
+    import bazis.core.configure # noqa: F401
 
 The project configuration is organized so that all configuration parameters are accessible in the standard Django way:
 

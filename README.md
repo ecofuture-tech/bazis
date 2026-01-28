@@ -16,15 +16,15 @@ uv add bazis
 from bazis.core.models_abstract import InitialBase
 from django.db import models
 
-class Article(InitialBase):
-    title = models.CharField(max_length=255)
-    content = models.TextField()
+class Organization(InitialBase):
+    name = models.CharField(max_length=255)
 
 # Create a route
-from bazis.core.routes_abstract import BaseRoute
+from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
+from django.apps import apps
 
-class ArticleRoute(BaseRoute):
-    model = Article
+class OrganizationRouteSet(JsonapiRouteBase):
+    model = apps.get_model('myapp.Organization')
 ```
 
 ## Table of Contents
@@ -39,11 +39,12 @@ class ArticleRoute(BaseRoute):
 - [Usage](#usage)
   - [Creating Models](#creating-models)
   - [Creating Routes](#creating-routes)
+  - [Registering Routes](#registering-routes)
   - [Project Configuration](#project-configuration)
 - [API Features](#api-features)
   - [Data Schema Analysis](#data-schema-analysis)
   - [Filtering](#filtering)
-  - [Included Resources](#included-resources-jsonapi)
+  - [Included Resources (JSON:API)](#included-resources-jsonapi)
   - [Error Format](#error-format)
 - [Examples](#examples)
 - [Architecture](#architecture)
@@ -86,6 +87,7 @@ In Bazis, these Pydantic schemas are generated as follows:
 - **Nested Structures Support**: Thanks to JSON:API, includes support for `included`, multi-level filtering, and more
 - **Dynamic Fields**: Flexible field configuration at the route level
 - **High Performance**: FastAPI's asynchronous capabilities provide low latency
+- **Calculated Fields**: Powerful system for working with related data via `@calc_property` decorator
 
 ## Advantages Over Other Solutions
 
@@ -189,46 +191,220 @@ Features:
 Create models by inheriting from base classes:
 
 ```python
-from bazis.core.models_abstract import InitialBase
+from bazis.core.models_abstract import InitialBase, DtMixin, UuidMixin, JsonApiMixin
 from django.db import models
 
-class Article(InitialBase):
-    """Article model"""
-    title = models.CharField(max_length=255, verbose_name="Title")
-    content = models.TextField(verbose_name="Content")
-    published_at = models.DateTimeField(null=True, blank=True, verbose_name="Publication Date")
-    
+class VehicleBrand(DtMixin, UuidMixin, JsonApiMixin):
+    """Vehicle brand."""
+    name = models.CharField('Brand Name', max_length=255, unique=True)
+
     class Meta:
-        verbose_name = "Article"
-        verbose_name_plural = "Articles"
+        verbose_name = 'Vehicle Brand'
+        verbose_name_plural = 'Vehicle Brands'
+
+    def __str__(self):
+        return self.name
 ```
 
 > **Important!** Every model and mixin must inherit from `bazis.core.models_abstract.InitialBase`.
+
+**Example model with Foreign Key:**
+
+```python
+class VehicleModel(DtMixin, UuidMixin, JsonApiMixin):
+    """Vehicle model."""
+    brand = models.ForeignKey(VehicleBrand, verbose_name='Brand', on_delete=models.CASCADE)
+    model = models.CharField('Model', max_length=255, unique=True)
+    engine_type = models.CharField('Engine Type', max_length=50, null=True, blank=True)
+    capacity = models.DecimalField(
+        'Capacity, t', max_digits=6, decimal_places=2, null=True, blank=True
+    )
+
+    class Meta:
+        verbose_name = 'Vehicle Model'
+        verbose_name_plural = 'Vehicle Models'
+        unique_together = ('brand', 'model')
+
+    def __str__(self):
+        return self.model
+```
+
+**Example model with ManyToMany:**
+
+```python
+class Driver(DtMixin, UuidMixin, JsonApiMixin):
+    """Driver."""
+    first_name = models.CharField('First Name', max_length=255)
+    last_name = models.CharField('Last Name', max_length=255)
+    contact_phone = models.CharField('Phone', max_length=50, null=True, blank=True)
+
+    divisions = models.ManyToManyField(
+        'Division',
+        related_name='drivers',
+        blank=True,
+    )
+    org_owner = models.ForeignKey(
+        'Organization',
+        blank=True,
+        null=True,
+        db_index=True,
+        on_delete=models.SET_NULL,
+    )
+
+    class Meta:
+        verbose_name = 'Driver'
+        verbose_name_plural = 'Drivers'
+
+    def __str__(self):
+        return f'{self.first_name} {self.last_name}'
+```
+
+**Example model with OneToOne:**
+
+```python
+class ExtendedEntity(ExtendedEntityBase, DtMixin, UuidMixin, JsonApiMixin):
+    parent_entity = models.OneToOneField(
+        'ParentEntity', on_delete=models.CASCADE, related_name='extended_entity'
+    )
+```
+
+**Example model with calculated field:**
+
+```python
+from decimal import Decimal
+from bazis.core.utils.orm import calc_property, FieldRelated
+from bazis.core.utils.functools import get_attr
+
+class Vehicle(DtMixin, UuidMixin, JsonApiMixin):
+    """Vehicle with calculated fields."""
+    vehicle_model = models.ForeignKey(
+        VehicleModel, verbose_name='Vehicle Model', on_delete=models.CASCADE
+    )
+    country = models.ForeignKey(Country, verbose_name='Country', on_delete=models.CASCADE)
+    gnum = models.CharField('State Registration Number', max_length=50, unique=True)
+
+    @calc_property([FieldRelated('vehicle_model')])
+    def vehicle_capacity(self) -> Decimal:
+        return get_attr(self, 'vehicle_model.capacity', Decimal(0.00))
+
+    class Meta:
+        verbose_name = 'Vehicle'
+        verbose_name_plural = 'Vehicles'
+
+    def __str__(self):
+        return self.gnum
+```
 
 ### Creating Routes
 
 Create routes for your models:
 
 ```python
-from bazis.core.routes_abstract import BaseRoute
-from .models import Article
+from django.apps import apps
+from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
 
-class ArticleRoute(BaseRoute):
-    """Route for working with articles"""
-    model = Article
-    
-    # Optionally: specify specific CRUD operations
-    # allowed_methods = ['list', 'retrieve', 'create', 'update', 'delete']
+class VehicleBrandRouteSet(JsonapiRouteBase):
+    """Route for VehicleBrand"""
+    model = apps.get_model('entity.VehicleBrand')
 ```
 
-Register routes in `router.py`:
+**Route with additional fields:**
 
 ```python
-from bazis.core.router import Router
-from .routes import ArticleRoute
+from bazis.core.schemas.fields import SchemaField, SchemaFields
 
-router = Router()
-router.register(ArticleRoute)
+class ParentEntityRouteSet(JsonapiRouteBase):
+    model = apps.get_model('entity.ParentEntity')
+
+    # Add fields (extended_entity, dependent_entities and calculated properties) to schema
+    fields = {
+        None: SchemaFields(
+            include={
+                'extended_entity': None,
+                'dependent_entities': None,
+                'active_children': SchemaField(source='active_children', required=False),
+                'count_active_children': SchemaField(
+                    source='count_active_children', required=False
+                ),
+                'has_inactive_children': SchemaField(
+                    source='has_inactive_children', required=False
+                ),
+                'extended_entity_price': SchemaField(
+                    source='extended_entity_price', required=False
+                ),
+            },
+        ),
+    }
+```
+
+**Route with ManyToMany relationship inclusion:**
+
+```python
+class ChildEntityRouteSet(JsonapiRouteBase):
+    model = apps.get_model('entity.ChildEntity')
+
+    fields = {
+        None: SchemaFields(
+            include={
+                'parent_entities': None,  # ManyToMany relationship
+            },
+        ),
+    }
+```
+
+### Registering Routes
+
+**Creating router.py in your application:**
+
+```python
+from bazis.core.routing import BazisRouter
+from . import routes
+
+# Main router with tags for grouping
+router = BazisRouter(tags=['Entity'])
+
+router.register(routes.ChildEntityRouteSet.as_router())
+router.register(routes.DependentEntityRouteSet.as_router())
+router.register(routes.ExtendedEntityRouteSet.as_router())
+router.register(routes.ParentEntityRouteSet.as_router())
+router.register(routes.VehicleModelRouteSet.as_router())
+router.register(routes.VehicleBrandRouteSet.as_router())
+router.register(routes.CountryRouteSet.as_router())
+router.register(routes.CarrierTaskRouteSet.as_router())
+router.register(routes.DivisionJsonRouteSet.as_router())
+router.register(routes.DriverRouteSet.as_router())
+
+# Create specialized routers with prefixes
+router_context = BazisRouter(tags=['Context'])
+router_context.register(routes.DriverContextRouteSet.as_router())
+
+router_json = BazisRouter(tags=['Json'])
+router_json.register(routes.DriverJsonHierarchyRouteSet.as_router())
+router_json.register(routes.VehicleJsonRouteSet.as_router())
+
+router_related = BazisRouter(tags=['Related'])
+router_related.register(routes.VehicleRelatedRouteSet.as_router())
+
+# Dictionary of routers with prefixes
+routers_with_prefix = {
+    'context': router_context,
+    'json': router_json,
+    'related': router_related,
+}
+```
+
+**Main project router.py:**
+
+```python
+from bazis.core.routing import BazisRouter
+
+router = BazisRouter(prefix='/api/v1')
+
+# Register application modules
+router.register('entity.router')
+router.register('dynamic.router')
+router.register('route_injection.router')
+router.register('sparse_fieldsets.router')
 ```
 
 ### Project Configuration
@@ -358,74 +534,91 @@ Bazis implements the JSON:API specification for handling related resources throu
 ### Basic Route Usage
 
 ```python
-from bazis.core.routes_abstract import BaseRoute
-from bazis.core.router import Router
-from .models import Article
+from django.apps import apps
+from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
+from bazis.core.routing import BazisRouter
 
-class ArticleRoute(BaseRoute):
-    model = Article
+class VehicleRouteSet(JsonapiRouteBase):
+    model = apps.get_model('entity.Vehicle')
     # All CRUD operations are available by default
 
-router = Router()
-router.register(ArticleRoute)
+router = BazisRouter(tags=['Vehicles'])
+router.register(VehicleRouteSet.as_router())
 ```
 
 ### Limiting Fields in Routes
 
 ```python
-class ArticleRoute(BaseRoute):
-    model = Article
+from bazis.core.schemas.fields import SchemaFields
+
+class VehicleRouteSet(JsonapiRouteBase):
+    model = apps.get_model('entity.Vehicle')
     
-    # Read fields
-    read_fields = ['id', 'title', 'content', 'published_at']
-    
-    # Create fields
-    create_fields = ['title', 'content']
-    
-    # Update fields
-    update_fields = ['title', 'content', 'published_at']
+    fields = {
+        None: SchemaFields(
+            include={
+                # Specify only needed fields
+                'gnum': None,
+                'vehicle_model': None,
+                'country': None,
+            },
+        ),
+    }
 ```
 
-### Specifying Specific Operations
+### Adding Calculated Fields to API
 
 ```python
-class ArticleRoute(BaseRoute):
-    model = Article
-    
-    # Read-only (list and retrieve)
-    allowed_methods = ['list', 'retrieve']
-```
+from bazis.core.schemas.fields import SchemaField, SchemaFields
 
-### Using Relationships
+class VehicleRelatedRouteSet(JsonapiRouteBase):
+    model = apps.get_model('entity.Vehicle')
 
-```python
-from django.db import models
-
-class Author(InitialBase):
-    name = models.CharField(max_length=255)
-
-class Article(InitialBase):
-    title = models.CharField(max_length=255)
-    author = models.ForeignKey(Author, on_delete=models.CASCADE, related_name='articles')
-
-# JSON:API will automatically handle relationships
-class ArticleRoute(BaseRoute):
-    model = Article
-    read_fields = ['id', 'title', 'author']  # author will be in relationships
+    fields = {
+        None: SchemaFields(
+            include={
+                # FieldRelated - vehicle_capacity
+                'vehicle_capacity_1': SchemaField(source='vehicle_capacity_1', required=False),
+                'vehicle_capacity_2': SchemaField(source='vehicle_capacity_2', required=False),
+                'vehicle_capacity_3': SchemaField(source='vehicle_capacity_3', required=False),
+                # FieldRelated - brand, multiple fields
+                'brand_info': SchemaField(source='brand_info', required=False),
+                # FieldRelated - brand and country
+                'brand_and_country': SchemaField(source='brand_and_country', required=False),
+            },
+        ),
+    }
 ```
 
 ### Working with Admin Panel
 
 ```python
 from django.contrib import admin
-from bazis.core.admin_abstract import BaseAdmin
-from .models import Article
+from bazis.core.admin_abstract import DtAdminMixin
 
-@admin.register(Article)
-class ArticleAdmin(BaseAdmin):
-    list_display = ['id', 'title', 'published_at']
-    search_fields = ['title', 'content']
-    list_filter = ['published_at']
+@admin.register(VehicleBrand)
+class VehicleBrandAdmin(DtAdminMixin, admin.ModelAdmin):
+    list_display = ('id', 'name')
+    search_fields = ('name',)
+```
+
+**Admin with inline models:**
+
+```python
+class ChildEntityInline(admin.TabularInline):
+    model = ParentEntity.child_entities.through
+    extra = 0
+
+class DependentEntityInline(admin.TabularInline):
+    model = DependentEntity
+    extra = 0
+
+@admin.register(ParentEntity)
+class ParentEntityAdmin(DtAdminMixin, admin.ModelAdmin):
+    list_display = ('id', 'name', 'is_active')
+    list_filter = ('is_active',)
+    search_fields = ('name', 'description')
+    inlines = (ChildEntityInline, DependentEntityInline)
 ```
 
 ## Architecture
