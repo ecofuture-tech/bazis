@@ -363,32 +363,3 @@ def _initialize_app(app):
 
     router.routes_cast(BazisRoute)
     app.include_router(router)
-
-    def uvicorn_start(
-        host: str = '0.0.0.0',
-        port: int = settings.APP_PORT,
-        reload: bool = True,
-        reload_includes: list[str] = None,
-        reload_dirs: list[str] = None,
-    ):
-        """
-        Starts the Uvicorn server with the specified host, port, and reload settings.
-        """
-        import uvicorn
-
-        DJANGO_SETTINGS_MODULE = os.environ.get('DJANGO_SETTINGS_MODULE')  # noqa: N806
-        if not DJANGO_SETTINGS_MODULE:
-            raise RuntimeError('DJANGO_SETTINGS_MODULE environment variable is not set.')
-
-        app_path = DJANGO_SETTINGS_MODULE.split('.')[0] + '.main:app'
-
-        uvicorn.run(
-            app_path,
-            host=host,
-            port=port,
-            reload=reload,
-            reload_includes=reload_includes,
-            reload_dirs=reload_dirs or settings.BAZIS_APP_RELOAD_DIRS,
-        )
-
-    app.uvicorn_start = uvicorn_start
