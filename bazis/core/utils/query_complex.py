@@ -749,11 +749,14 @@ class QueryToOrm:
         if not source_model:
             return None
 
+        relations_by_model = source_model.get_fields_info().relations_by_model
+        if target_model not in relations_by_model:
+            return None
+
         ids = ids.split(',')
 
         q = Q()
-        rels = source_model.get_fields_info().relations_by_model[target_model]
-        for rel in rels:
+        for rel in relations_by_model[target_model]:
             q |= Q(**{f'{rel.related_field.name}__in': ids})
 
         return q

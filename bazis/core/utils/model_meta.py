@@ -60,9 +60,10 @@ class RelationInfo:
     related_field: Any
     related_model: Any
     to_many: bool
-    has_through_model: bool
+    has_custom_through_model: bool
     reverse: bool
     is_m2m: bool
+    through_model: Any = None
 
     @cached_property
     def m2m_field_rel(self):
@@ -72,7 +73,7 @@ class RelationInfo:
         """
         if self.is_m2m:
             if self.reverse:
-                path_infos = self.model_field.reverse_path_infos
+                path_infos = self.related_field.reverse_path_infos
             else:
                 path_infos = self.model_field.path_infos
 
@@ -88,7 +89,7 @@ class RelationInfo:
         """
         if self.is_m2m:
             if self.reverse:
-                path_infos = self.model_field.path_infos
+                path_infos = self.related_field.path_infos
             else:
                 path_infos = self.model_field.reverse_path_infos
 
@@ -108,7 +109,7 @@ class RelationInfo:
             qs = self.related_model.objects.annotate(
                 _parent=OuterRef('pk'),
                 _is_exist=Exists(
-                    self.related_field.through.objects.filter(
+                    self.through_model.objects.filter(
                         **{
                             self.m2m_field_rel: OuterRef('pk'),
                             self.m2m_field_self: OuterRef('_parent'),
@@ -137,7 +138,7 @@ class RelationInfo:
         if self.is_m2m:
             qs = self.related_model.objects.annotate(
                 _is_exist=Exists(
-                    self.related_field.through.objects.filter(
+                    self.through_model.objects.filter(
                         **{self.m2m_field_rel: OuterRef('pk'), self.m2m_field_self: parent_pk}
                     )
                 )
@@ -305,7 +306,7 @@ class FieldsInfo:
                 related_field=field.remote_field,
                 related_model=field.remote_field.model,
                 to_many=False,
-                has_through_model=False,
+                has_custom_through_model=False,
                 reverse=False,
                 is_m2m=False,
             )
@@ -318,11 +319,12 @@ class FieldsInfo:
                 related_field=field.remote_field,
                 related_model=field.remote_field.model,
                 to_many=True,
-                has_through_model=(
+                has_custom_through_model=(
                     field.remote_field.through and not field.remote_field.through._meta.auto_created
                 ),
                 reverse=False,
                 is_m2m=True,
+                through_model=field.remote_field.through,
             )
 
         return forward_relations
@@ -349,7 +351,7 @@ class FieldsInfo:
                 related_field=relation.remote_field,
                 related_model=relation.related_model,
                 to_many=relation.field.remote_field.multiple,
-                has_through_model=False,
+                has_custom_through_model=False,
                 reverse=True,
                 is_m2m=False,
             )
@@ -360,16 +362,17 @@ class FieldsInfo:
             accessor_name = relation.get_accessor_name()
             reverse_relations[accessor_name] = RelationInfo(
                 name=relation.name,
-                model_field=relation.remote_field,
-                related_field=relation,
+                model_field=relation,
+                related_field=relation.remote_field,
                 related_model=relation.related_model,
                 to_many=True,
-                has_through_model=(
-                    (getattr(relation.field.remote_field, 'through', None) is not None)
-                    and not relation.field.remote_field.through._meta.auto_created
+                has_custom_through_model=(
+                    (getattr(relation, 'through', None) is not None)
+                    and not relation.through._meta.auto_created
                 ),
                 reverse=True,
                 is_m2m=True,
+                through_model=getattr(relation, 'through', None)
             )
 
         return reverse_relations
@@ -653,7 +656,7 @@ def get_relation_kwargs(field_name, rel: RelationInfo):  # noqa: C901
         kwargs['queryset'] = kwargs['queryset'].filter(limit_choices_to)
 
     # M2M with through model is read-only
-    if rel.has_through_model:
+    if rel.has_custom_through_model:
         kwargs['read_only'] = True
         kwargs.pop('queryset', None)
 

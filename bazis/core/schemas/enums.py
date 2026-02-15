@@ -176,7 +176,7 @@ class CrudApiAction(ApiAction):
         return False
 
 
-class HttpMethod(str, enum.Enum):
+class HttpMethod(enum.StrEnum):
     GET = 'get'
     POST = 'post'
     PUT = 'put'

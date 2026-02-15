@@ -81,6 +81,13 @@ class BaseConfig(AppConfig, metaclass=BaseConfigMeta):
                     if os.path.isdir(static_dir):
                         if static_dir not in settings.STATICFILES_DIRS:
                             settings.STATICFILES_DIRS.append(static_dir)
+
+                    templates_dir = os.path.join(library_path, 'templates')
+                    if os.path.isdir(templates_dir):
+                        for template_cfg in settings.TEMPLATES:
+                            dirs = template_cfg.setdefault('DIRS', [])
+                            if templates_dir not in dirs:
+                                dirs.append(templates_dir)
                 except ImportError:
                     raise ImportError(f'Library "{cl.name}" not found') from None
 

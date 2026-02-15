@@ -205,9 +205,9 @@ class InitialBase(CloneMixin, models.Model, metaclass=InitialMetaclass):
         """
         try:
             app_label, model_name = label.split('.')
+            return apps.get_model(app_label, snake_2_camel(model_name))
         except Exception:
-            return
-        return apps.get_model(app_label, snake_2_camel(model_name))
+            return None
 
     @classmethod
     def get_resource_app(cls) -> str:
@@ -598,11 +598,8 @@ class ProxyTypeAbstract(JsonApiMixin):
             self.proxy_type = self.get_resource_label()
 
         if self.proxy_type:
-            try:
-                if proxy_model := InitialBase.get_model_by_label(self.proxy_type):
-                    self.__class__ = proxy_model
-            except LookupError:
-                pass
+            if proxy_model := InitialBase.get_model_by_label(self.proxy_type):
+                self.__class__ = proxy_model
 
     class Meta:
         """

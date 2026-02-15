@@ -27,6 +27,13 @@ from types import TracebackType
 from typing import Any, Type  # noqa: UP035
 
 from django.utils.text import camel_case_to_spaces
+from django.utils.text import slugify as slugify_django
+
+from anyascii import anyascii
+
+
+def slugify(value: str, **kwargs):
+    return slugify_django(anyascii(value))
 
 
 def get_attr(obj, path, default=None):

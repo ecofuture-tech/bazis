@@ -1050,7 +1050,7 @@ def _apply_calc_queryset(  # noqa: C901
                         and not field_calc.slice
                         and not field_calc.filter_fn
                     ):
-                        qs_related = f_info.related_field.through.objects.filter(
+                        qs_related = f_info.through_model.objects.filter(
                             **{f_info.m2m_field_self: OuterRef('pk')}
                         ).values(json=JSONObject(id=f_info.m2m_field_rel))
                     else:

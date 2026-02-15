@@ -67,9 +67,9 @@ def _create_app_base():
 
     from fastapi import FastAPI
 
-    LOG = logging.getLogger()
+    LOG = logging.getLogger() # noqa: N806
 
-    if BAZIS_APP_MODULE := getattr(settings, 'BAZIS_APP_MODULE', None):
+    if BAZIS_APP_MODULE := getattr(settings, 'BAZIS_APP_MODULE', None): # noqa: N806
         app_module = importlib.import_module(BAZIS_APP_MODULE)
         app = app_module.app
     else:
@@ -94,7 +94,7 @@ def _create_app_base():
     return app
 
 
-def _initialize_app(app):
+def _initialize_app(app): # noqa: C901
     # ruff: noqa: E402
     import os
     import traceback
@@ -339,7 +339,7 @@ def _initialize_app(app):
         )
 
     @app.exception_handler(500)
-    async def json_api_http_exception_handler(
+    async def json_api_http_500_handler(
         request: Request, exc: Exception
     ) -> JSONResponse:  # noqa: F811
         """

@@ -48,6 +48,7 @@ dependencies = [
     "fastapi~=0.128",
     "anyio~=4.11.0",
     "aiohttp~=3.9.1",
+    "anyascii",
     "pydantic~=2.12",
     "pydantic-settings~=2.1",
     "python-dotenv",
@@ -66,7 +67,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-    "bazis-test-utils"
+    "bazis-test-utils>=2.2.0"
 ]
 dev = [
     "ruff",

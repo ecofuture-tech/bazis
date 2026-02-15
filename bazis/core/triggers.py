@@ -213,7 +213,7 @@ class FieldsTransferTrigger(pgtrigger.Trigger):
 
         if related_field.is_m2m:
             # Getting the name of the related field from related_name
-            through_model = related_field.related_field.through
+            through_model = related_field.through_model
             through_table_name = through_model._meta.db_table
             dest_field_name = through_model._meta.get_field(model._meta.model_name).column
             related_field_name = through_model._meta.get_field(RelatedModel._meta.model_name).column
