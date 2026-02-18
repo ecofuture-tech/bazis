@@ -786,6 +786,18 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
             'raw_path': path,
         }
 
+        # Preserve FastAPI/Starlette middleware state for internal calls
+        for key in (
+            'app',
+            'root_path',
+            'path_params',
+            'state',
+            'extensions',
+            'fastapi_middleware_astack',
+        ):
+            if key in request.scope:
+                scope[key] = request.scope[key]
+
         # collect response
         result = {
             'route': None,
