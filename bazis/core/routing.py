@@ -87,6 +87,7 @@ class BazisRoute(APIRoute):
         generate_unique_id_function: Callable[['APIRoute'], str] | DefaultPlaceholder = Default(
             generate_unique_id
         ),
+        strict_content_type: bool | DefaultPlaceholder = Default(True),
     ) -> None:
         """
         Initializes a BazisRoute instance with the given parameters, setting up the
@@ -122,6 +123,7 @@ class BazisRoute(APIRoute):
         self.responses = responses or {}
         self.name = get_name(endpoint) if name is None else name
         self.path_regex, self.path_format, self.param_convertors = compile_path(path)
+        self.strict_content_type = strict_content_type
         if methods is None:
             methods = ['GET']
         self.methods: set[str] = {method.upper() for method in methods}
@@ -247,6 +249,7 @@ class BazisDummyRoute(APIRoute):
         generate_unique_id_function: Callable[['APIRoute'], str] | DefaultPlaceholder = Default(
             generate_unique_id
         ),
+        **kwargs,
     ) -> None:
         """
         Initializes a BazisDummyRoute instance with the given parameters, setting up the
@@ -282,6 +285,9 @@ class BazisDummyRoute(APIRoute):
         self.status_code = status_code
         self.dependencies = list(dependencies or [])
         self.description = description
+
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
 
 class BazisRouter(APIRouter):
