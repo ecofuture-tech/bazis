@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from django.db.models import ForeignKey, ManyToManyField, Model, OneToOneField, QuerySet
+from django.utils.functional import cached_property
 
 from fastapi import Depends, Query
 
@@ -53,17 +54,21 @@ class ServiceSparseFieldsets:
         calc_fields_names = []
         relation_fields_names = []
 
-        v_splitted = [field.strip() for field in v.split(',')]
+        model = queryset.model
+        v_splitted: list[str] = [field.strip() for field in v.split(',') if field.strip()]
         setattr(inject, k, v_splitted)
 
-        for field in v_splitted:
-            if not hasattr(getattr(queryset.model, field), 'fields_calc'):
-                if not isinstance(getattr(queryset.model, field), property):
-                    simple_fields_names.append(field)
-                    if hasattr(getattr(queryset.model, field), 'rel'):
-                        relation_fields_names.append(field)
+        for field_name in v_splitted:
+            field_attr = getattr(model, field_name)
+
+            if not hasattr(field_attr, 'fields_calc'):
+                if isinstance(field_attr, (property, cached_property)):
+                    continue
+                simple_fields_names.append(field_name)
+                if hasattr(field_attr, 'rel'):
+                    relation_fields_names.append(field_name)
             else:
-                calc_fields_names.append(field)
+                calc_fields_names.append(field_name)
         return simple_fields_names, calc_fields_names, relation_fields_names
 
     @classmethod

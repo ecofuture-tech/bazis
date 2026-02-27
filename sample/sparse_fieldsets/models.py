@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from django.db import models
+from django.utils.functional import cached_property
 
 from bazis.core.models_abstract import DtMixin, JsonApiMixin, UuidMixin
 from bazis.core.utils.orm import (
@@ -104,3 +105,7 @@ class Article(DtMixin, UuidMixin, JsonApiMixin):
     @property
     def some_count_property(self) -> int:
         return 1000
+
+    @cached_property
+    def some_cached_property(self) -> int:
+        return 2000

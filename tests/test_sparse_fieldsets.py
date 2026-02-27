@@ -68,6 +68,7 @@ def test_sparse_fieldsets(sample_app):
                 'dt_created': article.dt_created.strftime('%Y-%m-%dT%H:%M:%S'),
                 'dt_updated': article.dt_updated.strftime('%Y-%m-%dT%H:%M:%S'),
                 'some_count_property': 1000,
+                'some_cached_property': 2000,
                 'title': 'somestring 3',
             },
             'bs:action': 'view',
@@ -176,7 +177,7 @@ def test_sparse_fieldsets(sample_app):
 
     # Pass a list of main model fields, including calculated fields, relationships, and property fields.
     # Check that all other main model fields are excluded, including fields that are relationships.
-    url = '/api/v1/sparse_fieldsets/article/?fields[sparse_fieldsets.article]=title,author,author_count,some_count_property'
+    url = '/api/v1/sparse_fieldsets/article/?fields[sparse_fieldsets.article]=title,author,author_count,some_count_property,some_cached_property'
 
     response = get_api_client(sample_app).get(url)
 
@@ -188,6 +189,7 @@ def test_sparse_fieldsets(sample_app):
                 'attributes': {
                     'author_count': 1,
                     'some_count_property': 1000,
+                    'some_cached_property': 2000,
                     'title': 'somestring 3',
                 },
                 'bs:action': 'view',
@@ -199,8 +201,8 @@ def test_sparse_fieldsets(sample_app):
             }
         ],
         'links': {
-            'first': 'http://testserver/api/v1/sparse_fieldsets/article/?fields%5Bsparse_fieldsets.article%5D=title%2Cauthor%2Cauthor_count%2Csome_count_property',
-            'last': 'http://testserver/api/v1/sparse_fieldsets/article/?fields%5Bsparse_fieldsets.article%5D=title%2Cauthor%2Cauthor_count%2Csome_count_property&page%5Blimit%5D=20&page%5Boffset%5D=0',
+            'first': 'http://testserver/api/v1/sparse_fieldsets/article/?fields%5Bsparse_fieldsets.article%5D=title%2Cauthor%2Cauthor_count%2Csome_count_property%2Csome_cached_property',
+            'last': 'http://testserver/api/v1/sparse_fieldsets/article/?fields%5Bsparse_fieldsets.article%5D=title%2Cauthor%2Cauthor_count%2Csome_count_property%2Csome_cached_property&page%5Blimit%5D=20&page%5Boffset%5D=0',
             'next': None,
             'prev': None,
         },

@@ -43,6 +43,7 @@ class ArticleRouteSet(JsonapiRouteBase):
                 'author_detail': SchemaField(source='author_detail', required=False),
                 'author_count': SchemaField(source='author_count', required=False),
                 'some_count_property': SchemaField(source='some_count_property'),
+                'some_cached_property': SchemaField(source='some_cached_property'),
             },
         ),
     }
