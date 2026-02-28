@@ -282,7 +282,7 @@ if SETTINGS_MODULE:
                         for conn in connections.all(initialized_only=True)[:1]:
                             conn.cursor().execute('select 1')
                     except Exception as e:
-                        logger.info(
+                        logger.debug(
                             f"""DjangoSettingsWrapper raise exception with not ready db connection {e}\n
                                        if you run test - do not worry about this message, otherwise - it is PROBLEM!
                                     """
