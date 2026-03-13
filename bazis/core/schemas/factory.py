@@ -571,8 +571,10 @@ class SchemaFactory:
             inclusions=inclusions,  # or self.inclusions_list,
             meta_fields=meta_fields or self.meta_fields_list,
         ).build(
-            schema_resource=schema_resource or self.resource_schema_default
-            if not is_response_schema
-            else self.resource_schema_default_response,
-            is_response_schema=is_response_schema,
+            schema_resource=schema_resource or (
+                self.resource_schema_default
+                if not is_response_schema
+                else self.resource_schema_default_response
+            ),
+            is_response_schema=is_response_schema
         )
