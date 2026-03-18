@@ -148,8 +148,10 @@ def _initialize_app(app): # noqa: C901
             handling the request.
             """
             await run_in_threadpool(close_old_connections)
-            await self.app(scope, receive, send)
-            await run_in_threadpool(close_old_connections)
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                await run_in_threadpool(close_old_connections)
 
     app.add_middleware(CloseOldConnectionsMiddleware)
 

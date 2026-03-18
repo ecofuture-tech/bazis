@@ -78,6 +78,8 @@ from pydantic import BaseModel
 
 from asgiref.sync import async_to_sync
 
+from bazis.core.utils.orm import close_old_connections
+
 from bazis.core.routes_abstract.context import RouteContext, RouteParams
 from bazis.core.routing import BazisRoute, BazisRouter
 from bazis.core.schemas.enums import ApiAction, HttpMethod
@@ -603,8 +605,10 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
 
             result = None
             try:
+                close_old_connections()
                 result = self.route_run(*args, **kwargs)
             finally:
+                close_old_connections()
                 for cor in reversed(response_middlewares):
                     try:
                         if res := cor.send(result):
