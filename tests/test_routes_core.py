@@ -21,8 +21,12 @@ from bazis_test_utils.utils import get_api_client
 @override_settings(DEBUG=True, BAZIS_API_PAGINATION_PAGE_SIZE_MAX=1000)
 @pytest.mark.django_db(transaction=True)
 def test_apidoc():
-    from bazis.core.app import app
+    from bazis.core.app_factory import _create_app_base, _initialize_app
 
+    # DEBUG controls app construction; a singleton created by another test may
+    # already have its documentation routes disabled.
+    app = _create_app_base()
+    _initialize_app(app)
     api_client = get_api_client(app)
 
     response = api_client.get('/api/openapi.json')

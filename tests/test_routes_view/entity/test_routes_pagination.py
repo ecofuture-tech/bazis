@@ -15,11 +15,31 @@
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.test import override_settings
 
 import pytest
 from bazis_test_utils.utils import get_api_client
 
 from tests import factories
+
+
+@pytest.mark.django_db(transaction=True)
+def test_pagination_limit_uses_current_setting_and_preserves_validation(sample_app):
+    factories.ParentEntityFactory.create_batch(3)
+    client = get_api_client(sample_app)
+    path = '/api/v1/entity/parent_entity/'
+
+    with override_settings(BAZIS_API_PAGINATION_PAGE_SIZE_MAX=2):
+        valid = client.get(f'{path}?page[limit]=2')
+        assert valid.status_code == 200
+        assert len(valid.json()['data']) == 2
+        assert client.get(f'{path}?page[limit]=3').status_code == 422
+        assert client.get(f'{path}?page[limit]=-1').status_code == 422
+
+    with override_settings(BAZIS_API_PAGINATION_PAGE_SIZE_MAX=3):
+        changed = client.get(f'{path}?page[limit]=3')
+        assert changed.status_code == 200
+        assert len(changed.json()['data']) == 3
 
 
 @pytest.mark.django_db(transaction=True)

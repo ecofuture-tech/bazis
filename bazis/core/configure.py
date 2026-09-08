@@ -25,12 +25,13 @@ Tags: RAG, INTERNAL
 
 import logging
 import os
-import sys
 from copy import deepcopy
 from importlib import import_module
 from typing import Any, cast
 
-from django.db import connections
+from django.apps import apps
+from django.conf import LazySettings, UserSettingsHolder
+from django.utils.functional import empty
 from django.utils.translation import gettext_lazy as _
 
 from pydantic import create_model
@@ -199,8 +200,7 @@ CONSTANCE_CONFIG = {
 
 if SETTINGS_MODULE:
     try:
-        from django import conf
-        from django.conf import LazySettings
+        from django.conf import settings as django_settings
     except ImportError as e:
         logger.error(f'Import error: {e}')
     else:
@@ -256,87 +256,45 @@ if SETTINGS_MODULE:
         # Auto-discover locale paths for i18n
         SETTINGS_MODULE.__dict__['LOCALE_PATHS'] = discover_locale_paths(BASE_DIR)
 
-        django_settings = LazySettings()
+        if not getattr(LazySettings, '_bazis_dynamic_patch_applied', False):
+            _original_getattr = LazySettings.__getattr__
+            _original_setattr = LazySettings.__setattr__
 
-        class DjangoSettingsWrapper:
-            """
-            Three-tier settings accessor: Constance DB → settings.py → .env
+            def _dynamic_setting_value(wrapped, name):
+                holder = wrapped
+                while isinstance(holder, UserSettingsHolder):
+                    if name in holder._deleted:
+                        raise AttributeError(name)
+                    if name in holder.__dict__:
+                        return getattr(holder, name)
+                    holder = holder.default_settings
 
-            Provides dynamic settings through Constance (admin-editable) while
-            maintaining backward compatibility with static Django settings.
+                # Models and routes may read defaults while Django is loading apps.
+                # Do not cache them: Constance becomes authoritative after startup.
+                if not apps.ready:
+                    return getattr(wrapped, name)
+                return getattr(constance_conf.config, name)
 
-            Database check prevents errors during tests when DB not initialized.
+            def _bazis_getattr(self, name):
+                if self is django_settings and name in CONSTANCE_CONFIG:
+                    if (_wrapped := self._wrapped) is empty:
+                        self._setup(name)
+                        _wrapped = self._wrapped
+                    return _dynamic_setting_value(_wrapped, name)
+                return _original_getattr(self, name)
 
-            RAG keywords: settings wrapper, constance, dynamic settings,
-                          database settings, admin editable settings
-            """
-
-            def __getattribute__(self, name):
-                """
-                Retrieves setting value with priority: Constance DB > Django settings.
-                Checks database availability before Constance lookup (for pytest).
-                """
-                if name in CONSTANCE_CONFIG:
-                    try:
-                        # Verify DB connection ready (important for tests)
-                        for conn in connections.all(initialized_only=True)[:1]:
-                            conn.cursor().execute('select 1')
-                    except Exception as e:
-                        logger.debug(
-                            f"""DjangoSettingsWrapper raise exception with not ready db connection {e}\n
-                                       if you run test - do not worry about this message, otherwise - it is PROBLEM!
-                                    """
-                        )
-                        return ''
-                    return getattr(constance_conf.config, name)
-                else:
-                    return getattr(django_settings, name)
-
-            def __setattr__(self, name, value):
-                """
-                Sets setting value in Constance DB if dynamic, else Django settings.
-                """
-                if name in CONSTANCE_CONFIG:
+            def _bazis_setattr(self, name, value):
+                if self is django_settings and name != '_wrapped' and name in CONSTANCE_CONFIG:
                     setattr(constance_conf.config, name, value)
-                else:
-                    setattr(django_settings, name, value)
+                    self.__dict__.pop(name, None)
+                    return
+                return _original_setattr(self, name, value)
 
-            def __delattr__(self, name):
-                try:
-                    object.__delattr__(self, name)
-                except AttributeError:
-                    pass
-
-            def __iter__(self):
-                """
-                Iterates all settings from both Constance and Django settings.
-                """
-                for key in CONSTANCE_CONFIG:
-                    yield (key, getattr(constance_conf.config, key))
-                for key in django_settings.__dict__.keys():
-                    yield (key, getattr(django_settings, key))
-
-        django_settings_wrapper = DjangoSettingsWrapper()
-
-        class ConfWrapper:
-            """
-            Monkey patches django.conf module to inject DjangoSettingsWrapper.
-            Replaces django.conf.settings with our custom wrapper.
-
-            RAG keywords: django conf wrapper, monkey patch django, settings override
-            """
-
-            def __getattribute__(self, name):
-                """
-                Returns DjangoSettingsWrapper for 'settings' attribute.
-                Delegates all other attributes to original django.conf module.
-                """
-                if name == 'settings':
-                    return django_settings_wrapper
-                return getattr(conf, name)
-
-        # Replace django.conf module with wrapper
-        sys.modules['django.conf'] = ConfWrapper()
+            LazySettings.__getattr__ = _bazis_getattr
+            LazySettings.__setattr__ = _bazis_setattr
+            LazySettings._bazis_dynamic_patch_applied = True
+            for name in CONSTANCE_CONFIG:
+                django_settings.__dict__.pop(name, None)
 
 
 class SettingsWrapper:
@@ -351,12 +309,20 @@ class SettingsWrapper:
 
     def __getattribute__(self, name):
         """
-        Retrieves setting: Constance DB if dynamic, else static Settings.
+        Retrieves setting from Django settings, but preserves Constance priority
+        for dynamic keys unless Django temporarily overrides them in tests.
         """
-        if name in CONSTANCE_CONFIG:
-            return getattr(constance_conf.config, name)
-        else:
-            return getattr(_settings, name)
+        if name.startswith('__'):
+            return object.__getattribute__(self, name)
+
+        try:
+            from django.conf import settings as django_settings
+        except ImportError:
+            django_settings = None
+
+        if SETTINGS_MODULE and django_settings is not None:
+            return getattr(django_settings, name)
+        return getattr(_settings, name)
 
 
 # Global settings instance for application use

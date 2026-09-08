@@ -18,6 +18,7 @@ from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
 from fastapi import Query, Request
+from fastapi.exceptions import RequestValidationError
 
 from pydantic import BaseModel
 
@@ -53,17 +54,29 @@ class ServicePagination:
         self,
         request: Request,
         offset: int = Query(None, alias=param_offset, ge=0),
-        limit: int = Query(
-            None, alias=param_limit, ge=0, le=settings.BAZIS_API_PAGINATION_PAGE_SIZE_MAX or 1000
-        ),
+        limit: int = Query(None, alias=param_limit, ge=0),
     ):
         """
         Initializes the ServicePagination instance with request data, offset, limit, and
         default settings.
         """
+        page_size_max = settings.BAZIS_API_PAGINATION_PAGE_SIZE_MAX or 1000
+
         self.request = request
         self.offset = offset or 0
         self.limit = settings.BAZIS_API_PAGINATION_PAGE_SIZE_DEFAULT if limit is None else limit
+        if limit is not None and limit > page_size_max:
+            raise RequestValidationError(
+                [
+                    {
+                        'type': 'less_than_equal',
+                        'loc': ('query', self.param_limit),
+                        'msg': f'Input should be less than or equal to {page_size_max}',
+                        'input': limit,
+                        'ctx': {'le': page_size_max},
+                    }
+                ]
+            )
         self.count = 0
 
     def apply(self, queryset: QuerySet):

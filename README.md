@@ -411,6 +411,15 @@ router.register('sparse_fieldsets.router')
 
 The settings management system is implemented through `django.conf.settings`. Values can be set either via environment variables or in the admin panel.
 
+`django.conf.settings` and `bazis.core.configure.settings` share the same values.
+Explicit Django `override_settings` values take precedence, including nested overrides,
+and are restored without being written to Constance. Dynamic settings use typed project
+defaults while Django is initializing apps, then read Constance without caching values
+in Django's settings proxy. Database errors after startup are propagated to the caller.
+
+Pagination checks the current maximum page size on each request. A supplied `page[limit]`
+above the maximum still returns HTTP 422; it is not silently reduced.
+
 Each Bazis application defines a `conf.py` module containing a Pydantic `Settings` schema with configuration fields.
 
 Example `conf.py`:
