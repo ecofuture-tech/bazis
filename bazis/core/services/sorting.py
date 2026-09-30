@@ -46,10 +46,14 @@ class SortingSearching:
         """
         if not self.terms:
             return queryset
+        ordering = [F(t[1:]).desc(nulls_last=True) if t.startswith('-') else t for t in self.terms]
+        # the primary key makes the order deterministic when the sorted values are not unique,
+        # otherwise pagination may skip or repeat items between pages
+        pk_names = {'pk', queryset.model._meta.pk.name}
+        if not any(t.lstrip('-') in pk_names for t in self.terms):
+            ordering.append('pk')
         try:
-            return queryset.order_by(
-                *[F(t[1:]).desc(nulls_last=True) if t.startswith('-') else t for t in self.terms]
-            )
+            return queryset.order_by(*ordering)
         except FieldError:
             raise JsonApiBazisException(
                 JsonApiBazisError(

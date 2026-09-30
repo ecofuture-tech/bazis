@@ -23,6 +23,8 @@ Tags: RAG, INTERNAL
 # Monkey patching moved here to avoid circular import issues.
 # Placing in bazis/__init__.py causes infinite loop in top-level module linking.
 
+import ast
+import json
 import logging
 import os
 from copy import deepcopy
@@ -136,6 +138,69 @@ DEFAULT_MIDDLEWARE = [
 ]
 
 
+SECRET_KEY_MIN_LENGTH = 32
+SECRET_KEY_MIN_UNIQUE_CHARACTERS = 5
+
+
+def validate_security_settings(values: dict) -> None:
+    """
+    Validates the security-critical settings of the merged Django settings module.
+
+    SECRET_KEY must be set in the project environment (BS_SECRET_KEY). A key generated
+    per process breaks sessions, CSRF tokens and signed data as soon as more than one
+    process (e.g. several gunicorn workers) is running, so it is only generated as a
+    temporary fallback in DEBUG mode. Outside DEBUG an absent or weak key is an error.
+    """
+    from django.core.exceptions import ImproperlyConfigured
+
+    secret_key = values.get('SECRET_KEY') or ''
+    debug = bool(values.get('DEBUG'))
+
+    problems = []
+    if not secret_key:
+        problems.append('SECRET_KEY is not set (define BS_SECRET_KEY in the project environment)')
+    else:
+        if len(secret_key) < SECRET_KEY_MIN_LENGTH:
+            problems.append(f'SECRET_KEY must be at least {SECRET_KEY_MIN_LENGTH} characters long')
+        if len(set(secret_key)) < SECRET_KEY_MIN_UNIQUE_CHARACTERS:
+            problems.append(
+                f'SECRET_KEY must contain at least {SECRET_KEY_MIN_UNIQUE_CHARACTERS} '
+                'unique characters'
+            )
+        if secret_key.startswith('django-insecure-'):
+            problems.append("SECRET_KEY must not be a 'django-insecure-' development key")
+
+    if not problems:
+        return
+    if not debug:
+        raise ImproperlyConfigured('Invalid security settings: ' + '; '.join(problems) + '.')
+
+    for problem in problems:
+        logger.warning('%s. This is only allowed with DEBUG enabled.', problem)
+    if not secret_key:
+        from bazis.core.conf import secret_key_generate
+
+        values['SECRET_KEY'] = secret_key_generate()
+
+
+def parse_list_env(value: str) -> list[str]:
+    """
+    Parses a list of module names from an environment variable.
+    Accepts JSON (``["a", "b"]``) and Python literal (``['a', 'b']``) notation.
+    Unlike ``eval``, never executes code.
+    """
+    try:
+        result = json.loads(value)
+    except ValueError:
+        try:
+            result = ast.literal_eval(value)
+        except (ValueError, SyntaxError) as e:
+            raise ValueError(f'Expected a list of module names, got: {value!r}') from e
+    if not isinstance(result, list | tuple) or not all(isinstance(it, str) for it in result):
+        raise ValueError(f'Expected a list of module names, got: {value!r}')
+    return list(result)
+
+
 def conf_modules():
     """
     Discovers and yields all configuration modules from Bazis framework and project.
@@ -158,7 +223,7 @@ def conf_modules():
     # Bazis contrib apps configuration
     BAZIS_CONFIG_APPS = os.environ.get('BS_BAZIS_CONFIG_APPS') or os.environ.get('BS_BAZIS_APPS')
     if BAZIS_CONFIG_APPS:
-        BAZIS_CONFIG_APPS = reversed(eval(BAZIS_CONFIG_APPS))
+        BAZIS_CONFIG_APPS = reversed(parse_list_env(BAZIS_CONFIG_APPS))
 
         for bazis_app_name in BAZIS_CONFIG_APPS:
             for conf in get_modules_from_pkg(
@@ -184,6 +249,63 @@ Settings = cast(
         __base__=tuple(conf.Settings for conf in conf_modules() if hasattr(conf, 'Settings')),
     ),
 )
+
+# Deprecated Django email settings (Django 6.1) -> Bazis settings (see bazis.core.mail)
+LEGACY_EMAIL_SETTINGS = {
+    'EMAIL_BACKEND': 'BAZIS_EMAIL_BACKEND',
+    'EMAIL_HOST': 'BAZIS_EMAIL_HOST',
+    'EMAIL_PORT': 'BAZIS_EMAIL_PORT',
+    'EMAIL_HOST_USER': 'BAZIS_EMAIL_HOST_USER',
+    'EMAIL_HOST_PASSWORD': 'BAZIS_EMAIL_HOST_PASSWORD',
+    'EMAIL_USE_TLS': 'BAZIS_EMAIL_USE_TLS',
+    'EMAIL_USE_SSL': 'BAZIS_EMAIL_USE_SSL',
+}
+
+
+DJANGO_SMTP_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+DYNAMIC_SMTP_BACKEND = 'bazis.core.mail.DynamicSMTPEmailBackend'
+
+
+def apply_legacy_email_env() -> None:
+    """
+    Maps the environment variables of the renamed email settings (BS_EMAIL_HOST, ...)
+    to the new names (BS_BAZIS_EMAIL_HOST, ...), unless the new ones are set.
+    """
+    for legacy_name, name in LEGACY_EMAIL_SETTINGS.items():
+        legacy_env, env = f'BS_{legacy_name}', f'BS_{name}'
+        if legacy_env in os.environ and env not in os.environ:
+            logger.warning(
+                '%s is deprecated, rename it to %s (Django 6.1 replaced EMAIL_* with MAILERS).',
+                legacy_env,
+                env,
+            )
+            os.environ[env] = os.environ[legacy_env]
+
+
+def configure_mailers(values: dict) -> None:
+    """
+    Configures the default mailer (Django 6.1 MAILERS) with BAZIS_EMAIL_BACKEND.
+    A project that still defines the deprecated EMAIL_* settings in its settings module
+    keeps the legacy configuration: Django does not allow combining it with MAILERS.
+    """
+    if 'MAILERS' in values:
+        return
+    if legacy := sorted(name for name in LEGACY_EMAIL_SETTINGS if name in values):
+        logger.warning(
+            'Deprecated email settings %s are defined in the settings module, so MAILERS '
+            'is not configured. Use the BAZIS_EMAIL_* settings instead.',
+            ', '.join(legacy),
+        )
+        return
+    backend = values['BAZIS_EMAIL_BACKEND']
+    if backend == DJANGO_SMTP_BACKEND:
+        # with MAILERS the stock SMTP backend takes its parameters from OPTIONS only,
+        # the dynamic one reads them from the BAZIS_EMAIL_* settings
+        backend = DYNAMIC_SMTP_BACKEND
+    values['MAILERS'] = {'default': {'BACKEND': backend}}
+
+
+apply_legacy_email_env()
 
 # Instantiate local settings object from merged Settings class
 _settings = Settings()
@@ -214,6 +336,12 @@ if SETTINGS_MODULE:
                     field_info.annotation,
                 )
 
+        # A wildcard set explicitly in the project settings module is kept (see below)
+        _project_allowed_hosts = SETTINGS_MODULE.__dict__.get('ALLOWED_HOSTS')
+        _project_wildcard = isinstance(_project_allowed_hosts, list | tuple) and (
+            '*' in _project_allowed_hosts
+        )
+
         # Merge Bazis settings into Django SETTINGS_MODULE
         # Strategy: update existing collections, set missing values
         for sett_key, sett_value in _settings.model_dump().items():
@@ -226,11 +354,25 @@ if SETTINGS_MODULE:
                 if isinstance(existing_value, dict) and isinstance(sett_value, dict):
                     existing_value.update(sett_value)
                 elif isinstance(existing_value, list) and isinstance(sett_value, list):
-                    existing_value.extend(sett_value)
+                    existing_value.extend(it for it in sett_value if it not in existing_value)
                 elif isinstance(existing_value, set) and isinstance(sett_value, set):
                     existing_value.update(sett_value)
                 elif isinstance(existing_value, tuple) and isinstance(sett_value, tuple):
                     SETTINGS_MODULE.__dict__[sett_key] = existing_value + sett_value
+
+        # The default Bazis wildcard merged with concrete hosts would disable host validation,
+        # so it is dropped unless the project settings module set it explicitly.
+        ALLOWED_HOSTS = SETTINGS_MODULE.__dict__.get('ALLOWED_HOSTS')
+        if (
+            isinstance(ALLOWED_HOSTS, list)
+            and len(ALLOWED_HOSTS) > 1
+            and '*' in ALLOWED_HOSTS
+            and not _project_wildcard
+        ):
+            ALLOWED_HOSTS.remove('*')
+
+        validate_security_settings(SETTINGS_MODULE.__dict__)
+        configure_mailers(SETTINGS_MODULE.__dict__)
 
         SETTINGS_MODULE.__dict__['CONSTANCE_CONFIG'] = CONSTANCE_CONFIG
         SETTINGS_MODULE.__dict__.setdefault(

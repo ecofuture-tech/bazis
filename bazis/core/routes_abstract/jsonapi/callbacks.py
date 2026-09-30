@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from fastapi.responses import JSONResponse
 
-from starlette.status import HTTP_400_BAD_REQUEST, HTTP_422_UNPROCESSABLE_ENTITY
+from starlette.status import HTTP_400_BAD_REQUEST, HTTP_422_UNPROCESSABLE_CONTENT
 
 from bazis.core.errors import SchemaErrors
 from bazis.core.routes_abstract.context import RouteContext
@@ -162,7 +162,7 @@ def api_action_jsonapi_init(cls, route_ctx: RouteContext):
     route_ctx.route_params.response_class = JsonApiResponse
     route_ctx.route_params.responses = {
         HTTP_400_BAD_REQUEST: {'model': SchemaErrors},
-        HTTP_422_UNPROCESSABLE_ENTITY: {'model': SchemaErrors},
+        HTTP_422_UNPROCESSABLE_CONTENT: {'model': SchemaErrors},
     }
 
 
