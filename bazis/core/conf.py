@@ -14,12 +14,11 @@
 
 import decimal
 from secrets import token_hex
+from zoneinfo import available_timezones
 
 from django.utils.translation import gettext_lazy as _
 
 from pydantic import BaseModel, Field, model_validator
-
-import pytz
 
 from bazis.core.utils.schemas import BazisSettings
 
@@ -109,7 +108,8 @@ class CacheOptions(BaseModel):
 class Cache(BaseModel):
     """
     Cache backend configuration schema.
-    Supports Django cache backends: LocMem, Redis, Memcached, etc.
+    Bazis requires Redis (django-redis): model caching invalidates keys by pattern
+    (``delete_pattern``), which other Django cache backends do not provide.
 
     Fields:
     - BACKEND: Cache backend class path
@@ -118,8 +118,8 @@ class Cache(BaseModel):
     - OPTIONS: Backend-specific options
     """
 
-    BACKEND: str = 'django.core.cache.backends.locmem.LocMemCache'
-    LOCATION: str = ''
+    BACKEND: str = 'django_redis.cache.RedisCache'
+    LOCATION: str = 'redis://127.0.0.1:6379/0'
     TIMEOUT: int = 300
     OPTIONS: CacheOptions = CacheOptions()
 
@@ -166,7 +166,9 @@ class Settings(BazisSettings):
     WSGI_APPLICATION: str = ''
     DEFAULT_AUTO_FIELD: str = 'django.db.models.BigAutoField'
     AUTH_PASSWORD_VALIDATORS: list[dict] = []
-    SECRET_KEY: str = Field(default_factory=secret_key_generate, title=_('Secret key'))
+    # Must be set per project in the environment (BS_SECRET_KEY) and be the same for all
+    # processes; see validate_security_settings in bazis.core.configure.
+    SECRET_KEY: str = Field('', title=_('Secret key'))
     HOST_URL: str = ''
     ADMIN_HOST_URL: str = ''
     MEDIA_HOST_URL: str | None = Field(None, title=_('Media URL'))
@@ -210,7 +212,7 @@ class Settings(BazisSettings):
             'django.forms.fields.ChoiceField',
             {
                 'widget': 'django.forms.Select',
-                'choices': [(tz, tz) for tz in pytz.common_timezones],
+                'choices': [(tz, tz) for tz in sorted(available_timezones())],
             },
         ],
     }
@@ -221,38 +223,45 @@ class Settings(BazisSettings):
     )
     BAZIS_APP_RELOAD_DIRS: list[str] = Field([], title=_('Directories to reload on change'))
     BAZIS_SCHEMA_WITHOUT_REF: bool = Field(True, title=_('Use $ref in OpenAPI schema'))
+    BAZIS_SCHEMA_CACHE_TTL: int = Field(
+        3600,
+        title=_('Lifetime of unused generated schemas in the cache, seconds (0 - unlimited)'),
+    )
 
-    # Email/SMTP configuration
-    EMAIL_BACKEND: str = Field(
-        'django.core.mail.backends.smtp.EmailBackend',
+    # Email/SMTP configuration.
+    # Django 6.1 deprecates the EMAIL_* settings in favour of MAILERS: Bazis configures
+    # MAILERS['default'] with BAZIS_EMAIL_BACKEND, and the default backend reads the
+    # SMTP parameters below at runtime (see bazis.core.mail).
+    BAZIS_EMAIL_BACKEND: str = Field(
+        'bazis.core.mail.DynamicSMTPEmailBackend',
         title=_('Mail server backend'),
     )
-    EMAIL_HOST: str = Field(
+    BAZIS_EMAIL_HOST: str = Field(
         '',
         title=_('Mail server IP address'),
         json_schema_extra={'dynamic': True},
     )
-    EMAIL_PORT: str = Field(
+    BAZIS_EMAIL_PORT: str = Field(
         '',
         title=_('Mail server port number'),
         json_schema_extra={'dynamic': True},
     )
-    EMAIL_HOST_USER: str = Field(
+    BAZIS_EMAIL_HOST_USER: str = Field(
         '',
         title=_('Mail server user login'),
         json_schema_extra={'dynamic': True},
     )
-    EMAIL_HOST_PASSWORD: str = Field(
+    BAZIS_EMAIL_HOST_PASSWORD: str = Field(
         '',
         title=_('Mail server user password'),
         json_schema_extra={'dynamic': True},
     )
-    EMAIL_USE_TLS: bool = Field(
+    BAZIS_EMAIL_USE_TLS: bool = Field(
         False,
         title=_('Mail server use TLS'),
         json_schema_extra={'dynamic': True},
     )
-    EMAIL_USE_SSL: bool = Field(
+    BAZIS_EMAIL_USE_SSL: bool = Field(
         False,
         title=_('Mail server use SSL'),
         json_schema_extra={'dynamic': True},

@@ -78,12 +78,11 @@ from pydantic import BaseModel
 
 from asgiref.sync import async_to_sync
 
-from bazis.core.utils.orm import close_old_connections
-
 from bazis.core.routes_abstract.context import RouteContext, RouteParams
 from bazis.core.routing import BazisRoute, BazisRouter
 from bazis.core.schemas.enums import ApiAction, HttpMethod
 from bazis.core.utils.functools import func_sig_params_append, func_sig_transfer, get_class_name
+from bazis.core.utils.orm import close_old_connections
 
 
 def inject_make(*args: ApiAction):
