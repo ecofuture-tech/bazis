@@ -24,7 +24,7 @@ from starlette.status import (
     HTTP_400_BAD_REQUEST,
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
-    HTTP_422_UNPROCESSABLE_ENTITY,
+    HTTP_422_UNPROCESSABLE_CONTENT,
 )
 
 from pydantic import BaseModel, ValidationError
@@ -91,7 +91,7 @@ class JsonApiRequestValidationError(RequestValidationError):
     validation error in the request.
     """
 
-    status = HTTP_422_UNPROCESSABLE_ENTITY
+    status = HTTP_422_UNPROCESSABLE_CONTENT
     code = 'ERR_VALIDATE'
     title = _('Validation error')
 
@@ -104,7 +104,7 @@ class JsonApiBazisError(Exception):
     Tags: RAG, EXPORT
     """
 
-    status: str | int = HTTP_422_UNPROCESSABLE_ENTITY
+    status: str | int = HTTP_422_UNPROCESSABLE_CONTENT
     code: str = 'ERR_VALIDATE'
     title: str = _('Validation error')
     meta_schema: type[BaseModel] = None

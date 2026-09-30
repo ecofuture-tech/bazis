@@ -43,14 +43,10 @@ class Command(BaseCommand):
     """
 
     def handle(self, **kwargs):
+        # the application is initialized on import and already includes the project router
         from bazis.core.app import app
-        from bazis.core.router import router
-        from bazis.core.routing import BazisRoute
 
         os.makedirs(settings.STATIC_ROOT, exist_ok=True)
-
-        router.routes_cast(BazisRoute)
-        app.include_router(router)
 
         with open(os.path.join(settings.STATIC_ROOT, f'schemas_{get_language()}.json'), 'w') as fp:
             json.dump(get_definitions(app.openapi()), fp, ensure_ascii=False)

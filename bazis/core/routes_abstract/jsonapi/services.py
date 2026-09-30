@@ -30,11 +30,10 @@ representing filterable fields for the given route.
 from functools import cache
 from typing import TYPE_CHECKING
 
-from fastapi.routing import APIRoute
-
 from pydantic import TypeAdapter
 
 from bazis.core.routes_abstract.initial import InitialRouteBase
+from bazis.core.routing import iter_api_routes
 from bazis.core.schemas import CrudApiAction
 
 from .schemas import InputField, RouteFilterFieldsSchemas
@@ -124,10 +123,9 @@ class RouteFilterFieldsService:
         """
         from bazis.core.app import app
 
-        for route in app.router.routes:
+        for route in iter_api_routes(app.router.routes):
             if (
-                isinstance(route, APIRoute)
-                and hasattr(route.endpoint, 'route_ctx')
+                hasattr(route.endpoint, 'route_ctx')
                 and issubclass(route.endpoint.route_ctx.route_cls, InitialRouteBase)
                 and not getattr(route.endpoint.route_ctx.route_cls, 'abstract', False)
                 and getattr(route.endpoint.route_ctx.route_cls, 'model', None) == model
