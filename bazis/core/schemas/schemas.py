@@ -48,7 +48,7 @@ class JsonApiDataSchema(BaseModel):
     """
 
     def check_restrict_json(self, f_name, value) -> bool:
-        if info := self.attributes.model_fields.get(f_name):
+        if info := type(self.attributes).model_fields.get(f_name):
             if restricts := info.json_schema_extra.get('restricts'):
                 for r in restricts:
                     if r.startswith('^') and r.endswith('$'):
@@ -60,7 +60,7 @@ class JsonApiDataSchema(BaseModel):
         return True
 
     def check_restrict_m2m(self, f_name: str, f_values, f_model, rel_obj=None) -> QuerySet:
-        if info := self.relationships.model_fields.get(f_name):
+        if info := type(self.relationships).model_fields.get(f_name):
             rel_instances = f_model.objects.all()
             if restricts := info.json_schema_extra.get('restricts'):
                 restricts = '|'.join(restricts)
@@ -75,7 +75,7 @@ class JsonApiDataSchema(BaseModel):
                 return rel_instances.filter(id__in=[it['id'] for it in f_values['data']]).all()
 
     def check_restrict_rel(self, f_name: str, f_pk, f_model, instance=None) -> bool:
-        if info := self.relationships.model_fields.get(f_name):
+        if info := type(self.relationships).model_fields.get(f_name):
             if restricts := info.json_schema_extra.get('restricts'):
                 restricts = '|'.join(restricts)
                 restrict_q = QueryToOrm(restricts, f_model).q

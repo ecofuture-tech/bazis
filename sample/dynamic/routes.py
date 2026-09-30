@@ -14,10 +14,10 @@
 
 from django.apps import apps
 
+from sample.route_mixins import ContextTestRouteMixin
+
 from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
 from bazis.core.schemas.fields import SchemaField, SchemaFields
-
-from tests.utils.context_test_route_mixin import ContextTestRouteMixin
 
 
 class CountryRouteSet(JsonapiRouteBase):

@@ -25,3 +25,7 @@ class BazisCoreConfig(BaseConfig):
 
     name = 'bazis.core'
     verbose_name = 'Bazis core'
+
+    def ready(self):
+        super().ready()
+        from bazis.core import checks  # noqa: F401  registers the system checks

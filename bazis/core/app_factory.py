@@ -104,14 +104,15 @@ def _initialize_app(app): # noqa: C901
 
     from fastapi import Request
     from fastapi.encoders import jsonable_encoder
-    from fastapi.exceptions import HTTPException, RequestValidationError
+    from fastapi.exceptions import RequestValidationError
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import RedirectResponse, Response
 
     from starlette.concurrency import run_in_threadpool
+    from starlette.exceptions import HTTPException
     from starlette.middleware.sessions import SessionMiddleware
     from starlette.responses import JSONResponse
-    from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
+    from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
 
     from bazis.core.i18n import LanguageMiddleware, expand_lang
     from bazis.core.utils.functools import get_attr
@@ -217,7 +218,10 @@ def _initialize_app(app): # noqa: C901
         return SchemaErrorSource(**attrs)
 
     def exc_encoder(
-        errs: list[SchemaError], status: int, cookies: list[tuple[str, str, int]] = None
+        errs: list[SchemaError],
+        status: int,
+        cookies: list[tuple[str, str, int]] = None,
+        headers: dict[str, str] | None = None,
     ):
         """
         Encodes a list of SchemaError objects into a JSON response with the specified
@@ -226,6 +230,7 @@ def _initialize_app(app): # noqa: C901
         response = JSONResponse(
             jsonable_encoder(SchemaErrors(errors=errs), exclude_unset=True, exclude_none=True),
             status_code=status,
+            headers=headers,
         )
 
         if cookies:
@@ -293,7 +298,7 @@ def _initialize_app(app): # noqa: C901
         return exc_encoder(
             [
                 SchemaError(
-                    status=HTTP_422_UNPROCESSABLE_ENTITY,
+                    status=HTTP_422_UNPROCESSABLE_CONTENT,
                     code='ERR_VALIDATE',
                     title=err['type'],
                     detail=err['msg'],
@@ -305,7 +310,7 @@ def _initialize_app(app): # noqa: C901
                 )
                 for err in exc.errors()
             ],
-            HTTP_422_UNPROCESSABLE_ENTITY,
+            HTTP_422_UNPROCESSABLE_CONTENT,
         )
 
     @app.exception_handler(HTTPException)
@@ -314,6 +319,9 @@ def _initialize_app(app): # noqa: C901
     ) -> JSONResponse:
         """
         Handles common HTTP exceptions by converting them to a JSONAPI-compliant JSONResponse.
+        The handler is registered for the Starlette base class, so it also covers the errors
+        raised by routing itself (404 for an unknown path, 405 for a wrong method), not only
+        the FastAPI HTTPException raised by endpoints.
         :param request: The current request object.
         :param exc: The exception object.
         :return: JSONResponse.
@@ -330,6 +338,7 @@ def _initialize_app(app): # noqa: C901
             [
                 SchemaError(
                     status=exc.status_code,
+                    code=getattr(exc, 'code', None),
                     detail=str(exc.detail) if exc.detail else None,
                     meta=meta,
                     traceback=''.join(traceback.format_exception(exc))
@@ -338,6 +347,7 @@ def _initialize_app(app): # noqa: C901
                 )
             ],
             exc.status_code,
+            headers=headers,
         )
 
     @app.exception_handler(500)
@@ -360,8 +370,16 @@ def _initialize_app(app): # noqa: C901
             500,
         )
 
+    from fastapi.routing import iter_route_contexts
+
     from bazis.core.router import router
     from bazis.core.routing import BazisRoute
 
     router.routes_cast(BazisRoute)
     app.include_router(router)
+
+    # FastAPI builds the routes of included routers lazily, on the first request.
+    # Building Bazis routes involves generating JSON:API schemas, so they are built at
+    # startup: the first request is not delayed and declaration errors surface early.
+    for _ in iter_route_contexts(app.router.routes):
+        pass

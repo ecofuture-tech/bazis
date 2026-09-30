@@ -80,11 +80,14 @@ Database and cache configuration is currently fully assembled from the config. T
     BS_DATABASES__DEFAULT__USER=sw
     BS_DATABASES__DEFAULT__PASSWORD=sw
 
-Similarly for the cache, for example:
+Similarly for the cache. Bazis requires Redis (django-redis): model items are cached and
+invalidated by key pattern, which other Django cache backends do not support. The system
+check ``bazis.E001`` reports another backend. For example:
 
 .. code-block:: none
 
-    BS_CACHES__DEFAULT__BACKEND=django.core.cache.backends.locmem.LocMemCache
+    BS_CACHES__DEFAULT__BACKEND=django_redis.cache.RedisCache
+    BS_CACHES__DEFAULT__LOCATION=redis://redis:6379/1
 
 Note that **...__DEFAULT__...** is specified in uppercase - this is a server deployment requirement.
 In the Bazis configuration, an alias is used to convert to lowercase:
@@ -93,6 +96,67 @@ In the Bazis configuration, an alias is used to convert to lowercase:
 
     class DatabaseDefault(BaseModel):
         default: Database = Field(Database(), alias='DEFAULT')
+
+Required Security Settings
+--------------------------
+
+``BS_SECRET_KEY`` must be set in the environment of every project deployment and be the
+same for all processes of the deployment: sessions, CSRF tokens and signed data depend on it.
+The key must be at least 32 characters long, contain at least 5 unique characters and
+must not be a ``django-insecure-`` development key. Generate one, for example, with:
+
+.. code-block:: bash
+
+    python -c "import secrets; print(secrets.token_urlsafe(50))"
+
+With ``BS_DEBUG=false`` an absent or weak key stops the application at startup with
+``ImproperlyConfigured``. With ``BS_DEBUG=true`` a warning is logged, and an absent key is
+replaced by a temporary random one, which changes on every start.
+
+``BS_DEBUG`` must be ``false`` in production: with DEBUG enabled error responses include
+tracebacks and the OpenAPI documentation is published.
+
+``BS_ALLOWED_HOSTS`` defaults to ``["*"]``. The wildcard is removed as soon as concrete hosts
+are configured (in the environment, in ``settings.py`` or through ``BS_APP_DOMAIN`` /
+``BS_ADMIN_DOMAIN``), so that it does not disable host validation.
+
+Email Settings
+--------------
+
+Django 6.1 deprecates the ``EMAIL_*`` settings in favour of ``MAILERS`` (they are removed
+in Django 7.0). Bazis configures ``MAILERS['default']`` with ``BAZIS_EMAIL_BACKEND``
+(``bazis.core.mail.DynamicSMTPEmailBackend`` by default), which reads the SMTP parameters
+from the dynamic settings every time a connection is created, so they can be changed
+in the admin panel:
+
+.. code-block:: none
+
+    BS_BAZIS_EMAIL_HOST=smtp.example.com
+    BS_BAZIS_EMAIL_PORT=587
+    BS_BAZIS_EMAIL_HOST_USER=user
+    BS_BAZIS_EMAIL_HOST_PASSWORD=password
+    BS_BAZIS_EMAIL_USE_TLS=true
+    BS_BAZIS_EMAIL_USE_SSL=false
+    BS_DEFAULT_FROM_EMAIL=noreply@example.com
+
+For development, the messages can be printed instead of sent:
+
+.. code-block:: none
+
+    BS_BAZIS_EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+
+The former variables (``BS_EMAIL_HOST`` and others) are still read, with a deprecation
+warning, and the values stored in the admin panel are moved to the new names by the
+``core.0003_rename_email_settings`` migration. If a project defines the ``EMAIL_*``
+settings in its ``settings.py``, Bazis does not configure ``MAILERS``: Django does not
+allow combining them.
+
+Schema Cache
+------------
+
+Bazis generates Pydantic schemas per route, action and combination of included resources.
+Schemas that are not used for ``BS_BAZIS_SCHEMA_CACHE_TTL`` seconds (3600 by default) are
+removed from the cache and generated again on demand; ``0`` keeps them forever.
 
 Notes
 -----

@@ -32,8 +32,18 @@ def routes(self) -> list[BaseRoute]:
     Override of FastAPI.routes property to filter duplicates.
     """
     routes_uniq = []
+    included_keys = set()
     for r in self.router.routes:
-        if r not in routes_uniq:
+        # since FastAPI 0.137 included routers are kept as wrappers referencing the router;
+        # they are compared by the router and prefix instead of the (expensive) dataclass
+        # equality, which also compares the lazily built routes
+        if (included_router := getattr(r, 'original_router', None)) is not None:
+            key = (id(included_router), getattr(r.include_context, 'prefix', None))
+            if key in included_keys:
+                continue
+            included_keys.add(key)
+            routes_uniq.append(r)
+        elif r not in routes_uniq:
             routes_uniq.append(r)
     return routes_uniq
 
@@ -46,82 +56,39 @@ import typing
 from typing import Literal
 
 from pydantic import BaseModel
-from pydantic._internal import _generate_schema
 
 from pydantic_core import to_jsonable_python
 
 
-if typing.TYPE_CHECKING:
-    from pydantic import IncEx
-    from pydantic.config import JsonDict
-    from pydantic.json_schema import JsonSchemaValue
-
-
-def add_json_schema_extra(
-    json_schema: 'JsonSchemaValue',
-    json_schema_extra: typing.Union['JsonDict', typing.Callable[['JsonDict'], None], None],
-):
-    """
-    Monkey patch: Adds custom fields to Pydantic JSON schema generation.
-
-    Extends Pydantic's schema generation to support:
-    - Dictionary-based schema extras
-    - Callable schema modifiers
-
-    Enables custom OpenAPI extensions and metadata.
-    """
-    if isinstance(json_schema_extra, dict):
-        json_schema.update(to_jsonable_python(json_schema_extra, serialize_unknown=True))
-    elif callable(json_schema_extra):
-        json_schema_extra(json_schema)
-
-
-_generate_schema.add_json_schema_extra = add_json_schema_extra
+_model_dump_original = BaseModel.model_dump
 
 
 def model_dump(
     self,
     *,
     mode: Literal['json', 'python'] | str = 'python',
-    include: 'IncEx' = None,
-    exclude: 'IncEx' = None,
-    by_alias: bool = False,
-    exclude_unset: bool = False,
-    exclude_defaults: bool = False,
-    exclude_none: bool = False,
-    round_trip: bool = False,
-    warnings: bool = True,
+    fallback: typing.Callable[[typing.Any], typing.Any] | None = None,
+    **kwargs,
 ) -> dict[str, typing.Any]:
     """
     Monkey patch: Enhanced Pydantic model serialization with fallback.
 
-    Overrides BaseModel.model_dump to add string fallback for unknown types
+    Wraps BaseModel.model_dump to add string fallback for unknown types
     in JSON mode. Prevents serialization errors for custom objects.
+    All other arguments are passed to the original method as is, so the patch
+    stays compatible with new arguments added by Pydantic.
 
     Args:
         mode: 'json' or 'python' serialization mode
-        include/exclude: Field inclusion/exclusion patterns
-        by_alias: Use field aliases in output
-        exclude_unset/defaults/none: Filter output values
-        round_trip: Enable round-trip serialization
-        warnings: Show validation warnings
+        fallback: Function for unknown values; defaults to str in JSON mode
+        kwargs: Other arguments of BaseModel.model_dump
 
     Returns:
         Serialized model as dictionary
     """
-    return self.__pydantic_serializer__.to_python(
-        self,
-        mode=mode,
-        by_alias=by_alias,
-        include=include,
-        exclude=exclude,
-        exclude_unset=exclude_unset,
-        exclude_defaults=exclude_defaults,
-        exclude_none=exclude_none,
-        round_trip=round_trip,
-        warnings=warnings,
-        fallback=(lambda obj: str(obj)) if mode == 'json' else None,
-    )
+    if fallback is None and mode == 'json':
+        fallback = str
+    return _model_dump_original(self, mode=mode, fallback=fallback, **kwargs)
 
 
 BaseModel.model_dump = model_dump
