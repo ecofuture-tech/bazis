@@ -16,6 +16,7 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -24,6 +25,7 @@ jobs:
   tests:
     name: tests (python ${{ matrix.python }}, ${{ matrix.resolution }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -72,7 +74,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install GDAL (required by the PostGIS database backend)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gdal-bin
+        # a stalled Ubuntu mirror must fail the step quickly instead of hanging the job
+        timeout-minutes: 10
+        run: |
+          APT="sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          $APT update
+          $APT install -y --no-install-recommends gdal-bin
 
       - uses: astral-sh/setup-uv@v6
         with:
