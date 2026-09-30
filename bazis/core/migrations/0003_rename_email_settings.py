@@ -18,6 +18,7 @@ settings of Bazis are renamed to BAZIS_EMAIL_*. The values stored in Constance a
 moved to the new keys, unless a value for the new key already exists.
 """
 
+from django.conf import settings
 from django.db import migrations
 
 
@@ -32,9 +33,12 @@ RENAMED_KEYS = {
 
 
 def rename_keys(schema_editor, renames: dict[str, str]):
-    # raw SQL, as in 0002: the Constance model may change in the future
+    # raw SQL, as in 0002: the Constance model may change in the future;
+    # the database backend of Constance stores the keys with an optional prefix
+    prefix = getattr(settings, 'CONSTANCE_DATABASE_PREFIX', '')
     with schema_editor.connection.cursor() as cursor:
         for old_key, new_key in renames.items():
+            old_key, new_key = f'{prefix}{old_key}', f'{prefix}{new_key}'
             cursor.execute(
                 'UPDATE constance_constance SET key = %s WHERE key = %s '
                 'AND NOT EXISTS (SELECT 1 FROM constance_constance WHERE key = %s)',

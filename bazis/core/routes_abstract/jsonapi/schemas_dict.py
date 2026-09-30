@@ -55,6 +55,14 @@ class SchemasDict(UserDict, dict[ApiAction, type[BaseModel]]):
         self.includes = includes
         super().__init__(dict=dict, **kwargs)
 
+    def _resource_schema(self, schema_factory):
+        """
+        Returns the resource schema of the factory for a response or a request schema.
+        """
+        if self.is_response_schema:
+            return schema_factory.resource_schema_default_response
+        return schema_factory.resource_schema_default
+
     def build_schema_list(self):
         """
         Builds the schema for the LIST CRUD API action.
@@ -76,15 +84,8 @@ class SchemasDict(UserDict, dict[ApiAction, type[BaseModel]]):
             if k in self.includes
         ]
         return schema_factory.build_schema(
-            schema_resource=schema_factory.resource_schema_default_response
-            if self.is_response_schema
-            else schema_factory.resource_schema_default,
-            inclusions=[
-                f.resource_schema_default
-                if not self.is_response_schema
-                else f.resource_schema_default_response
-                for f in inclusions_factory
-            ],
+            schema_resource=self._resource_schema(schema_factory),
+            inclusions=[self._resource_schema(f) for f in inclusions_factory],
             is_response_schema=self.is_response_schema,
         )
 
@@ -111,10 +112,10 @@ class SchemasDict(UserDict, dict[ApiAction, type[BaseModel]]):
         ]
 
         return schema_factory_update.build_schema(
-            schema_resource=schema_factory_update.resource_schema_default,
+            schema_resource=self._resource_schema(schema_factory_update),
             inclusions=(
-                [f.resource_schema_default for f in inclusions_factory_update]
-                + [f.resource_schema_default for f in inclusions_factory_create]
+                [self._resource_schema(f) for f in inclusions_factory_update]
+                + [self._resource_schema(f) for f in inclusions_factory_create]
             ),
             is_response_schema=self.is_response_schema,
         )
@@ -134,8 +135,8 @@ class SchemasDict(UserDict, dict[ApiAction, type[BaseModel]]):
             if k in self.includes
         ]
         return schema_factory.build_schema(
-            schema_resource=schema_factory.resource_schema_default,
-            inclusions=[f.resource_schema_default for f in inclusions_factory],
+            schema_resource=self._resource_schema(schema_factory),
+            inclusions=[self._resource_schema(f) for f in inclusions_factory],
             is_response_schema=self.is_response_schema,
         )
 
