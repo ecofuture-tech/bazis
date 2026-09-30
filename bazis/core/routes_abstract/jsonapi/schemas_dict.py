@@ -76,9 +76,9 @@ class SchemasDict(UserDict, dict[ApiAction, type[BaseModel]]):
             if k in self.includes
         ]
         return schema_factory.build_schema(
-            schema_resource=schema_factory.resource_schema_default
+            schema_resource=schema_factory.resource_schema_default_response
             if self.is_response_schema
-            else schema_factory.resource_schema_default_response,
+            else schema_factory.resource_schema_default,
             inclusions=[
                 f.resource_schema_default
                 if not self.is_response_schema

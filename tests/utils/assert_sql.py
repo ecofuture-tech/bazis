@@ -60,13 +60,85 @@ def get_sql_query(query_numbers: list[int] | None = None) -> list[str] | str:
     return prepared_queries if len(prepared_queries) > 1 else prepared_queries[0]
 
 
+_QUOTED_ALIAS_RE = re.compile(r'"([a-z]\d+)"')
+
+
+def _split_top_level(expr: str) -> list[str]:
+    """Splits an expression by commas that are not nested in parentheses or quotes."""
+    parts, depth, quote, start = [], 0, None, 0
+    for i, ch in enumerate(expr):
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in ('"', "'"):
+            quote = ch
+        elif ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+        elif ch == ',' and depth == 0:
+            parts.append(expr[start:i].strip())
+            start = i + 1
+    parts.append(expr[start:].strip())
+    return parts
+
+
+def _find_closing_paren(sql: str, open_idx: int) -> int:
+    depth, quote = 0, None
+    for i in range(open_idx, len(sql)):
+        ch = sql[i]
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in ('"', "'"):
+            quote = ch
+        elif ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+            if depth == 0:
+                return i
+    raise ValueError(f'Unbalanced parentheses in SQL: {sql}')
+
+
+def _json_object_to_jsonb_build_object(sql: str) -> str:
+    """
+    Converts the native ``JSON_OBJECT((key) VALUE value, ... RETURNING JSONB)`` syntax,
+    which Django emits on PostgreSQL 16+, into the equivalent ``JSONB_BUILD_OBJECT(key, value)``
+    form emitted for older PostgreSQL servers.
+    """
+    marker = 'json_object('
+    while (idx := sql.find(marker)) != -1:
+        open_idx = idx + len(marker) - 1
+        close_idx = _find_closing_paren(sql, open_idx)
+        inner = _json_object_to_jsonb_build_object(sql[open_idx + 1 : close_idx])
+        inner = re.sub(r'\s+returning\s+jsonb\s*$', '', inner)
+        args = []
+        for pair in _split_top_level(inner):
+            key, value = pair.split(' value ', 1)
+            key = key.strip()
+            if key.startswith('(') and _find_closing_paren(key, 0) == len(key) - 1:
+                key = key[1:-1]
+            args.extend((key, value.strip()))
+        sql = f'{sql[:idx]}jsonb_build_object({", ".join(args)}){sql[close_idx + 1 :]}'
+    return sql
+
+
+def normalize_sql(sql: str) -> str:
+    """
+    Normalizes SQL so that the comparison does not depend on the Django and PostgreSQL versions:
+    whitespace and case are unified, subquery aliases are unquoted (Django 6.1 quotes them)
+    and JSON_OBJECT is rewritten to JSONB_BUILD_OBJECT (Django uses it on PostgreSQL 16+).
+    """
+    sql = re.sub(r'\s+', ' ', sql.strip()).lower()
+    sql = _QUOTED_ALIAS_RE.sub(r'\1', sql)
+    return _json_object_to_jsonb_build_object(sql)
+
+
 def assert_sql_query(expected_sql, actual_query, id_hex=None):
     if not expected_sql or not actual_query:
         return
     """Compares actual SQL query with expected template."""
     if id_hex is not None:
         expected_sql = expected_sql.replace('id_hex', id_hex)
-    assert (
-        re.sub(r'\s+', ' ', actual_query.strip()).lower()
-        == re.sub(r'\s+', ' ', expected_sql.strip()).lower()
-    )
+    assert normalize_sql(actual_query) == normalize_sql(expected_sql)
