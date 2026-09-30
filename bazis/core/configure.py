@@ -29,7 +29,6 @@ import logging
 import os
 from copy import deepcopy
 from importlib import import_module
-from secrets import token_hex
 from typing import Any, cast
 
 from django.apps import apps
@@ -179,7 +178,9 @@ def validate_security_settings(values: dict) -> None:
     for problem in problems:
         logger.warning('%s. This is only allowed with DEBUG enabled.', problem)
     if not secret_key:
-        values['SECRET_KEY'] = token_hex()
+        from bazis.core.conf import secret_key_generate
+
+        values['SECRET_KEY'] = secret_key_generate()
 
 
 def parse_list_env(value: str) -> list[str]:
@@ -261,6 +262,10 @@ LEGACY_EMAIL_SETTINGS = {
 }
 
 
+DJANGO_SMTP_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+DYNAMIC_SMTP_BACKEND = 'bazis.core.mail.DynamicSMTPEmailBackend'
+
+
 def apply_legacy_email_env() -> None:
     """
     Maps the environment variables of the renamed email settings (BS_EMAIL_HOST, ...)
@@ -292,7 +297,12 @@ def configure_mailers(values: dict) -> None:
             ', '.join(legacy),
         )
         return
-    values['MAILERS'] = {'default': {'BACKEND': values['BAZIS_EMAIL_BACKEND']}}
+    backend = values['BAZIS_EMAIL_BACKEND']
+    if backend == DJANGO_SMTP_BACKEND:
+        # with MAILERS the stock SMTP backend takes its parameters from OPTIONS only,
+        # the dynamic one reads them from the BAZIS_EMAIL_* settings
+        backend = DYNAMIC_SMTP_BACKEND
+    values['MAILERS'] = {'default': {'BACKEND': backend}}
 
 
 apply_legacy_email_env()
@@ -326,6 +336,12 @@ if SETTINGS_MODULE:
                     field_info.annotation,
                 )
 
+        # A wildcard set explicitly in the project settings module is kept (see below)
+        _project_allowed_hosts = SETTINGS_MODULE.__dict__.get('ALLOWED_HOSTS')
+        _project_wildcard = isinstance(_project_allowed_hosts, list | tuple) and (
+            '*' in _project_allowed_hosts
+        )
+
         # Merge Bazis settings into Django SETTINGS_MODULE
         # Strategy: update existing collections, set missing values
         for sett_key, sett_value in _settings.model_dump().items():
@@ -344,10 +360,15 @@ if SETTINGS_MODULE:
                 elif isinstance(existing_value, tuple) and isinstance(sett_value, tuple):
                     SETTINGS_MODULE.__dict__[sett_key] = existing_value + sett_value
 
-        # A wildcard only makes sense on its own: merged with concrete hosts
-        # (e.g. the Bazis default '*' plus the project hosts) it disables host validation.
+        # The default Bazis wildcard merged with concrete hosts would disable host validation,
+        # so it is dropped unless the project settings module set it explicitly.
         ALLOWED_HOSTS = SETTINGS_MODULE.__dict__.get('ALLOWED_HOSTS')
-        if isinstance(ALLOWED_HOSTS, list) and len(ALLOWED_HOSTS) > 1 and '*' in ALLOWED_HOSTS:
+        if (
+            isinstance(ALLOWED_HOSTS, list)
+            and len(ALLOWED_HOSTS) > 1
+            and '*' in ALLOWED_HOSTS
+            and not _project_wildcard
+        ):
             ALLOWED_HOSTS.remove('*')
 
         validate_security_settings(SETTINGS_MODULE.__dict__)

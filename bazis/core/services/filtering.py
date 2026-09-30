@@ -59,7 +59,7 @@ class ServiceFiltering:
                 filters_aliases=filters_aliases,
                 fiter_context=fiter_context,
             )
-        except (FieldError, ValidationError, ValueError, TypeError, IndexError, KeyError) as e:
+        except (FieldError, ValidationError, ValueError, IndexError) as e:
             # a malformed filter is a client error, not a server failure
             raise JsonApiBazisException(
                 JsonApiBazisError(

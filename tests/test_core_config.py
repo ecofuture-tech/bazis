@@ -133,3 +133,18 @@ def test_cache_check_requires_redis():
     ):
         errors = checks.check_cache_backend(None)
     assert [e.id for e in errors] == ['bazis.E001']
+
+
+def test_configure_mailers_replaces_stock_smtp_backend():
+    # with MAILERS the stock SMTP backend reads only OPTIONS, so BAZIS_EMAIL_* would be ignored
+    values = {'BAZIS_EMAIL_BACKEND': 'django.core.mail.backends.smtp.EmailBackend'}
+    configure.configure_mailers(values)
+    assert values['MAILERS'] == {
+        'default': {'BACKEND': 'bazis.core.mail.DynamicSMTPEmailBackend'}
+    }
+
+    console = {'BAZIS_EMAIL_BACKEND': 'django.core.mail.backends.console.EmailBackend'}
+    configure.configure_mailers(console)
+    assert console['MAILERS'] == {
+        'default': {'BACKEND': 'django.core.mail.backends.console.EmailBackend'}
+    }
