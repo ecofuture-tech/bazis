@@ -96,7 +96,8 @@ Running a Test Project (Docker)
    .. code-block:: bash
 
        BS_DEBUG=true
-       BS_SECRET_KEY=1232434535465476587689780999
+       # generate: python -c "import secrets; print(secrets.token_urlsafe(50))"
+       BS_SECRET_KEY=replace-with-a-random-key-of-at-least-32-characters
 
        BS_HOST_URL=http://localhost:9000
 

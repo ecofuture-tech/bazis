@@ -14,8 +14,10 @@
 
 from pydantic import BaseModel
 
+from bazis.core.schemas.cache import TTLCache, get_schema_cache_ttl
 
-OPENAPI_CACHE = {}
+
+OPENAPI_CACHE = TTLCache(get_schema_cache_ttl)
 
 
 def with_cache_openapi_schema(schema: type[BaseModel], lang: str = None) -> dict:

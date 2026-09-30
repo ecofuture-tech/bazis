@@ -14,11 +14,14 @@
 
 from urllib.parse import unquote_plus
 
+from django.core.exceptions import FieldError, ValidationError
 from django.db import models
 from django.db.models import QuerySet
+from django.utils.translation import gettext_lazy as _
 
 from typing_extensions import deprecated
 
+from bazis.core.errors import JsonApiBazisError, JsonApiBazisException
 from bazis.core.utils.query_complex import QueryToOrm
 
 
@@ -49,12 +52,25 @@ class ServiceFiltering:
         :param fiter_context: Optional context dictionary for additional filtering logic.
         :return: Filtered QuerySet.
         """
-        return QueryToOrm.qs_apply(
-            queryset,
-            self.query_str,
-            filters_aliases=filters_aliases,
-            fiter_context=fiter_context,
-        )
+        try:
+            return QueryToOrm.qs_apply(
+                queryset,
+                self.query_str,
+                filters_aliases=filters_aliases,
+                fiter_context=fiter_context,
+            )
+        except (FieldError, ValidationError, ValueError, TypeError, IndexError, KeyError) as e:
+            # a malformed filter is a client error, not a server failure
+            raise JsonApiBazisException(
+                JsonApiBazisError(
+                    detail=str(e),
+                    loc=('query', 'filter'),
+                    code='ERR_FILTER',
+                    title=_('Invalid filter'),
+                    status=400,
+                ),
+                status=400,
+            ) from e
 
 
 @deprecated('Filtering is deprecated, use bazis.core.utils.query_complex.QueryToOrm instead.')

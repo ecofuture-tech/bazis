@@ -281,7 +281,7 @@ class InitialBase(CloneMixin, models.Model, metaclass=InitialMetaclass):
 
         """
 
-        key = f'bs::items::{cls.__name__}::{str(kwargs)}'
+        key = f'{cls._get_cache_prefix()}{str(kwargs)}'
 
         if item := cache.get(key):
             return item
@@ -295,7 +295,29 @@ class InitialBase(CloneMixin, models.Model, metaclass=InitialMetaclass):
         Saves the current instance and clears related cache patterns.
         """
         super().save(*args, **kwargs)
-        cache.delete_pattern(f'bs::items::{type(self).__name__}::*')
+        self._cache_invalidate()
+
+    def delete(self, *args, **kwargs):
+        """
+        Deletes the current instance and clears related cache patterns.
+        """
+        result = super().delete(*args, **kwargs)
+        self._cache_invalidate()
+        return result
+
+    @classmethod
+    def _get_cache_prefix(cls) -> str:
+        """
+        Returns the cache key prefix of the model items. The app label is included,
+        so that models with the same name in different apps do not share cache entries.
+        """
+        return f'bs::items::{cls._meta.label}::'
+
+    def _cache_invalidate(self):
+        """
+        Clears the cached items of the model. Requires the django-redis cache backend.
+        """
+        cache.delete_pattern(f'{self._get_cache_prefix()}*')
 
 
 class JsonApiMixin(InitialBase):

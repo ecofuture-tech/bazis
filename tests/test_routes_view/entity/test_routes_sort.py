@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from decimal import Decimal
+
 from django.conf import settings
 
 import pytest
@@ -45,6 +47,8 @@ from tests import factories
 def test_routes_sort(sample_app, sort_param):
     parent_entities = factories.ParentEntityFactory.create_batch(50, child_entities=True)
 
+    # equal values are ordered by the primary key (the sort is stable)
+    parent_entities = sorted(parent_entities, key=lambda x: x.id)
     if '-' in sort_param:
         clean_param = sort_param.replace('-', '')
         parent_entities = sorted(
@@ -91,3 +95,18 @@ def test_routes_sort(sample_app, sort_param):
 
         for j, _dependent_entity in enumerate(obj.dependent_entities.order_by('pk')):
             assert _dependent_entities['data'][j]['id'] == str(_dependent_entity.pk)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('sort_param', ['price', '-price'])
+def test_routes_sort_equal_values_are_ordered_by_pk(sample_app, sort_param):
+    parent_entities = factories.ParentEntityFactory.create_batch(
+        5, child_entities=False, price=Decimal('10.00')
+    )
+
+    response = get_api_client(sample_app).get(f'/api/v1/entity/parent_entity/?sort={sort_param}')
+
+    assert response.status_code == 200
+    assert [it['id'] for it in response.json()['data']] == [
+        str(it.id) for it in sorted(parent_entities, key=lambda x: x.id)
+    ]

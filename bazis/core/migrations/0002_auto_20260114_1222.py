@@ -96,9 +96,8 @@ def convert_pickle_to_json(apps, schema_editor):
                     [json_value, row_id]
                 )
 
-                print(
-                    f'  ✓ Converted {key}: {type(unpickled_value).__name__} = {unpickled_value}'
-                )
+                # the value itself is not printed: it may contain secrets (e.g. passwords)
+                print(f'  ✓ Converted {key}: {type(unpickled_value).__name__}')
                 converted_count += 1
 
             except Exception as e:
