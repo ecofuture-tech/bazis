@@ -15,13 +15,18 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.db.models import F
 
 import pytest
 from bazis_test_utils.utils import get_api_client
+from entity.models import ParentEntity
 
 from bazis.core.utils.functools import get_attr
 
 from tests import factories
+
+
+TEXT_FIELDS = {'name', 'description'}
 
 
 @pytest.mark.django_db(transaction=True)
@@ -47,15 +52,23 @@ from tests import factories
 def test_routes_sort(sample_app, sort_param):
     parent_entities = factories.ParentEntityFactory.create_batch(50, child_entities=True)
 
-    # equal values are ordered by the primary key (the sort is stable)
-    parent_entities = sorted(parent_entities, key=lambda x: x.id)
-    if '-' in sort_param:
-        clean_param = sort_param.replace('-', '')
-        parent_entities = sorted(
-            parent_entities, key=lambda x: get_attr(x, clean_param), reverse=True
+    clean_param = sort_param.lstrip('-')
+    descending = sort_param.startswith('-')
+    if clean_param in TEXT_FIELDS:
+        # text order depends on the database collation (e.g. en_US ignores spaces and case
+        # at the first level), which Python sorting does not reproduce
+        order = F(clean_param).desc() if descending else F(clean_param).asc()
+        parent_entities = list(
+            ParentEntity.objects.filter(pk__in=[it.pk for it in parent_entities]).order_by(
+                order, 'pk'
+            )
         )
     else:
-        parent_entities = sorted(parent_entities, key=lambda x: get_attr(x, sort_param))
+        # equal values are ordered by the primary key (the sort is stable)
+        parent_entities = sorted(parent_entities, key=lambda x: x.id)
+        parent_entities = sorted(
+            parent_entities, key=lambda x: get_attr(x, clean_param), reverse=descending
+        )
     # need to refresh objects from the db, as we need to update creation and update dates
     [et.refresh_from_db() for et in parent_entities]
 
