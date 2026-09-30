@@ -12,48 +12,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import inspect
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from enum import Enum, IntEnum
 from importlib import import_module
 from typing import Any
 
 from fastapi import APIRouter, params
-from fastapi._compat import (
-    ModelField,
-    annotation_is_pydantic_v1,
-    lenient_issubclass,
-)
 from fastapi.datastructures import Default, DefaultPlaceholder
-from fastapi.dependencies.utils import (
-    _should_embed_body_fields,
-    get_body_field,
-    get_dependant,
-    get_flat_dependant,
-    get_parameterless_sub_dependant,
-    get_typed_return_annotation,
-)
-from fastapi.exceptions import (
-    PydanticV1NotSupportedError,
-)
-from fastapi.routing import APIRoute, APIWebSocketRoute, request_response
+from fastapi.routing import APIRoute, APIWebSocketRoute
 from fastapi.types import DecoratedCallable, IncEx
-from fastapi.utils import (
-    create_model_field,
-    generate_unique_id,
-    get_value_or_default,
-    is_body_allowed_for_status_code,
-)
+from fastapi.utils import generate_unique_id, get_value_or_default
 
 from starlette import routing as starlette_routing
 from starlette.responses import JSONResponse, Response
-from starlette.routing import BaseRoute, compile_path, get_name
+from starlette.routing import BaseRoute
 
 
 class BazisRoute(APIRoute):
     """
-    Custom route class inheriting from FastAPI's APIRoute, with additional handling
-    for response models, dependencies, and other route-specific configurations.
+    Route class used by Bazis for fully initialized routes.
+
+    Earlier FastAPI versions cloned the response model field for every route, which is
+    very expensive for the large dynamically generated JSON:API schemas, so Bazis used to
+    carry its own copy of ``APIRoute.__init__``. Current FastAPI no longer clones the
+    response field, so the stock implementation is used and this class only remains
+    as an extension point.
+    """
+
+
+class BazisDummyRoute(APIRoute):
+    """
+    A lightweight placeholder route that only stores the route declaration.
+
+    Class-based routes are registered in many nested routers. Building dependencies and
+    response fields for them is expensive, so the placeholder skips it: when a router is
+    included into the application, FastAPI builds an effective route context from the
+    stored declaration, and that context resolves dependencies, validates and handles
+    requests. The placeholder itself is not meant to be mounted directly.
     """
 
     def __init__(
@@ -61,7 +56,7 @@ class BazisRoute(APIRoute):
         path: str,
         endpoint: Callable[..., Any],
         *,
-        response_model: Any = None,
+        response_model: Any = Default(None),
         status_code: int | None = None,
         tags: list[str | Enum] | None = None,
         dependencies: Sequence[params.Depends] | None = None,
@@ -88,172 +83,12 @@ class BazisRoute(APIRoute):
             generate_unique_id
         ),
         strict_content_type: bool | DefaultPlaceholder = Default(True),
-    ) -> None:
-        """
-        Initializes a BazisRoute instance with the given parameters, setting up the
-        path, endpoint, response model, dependencies, and other route-specific
-        configurations.
-        """
-        self.path = path
-        self.endpoint = endpoint
-        if isinstance(response_model, DefaultPlaceholder):
-            return_annotation = get_typed_return_annotation(endpoint)
-            if lenient_issubclass(return_annotation, Response):
-                response_model = None
-            else:
-                response_model = return_annotation
-        self.response_model = response_model
-        self.summary = summary
-        self.response_description = response_description
-        self.deprecated = deprecated
-        self.operation_id = operation_id
-        self.response_model_include = response_model_include
-        self.response_model_exclude = response_model_exclude
-        self.response_model_by_alias = response_model_by_alias
-        self.response_model_exclude_unset = response_model_exclude_unset
-        self.response_model_exclude_defaults = response_model_exclude_defaults
-        self.response_model_exclude_none = response_model_exclude_none
-        self.include_in_schema = include_in_schema
-        self.response_class = response_class
-        self.dependency_overrides_provider = dependency_overrides_provider
-        self.callbacks = callbacks
-        self.openapi_extra = openapi_extra
-        self.generate_unique_id_function = generate_unique_id_function
-        self.tags = tags or []
-        self.responses = responses or {}
-        self.name = get_name(endpoint) if name is None else name
-        self.path_regex, self.path_format, self.param_convertors = compile_path(path)
-        self.strict_content_type = strict_content_type
-        if methods is None:
-            methods = ['GET']
-        self.methods: set[str] = {method.upper() for method in methods}
-        if isinstance(generate_unique_id_function, DefaultPlaceholder):
-            current_generate_unique_id: Callable[[APIRoute], str] = (
-                generate_unique_id_function.value
-            )
-        else:
-            current_generate_unique_id = generate_unique_id_function
-        self.unique_id = self.operation_id or current_generate_unique_id(self)
-        # normalize enums e.g. http.HTTPStatus
-        if isinstance(status_code, IntEnum):
-            status_code = int(status_code)
-        self.status_code = status_code
-        if self.response_model:
-            assert is_body_allowed_for_status_code(status_code), (
-                f'Status code {status_code} must not have a response body'
-            )
-            response_name = 'Response_' + self.unique_id
-            if annotation_is_pydantic_v1(self.response_model):
-                raise PydanticV1NotSupportedError(
-                    'pydantic.v1 models are no longer supported by FastAPI.'
-                    f' Please update the response model {self.response_model!r}.'
-                )
-            self.response_field = create_model_field(
-                name=response_name,
-                type_=self.response_model,
-                mode='serialization',
-            )
-            # Create a clone of the field, so that a Pydantic submodel is not returned
-            # as is just because it's an instance of a subclass of a more limited class
-            # e.g. UserInDB (containing hashed_password) could be a subclass of User
-            # that doesn't have the hashed_password. But because it's a subclass, it
-            # would pass the validation and be returned as is.
-            # By being a new field, no inheritance will be passed as is. A new model
-            # will be always created.
-            # self.secure_cloned_response_field: Optional[
-            #     ModelField
-            # ] = create_cloned_field(self.response_field)
-            self.secure_cloned_response_field: ModelField | None = self.response_field
-        else:
-            self.response_field = None  # type: ignore
-            self.secure_cloned_response_field = None
-        self.dependencies = list(dependencies or [])
-        self.description = description or inspect.cleandoc(self.endpoint.__doc__ or '')
-        # if a "form feed" character (page break) is found in the description text,
-        # truncate description text to the content preceding the first "form feed"
-        self.description = self.description.split('\f')[0].strip()
-        response_fields = {}
-        for additional_status_code, response in self.responses.items():
-            assert isinstance(response, dict), 'An additional response must be a dict'
-            model = response.get('model')
-            if model:
-                assert is_body_allowed_for_status_code(additional_status_code), (
-                    f'Status code {additional_status_code} must not have a response body'
-                )
-                response_name = f'Response_{additional_status_code}_{self.unique_id}'
-                if annotation_is_pydantic_v1(model):
-                    raise PydanticV1NotSupportedError(
-                        'pydantic.v1 models are no longer supported by FastAPI.'
-                        f' In responses={{}}, please update {model}.'
-                    )
-                response_field = create_model_field(
-                    name=response_name, type_=model, mode='serialization'
-                )
-                response_fields[additional_status_code] = response_field
-        if response_fields:
-            self.response_fields: dict[int | str, ModelField] = response_fields
-        else:
-            self.response_fields = {}
-
-        assert callable(endpoint), 'An endpoint must be a callable'
-        self.dependant = get_dependant(path=self.path_format, call=self.endpoint, scope='function')
-        for depends in self.dependencies[::-1]:
-            self.dependant.dependencies.insert(
-                0,
-                get_parameterless_sub_dependant(depends=depends, path=self.path_format),
-            )
-        self._flat_dependant = get_flat_dependant(self.dependant)
-        self._embed_body_fields = _should_embed_body_fields(self._flat_dependant.body_params)
-        self.body_field = get_body_field(
-            flat_dependant=self._flat_dependant,
-            name=self.unique_id,
-            embed_body_fields=self._embed_body_fields,
-        )
-        self.app = request_response(self.get_route_handler())
-
-
-class BazisDummyRoute(APIRoute):
-    """
-    A simplified version of BazisRoute, intended for use as a placeholder or default
-    route class with basic configurations.
-    """
-
-    def __init__(
-        self,
-        path: str,
-        endpoint: Callable[..., Any],
-        *,
-        response_model: Any = None,
-        status_code: int | None = None,
-        tags: list[str | Enum] | None = None,
-        dependencies: Sequence[params.Depends] | None = None,
-        summary: str | None = None,
-        description: str | None = None,
-        response_description: str = 'Successful Response',
-        responses: dict[int | str, dict[str, Any]] | None = None,
-        deprecated: bool | None = None,
-        name: str | None = None,
-        methods: set[str] | list[str] | None = None,
-        operation_id: str | None = None,
-        response_model_include: IncEx | None = None,
-        response_model_exclude: IncEx | None = None,
-        response_model_by_alias: bool = True,
-        response_model_exclude_unset: bool = False,
-        response_model_exclude_defaults: bool = False,
-        response_model_exclude_none: bool = False,
-        include_in_schema: bool = True,
-        response_class: type[Response] | DefaultPlaceholder = Default(JSONResponse),
-        dependency_overrides_provider: Any | None = None,
-        callbacks: list[BaseRoute] | None = None,
-        openapi_extra: dict[str, Any] | None = None,
-        generate_unique_id_function: Callable[['APIRoute'], str] | DefaultPlaceholder = Default(
-            generate_unique_id
-        ),
+        stream_item_type: Any | None = None,
         **kwargs,
     ) -> None:
         """
-        Initializes a BazisDummyRoute instance with the given parameters, setting up the
-        path, endpoint, response model, dependencies, and other basic configurations.
+        Initializes a BazisDummyRoute instance, storing the route declaration without
+        building dependencies and response fields.
         """
         self.path = path
         self.endpoint = endpoint
@@ -274,6 +109,8 @@ class BazisDummyRoute(APIRoute):
         self.callbacks = callbacks
         self.openapi_extra = openapi_extra
         self.generate_unique_id_function = generate_unique_id_function
+        self.strict_content_type = strict_content_type
+        self.stream_item_type = stream_item_type
         self.tags = tags or []
         self.responses = responses or {}
         self.name = name
@@ -288,6 +125,30 @@ class BazisDummyRoute(APIRoute):
 
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+
+def iter_api_routes(routes: Sequence[BaseRoute]) -> Iterator[APIRoute]:
+    """
+    Iterates over the declared API routes, including the routes of included routers.
+
+    Since FastAPI 0.137 ``include_router`` does not copy the routes into the parent router:
+    it adds a wrapper that references the included router (``original_router``) and builds
+    the effective routes lazily. The wrappers are walked without building them.
+
+    Tags: RAG, EXPORT
+    """
+    seen = set()
+
+    def walk(routes_: Sequence[BaseRoute]) -> Iterator[APIRoute]:
+        for route in routes_:
+            if isinstance(route, APIRoute):
+                if id(route) not in seen:
+                    seen.add(id(route))
+                    yield route
+            elif isinstance(included := getattr(route, 'original_router', None), APIRouter):
+                yield from walk(included.routes)
+
+    yield from walk(routes)
 
 
 class BazisRouter(APIRouter):
@@ -307,18 +168,17 @@ class BazisRouter(APIRouter):
         kwargs.setdefault('route_class', BazisDummyRoute)
         super().__init__(**kwargs)
 
-    def routes_cast(self, new_class: type[APIRoute] = APIRoute) -> list[APIRoute]:
+    def routes_cast(self, new_class: type[APIRoute] = APIRoute) -> list[BaseRoute]:
         """
-        Changes the route type to the specified one. This method is intended to work around
-        the issue of the default route type setting in FastAPI, where the route type
-        is determined through fastapi.routing.APIRouter.include_router:
-
-        route_class_override=type(route)
+        Changes the class of the routes of this router and all included routers to the
+        specified one. It is used to replace the lightweight BazisDummyRoute placeholders,
+        so that the methods of the target class (e.g. ``get_route_handler``) are used
+        when FastAPI builds the effective routes of the application.
 
         :param new_class: The class to which the route type should be changed.
-        :return: A list of routes with the changed type.
+        :return: The routes of the router.
         """
-        for route in self.routes:
+        for route in iter_api_routes(self.routes):
             route.__class__ = new_class
         return self.routes
 
@@ -398,6 +258,7 @@ class BazisRouter(APIRouter):
                 callbacks=route.callbacks.copy(),
                 openapi_extra=route.openapi_extra,
                 generate_unique_id_function=current_generate_unique_id,
+                strict_content_type=route.strict_content_type,
             )
         elif isinstance(route, starlette_routing.Route):
             methods = list(route.methods or [])  # type: ignore # in Starlette

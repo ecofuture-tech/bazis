@@ -111,7 +111,7 @@ def _initialize_app(app): # noqa: C901
     from starlette.concurrency import run_in_threadpool
     from starlette.middleware.sessions import SessionMiddleware
     from starlette.responses import JSONResponse
-    from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
+    from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
 
     from bazis.core.i18n import LanguageMiddleware, expand_lang
     from bazis.core.utils.functools import get_attr
@@ -293,7 +293,7 @@ def _initialize_app(app): # noqa: C901
         return exc_encoder(
             [
                 SchemaError(
-                    status=HTTP_422_UNPROCESSABLE_ENTITY,
+                    status=HTTP_422_UNPROCESSABLE_CONTENT,
                     code='ERR_VALIDATE',
                     title=err['type'],
                     detail=err['msg'],
@@ -305,7 +305,7 @@ def _initialize_app(app): # noqa: C901
                 )
                 for err in exc.errors()
             ],
-            HTTP_422_UNPROCESSABLE_ENTITY,
+            HTTP_422_UNPROCESSABLE_CONTENT,
         )
 
     @app.exception_handler(HTTPException)
@@ -360,8 +360,16 @@ def _initialize_app(app): # noqa: C901
             500,
         )
 
+    from fastapi.routing import iter_route_contexts
+
     from bazis.core.router import router
     from bazis.core.routing import BazisRoute
 
     router.routes_cast(BazisRoute)
     app.include_router(router)
+
+    # FastAPI builds the routes of included routers lazily, on the first request.
+    # Building Bazis routes involves generating JSON:API schemas, so they are built at
+    # startup: the first request is not delayed and declaration errors surface early.
+    for _ in iter_route_contexts(app.router.routes):
+        pass
