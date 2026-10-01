@@ -88,7 +88,7 @@ class RouteParams:
 class RouteContext:
     """
     An object of this class is a proxy wrapper for the route function.
-    After a method becomes a route through one of the http\_... decorators,
+    After a method becomes a route through one of the http_... decorators,
     accessing it returns a RouteContext object.
     This object stores references to the original method, routing parameters,
     the endpoint function, and the route's local storage.

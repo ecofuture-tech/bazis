@@ -17,6 +17,7 @@ from django.apps import apps
 from sample.route_mixins import ContextTestRouteMixin
 
 from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
+from bazis.core.schemas.enums import CrudApiAction
 from bazis.core.schemas.fields import SchemaField, SchemaFields
 
 
@@ -71,6 +72,13 @@ class ParentEntityRouteSet(JsonapiRouteBase):
                 'extended_entity_price': SchemaField(
                     source='extended_entity_price', required=False
                 ),
+            },
+        ),
+        # writable through the relationships endpoints in the tests
+        CrudApiAction.UPDATE: SchemaFields(
+            include={
+                'extended_entity_null': None,
+                'dependent_entities_null': None,
             },
         ),
     }
