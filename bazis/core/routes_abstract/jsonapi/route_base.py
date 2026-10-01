@@ -32,6 +32,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, ValidationError
 
 from bazis.core.errors import (
+    JsonApi403Exception,
     JsonApiBazisError,
     JsonApiBazisException,
     JsonApiHttpException,
@@ -503,13 +504,7 @@ class JsonapiRouteBase(InitialRouteBase):
         Handles the HTTP POST request to add relationships.
         """
         if relationships_data.data:
-            self.relationships_service.apply_relationship_action(
-                action='add',
-                model=self.model,
-                item_id=item_id,
-                related_field_name=related_field_name,
-                relationships_data=relationships_data,
-            )
+            self.relationships_change('add', item_id, related_field_name, relationships_data)
         return Response(status_code=204)
 
     @http_patch(
@@ -528,13 +523,7 @@ class JsonapiRouteBase(InitialRouteBase):
         """
         Handles the HTTP PATCH request to update relationships.
         """
-        self.relationships_service.apply_relationship_action(
-            action='set',
-            model=self.model,
-            item_id=item_id,
-            related_field_name=related_field_name,
-            relationships_data=relationships_data,
-        )
+        self.relationships_change('set', item_id, related_field_name, relationships_data)
         return Response(status_code=204)
 
     @http_delete(
@@ -554,13 +543,7 @@ class JsonapiRouteBase(InitialRouteBase):
         Handles the HTTP DELETE request to remove relationships.
         """
         if relationships_data.data:
-            self.relationships_service.apply_relationship_action(
-                action='remove',
-                model=self.model,
-                item_id=item_id,
-                related_field_name=related_field_name,
-                relationships_data=relationships_data,
-            )
+            self.relationships_change('remove', item_id, related_field_name, relationships_data)
         return Response(status_code=204)
 
     @http_delete('/{item_id}/', inject_tags=[CrudApiAction.DESTROY], status_code=204)
@@ -716,6 +699,119 @@ class JsonapiRouteBase(InitialRouteBase):
             raise HTTPException(status_code=404, detail='Item not found')
         self.item.only_fields = only_fields
         return self.item
+
+    def relationships_change(
+        self,
+        action: str,
+        item_id: str,
+        related_field_name: str,
+        relationships_data: RelationshipData,
+    ):
+        """
+        Changes a relationship of an item (the relationships endpoints) with the same
+        checks as an update of the item: the item is taken through the route, the
+        relationship must be writable in the update schema of the route (for this user),
+        the `filter:` restrictions of the field apply, and the hooks
+        `hook_before_relationships_change` / `hook_after_relationships_change` run inside
+        the transaction.
+        """
+        with transaction.atomic(savepoint=False):
+            self.set_api_action(CrudApiAction.UPDATE)
+            item = self.set_item(str(item_id).strip())
+
+            data = self.relationships_validate(item, related_field_name, relationships_data)
+            if action != 'remove':
+                self.relationships_restricts_check(item, data, related_field_name)
+
+            self.hook_before_relationships_change(item, data, related_field_name, action)
+            self.relationships_service.apply_relationship_action(
+                action=action,
+                model=self.model,
+                item_id=str(item.pk),
+                related_field_name=related_field_name,
+                relationships_data=relationships_data,
+            )
+            item.refresh_from_db()
+            self.hook_after_relationships_change(item, data, related_field_name, action)
+
+    def relationships_validate(
+        self, item: JsonApiMixin, related_field_name: str, relationships_data: RelationshipData
+    ) -> JsonApiDataSchema:
+        """
+        Validates the relationship data with the update schema of the route and returns
+        the validated item data. Fails with 403 if the relationship is not writable.
+        """
+        schema = self.schemas.get(CrudApiAction.UPDATE)
+        if schema is None:
+            raise JsonApi403Exception()
+
+        item_raw = {
+            'data': {
+                'id': str(item.pk),
+                'type': self.model.get_resource_label(),
+                'bs:action': CrudAccessAction.CHANGE.value,
+                'relationships': {
+                    related_field_name: relationships_data.model_dump(mode='json'),
+                },
+            }
+        }
+        try:
+            item_data = schema.model_validate(item_raw)
+        except ValidationError as e:
+            raise RequestValidationError(e.errors(), body=item_raw) from e
+
+        relationships = item_data.data.relationships
+        if relationships is None or related_field_name not in type(relationships).model_fields:
+            raise JsonApiBazisException(
+                JsonApiBazisError(
+                    detail=f'The relationship {related_field_name} cannot be changed',
+                    loc=('path', 'related_field_name'),
+                    code='ERR_RELATIONSHIP_READONLY',
+                    title='Relationship is read-only',
+                    status=403,
+                ),
+                status=403,
+            )
+        return item_data.data
+
+    def relationships_restricts_check(
+        self, item: JsonApiMixin, data: JsonApiDataSchema, related_field_name: str
+    ):
+        """
+        Applies the `filter:` restrictions of the field to the referenced objects.
+        """
+        field_info = item.get_fields_info().relations[related_field_name]
+        value = data.relationships.model_dump(exclude_unset=True)[related_field_name]
+        rel_model = field_info.related_model
+
+        if field_info.to_many:
+            ids = {str(it['id']) for it in (value.get('data') or [])}
+            allowed = data.check_restrict_m2m(related_field_name, value, rel_model)
+            allowed_ids = {str(pk) for pk in allowed.values_list('pk', flat=True)}
+            if ids - allowed_ids:
+                raise JsonApi403Exception()
+        else:
+            f_pk = (value.get('data') or {}).get('id')
+            if not data.check_restrict_rel(related_field_name, f_pk, rel_model, instance=item):
+                raise JsonApi403Exception()
+
+    def hook_before_relationships_change(
+        self, item: JsonApiMixin, data: JsonApiDataSchema, related_field_name: str, action: str
+    ):
+        """
+        Hook method called before a relationship of the item is changed through the
+        relationships endpoints. Can be overridden to add custom checks.
+        """
+        pass
+
+    def hook_after_relationships_change(
+        self, item: JsonApiMixin, data: JsonApiDataSchema, related_field_name: str, action: str
+    ):
+        """
+        Hook method called after a relationship of the item is changed through the
+        relationships endpoints (inside the transaction).
+        """
+        pass
 
     def hook_before_create(self, item: JsonApiMixin):
         """
