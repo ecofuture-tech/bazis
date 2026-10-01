@@ -1,0 +1,55 @@
+# What the package is for and how to use it, for tools and AI agents (see AGENTS.md).
+# `import` paths and `check` ids are verified by tests/test_manifest.py.
+
+[package]
+name = "bazis"
+summary = "JSON:API services on Django + FastAPI with schemas generated from the models"
+solves = [
+    "REST/JSON:API CRUD for Django models",
+    "filtering, sorting, pagination, sparse fieldsets, included resources",
+    "OpenAPI documentation",
+    "settings from environment variables and dynamic settings in the admin",
+]
+requires = []
+pairs_well = ["bazis-users", "bazis-permit"]
+
+[[extension_points]]
+name = "JsonApiMixin"
+import = "bazis.core.models_abstract.JsonApiMixin"
+use_when = "a model is a JSON:API resource (with DtMixin, UuidMixin)"
+
+[[extension_points]]
+name = "JsonapiRouteBase"
+import = "bazis.core.routes_abstract.jsonapi.JsonapiRouteBase"
+use_when = "CRUD and relationships endpoints of a model"
+
+[[extension_points]]
+name = "SchemaFields"
+import = "bazis.core.schemas.fields.SchemaFields"
+use_when = "include or exclude fields of a route, per action (CrudApiAction)"
+
+[[extension_points]]
+name = "calc_property"
+import = "bazis.core.utils.orm.calc_property"
+use_when = "a calculated field fetched in the same query"
+
+[[extension_points]]
+name = "BazisRouter"
+import = "bazis.core.routing.BazisRouter"
+use_when = "register route classes and app routers"
+
+[[extension_points]]
+name = "BazisSettings"
+import = "bazis.core.utils.schemas.BazisSettings"
+use_when = "settings of an app (conf.py), read from BS_* variables"
+
+[[pitfalls]]
+text = "ALLOWED_HOSTS is ['*'] by default: set BS_ALLOWED_HOSTS in production"
+check = "bazis.W001"
+
+[[pitfalls]]
+text = "the default cache must be Redis (django-redis): other backends do not support delete_pattern"
+check = "bazis.E001"
+
+[[pitfalls]]
+text = "reverse relations are not in the schemas by default: add them to `fields` of the route"
