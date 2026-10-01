@@ -1,0 +1,163 @@
+name: Integration
+
+# Runs the tests of every Bazis package against the code of the Bazis packages it depends on
+# at the same branch (repositories without the branch use main): a change of the core that
+# breaks a package shows up in its pull request, before it is released. See
+# docs/integration.md.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch of the package repositories (repositories without it use main)
+        default: main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - bazis-users
+          - bazis-ws
+          - bazis-bulk
+          - bazis-uploadable
+          - bazis-author
+          - bazis-authing
+          - bazis-permit
+          - bazis-statusy
+          - bazis-bg
+        kafka: [false]
+        include:
+          - package: bazis-async-background
+            kafka: true
+            topic: sample_local_async_background
+          - package: bazis-async-request
+            kafka: true
+            topic: sample_local_async_request
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bazis
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      kafka:
+        image: apache/kafka:3.9.1
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 15
+    env:
+      BS_DEBUG: 'true'
+      BS_SECRET_KEY: ci-only-secret-key-that-is-long-enough-0123456789
+      BS_DATABASES__DEFAULT__HOST: localhost
+      BS_DATABASES__DEFAULT__PORT: '5432'
+      BS_DATABASES__DEFAULT__NAME: bazis
+      BS_DATABASES__DEFAULT__USER: postgres
+      BS_DATABASES__DEFAULT__PASSWORD: postgres
+      BS_CACHES__DEFAULT__LOCATION: redis://localhost:6379/1
+      BS_MEDIA_ROOT: /tmp/bazis/media
+      BS_STATIC_ROOT: /tmp/bazis/static
+      BS_WEBAPP_ROOT: /tmp/bazis/webapp
+      SRC: ${{ github.workspace }}/../src
+      PACKAGE_DIR: ${{ github.workspace }}/../src/${{ matrix.package }}
+      CORE_DIR: ${{ github.workspace }}
+      # the branch of the pull request, the branch given to Run workflow, or main
+      REF: ${{ github.head_ref || inputs.ref || 'main' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # the tags: setuptools-scm computes the version of the core
+          fetch-depth: 0
+
+      - name: Install GDAL (required by the PostGIS database backend)
+        timeout-minutes: 10
+        run: |
+          APT="sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          $APT update
+          $APT install -y --no-install-recommends gdal-bin
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.13'
+          activate-environment: true
+
+      - name: Install the package with the Bazis packages at ${{ env.REF }}
+        run: scripts/integration_install.sh ${{ matrix.package }} "$REF"
+
+      - name: Kafka settings
+        if: matrix.kafka
+        run: |
+          {
+            echo "BS_KAFKA_BOOTSTRAP_SERVERS=localhost:9092"
+            echo "BS_KAFKA_TOPIC_ASYNC_BG=${{ matrix.topic }}"
+            echo "BS_KAFKA_GROUP_ID=sample_local"
+            echo "BS_KAFKA_AUTO_OFFSET_RESET=earliest"
+          } >> "$GITHUB_ENV"
+
+      - name: Check for missing migrations
+        working-directory: ${{ env.PACKAGE_DIR }}/sample
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Check the project
+        working-directory: ${{ env.PACKAGE_DIR }}/sample
+        run: python manage.py bazis_doctor
+
+      - name: Migrate the database shared by the tests and the consumer
+        if: matrix.kafka
+        working-directory: ${{ env.PACKAGE_DIR }}/sample
+        run: |
+          python manage.py migrate -v0
+          if python manage.py help pgtrigger >/dev/null 2>&1; then python manage.py pgtrigger install; fi
+
+      - name: Start a Kafka consumer
+        if: matrix.kafka
+        working-directory: ${{ env.PACKAGE_DIR }}/sample
+        run: |
+          nohup python manage.py kafka_consumer_single > "$RUNNER_TEMP/consumer.log" 2>&1 &
+          sleep 15
+          cat "$RUNNER_TEMP/consumer.log"
+
+      - name: Run tests
+        working-directory: ${{ env.PACKAGE_DIR }}/sample
+        run: |
+          python -m pytest ../tests -p no:cacheprovider \
+            -o addopts="${{ matrix.kafka && '--reuse-db' || '' }}"
+
+      - name: Consumer log
+        if: failure() && matrix.kafka
+        run: cat "$RUNNER_TEMP/consumer.log"
