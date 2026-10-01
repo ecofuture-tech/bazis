@@ -785,7 +785,11 @@ class JsonapiRouteBase(InitialRouteBase):
         rel_model = field_info.related_model
 
         if field_info.to_many:
-            ids = {str(it['id']) for it in (value.get('data') or [])}
+            # normalized as the primary keys of the database (e.g. a UUID in upper case)
+            ids = {
+                str(self.relationships_service._parse_id(it['id'], rel_model))
+                for it in (value.get('data') or [])
+            }
             if action == 'set':
                 current = getattr(item, related_field_name).values_list('pk', flat=True)
                 ids ^= {str(pk) for pk in current}
