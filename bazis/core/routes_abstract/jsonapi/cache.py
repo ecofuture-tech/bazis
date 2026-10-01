@@ -14,31 +14,12 @@
 
 from pydantic import BaseModel
 
-from bazis.core.schemas.cache import TTLCache, get_schema_cache_ttl
-
-
-OPENAPI_CACHE = TTLCache(get_schema_cache_ttl)
-
 
 def with_cache_openapi_schema(schema: type[BaseModel], lang: str = None) -> dict:
     """
-    Caching OpenAPI schemas of Pydantic models
-    :param schema:
-    :param lang:
-    :return:
+    Returns the OpenAPI (JSON) schema of a Pydantic model. Not cached: the schemas
+    themselves are cached (see `bazis.core.schemas.cache`).
 
     Tags: RAG
     """
-    schema_name = schema.schema_name
-    if lang:
-        schema_name = f'{schema_name}__{lang}'
-
-    # if schema_name in OPENAPI_CACHE:
-    #     return OPENAPI_CACHE[schema_name]
-
-    # openapi = schema.schema()
-    openapi = schema.model_json_schema()
-    # if settings.BAZIS_SCHEMA_WITHOUT_REF:
-    #     openapi = jsonref.replace_refs(openapi, lazy_load=False, proxies=False)
-    OPENAPI_CACHE[schema_name] = openapi
-    return openapi
+    return schema.model_json_schema()

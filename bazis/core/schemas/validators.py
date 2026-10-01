@@ -57,9 +57,6 @@ def readonly_validator(cls: type[BaseModel], values: Any):
     """
     Validator to remove read-only fields from the values if the schema action does
     not support read-only operations.
-
-    It is used by the schema builders. It was marked as deprecated while still in use,
-    which emitted a DeprecationWarning on every validated request.
     """
     if not cls.schema_factory.api_action.for_read_only:
         for f_name, field_info in cls.model_fields.items():

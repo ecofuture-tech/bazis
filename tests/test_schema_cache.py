@@ -48,9 +48,8 @@ def test_ttl_cache_evicts_idle_entries(monkeypatch):
     # adding entries sweeps expired ones at most once per TTL
     clock.now += 11
     cache['c'] = 3
-    assert 'a' not in cache._data
+    assert list(cache._data) == ['c']
     assert evicted == ['b', 'a']
-    assert len(cache) == 1
 
 
 def test_ttl_cache_zero_ttl_never_evicts(monkeypatch):
@@ -61,8 +60,8 @@ def test_ttl_cache_zero_ttl_never_evicts(monkeypatch):
     cache['a'] = 1
     clock.now += 10**9
     cache['b'] = 2
-    assert cache['a'] == 1
-    assert len(cache) == 2
+    assert cache.get('a') == 1
+    assert list(cache._data) == ['a', 'b']
 
 
 def test_evicted_schema_is_removed_from_module(monkeypatch):

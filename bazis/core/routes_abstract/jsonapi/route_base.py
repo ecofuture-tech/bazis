@@ -720,8 +720,7 @@ class JsonapiRouteBase(InitialRouteBase):
             item = self.set_item(str(item_id).strip())
 
             data = self.relationships_validate(item, related_field_name, relationships_data)
-            if action != 'remove':
-                self.relationships_restricts_check(item, data, related_field_name)
+            self.relationships_restricts_check(item, data, related_field_name, action)
 
             self.hook_before_relationships_change(item, data, related_field_name, action)
             self.relationships_service.apply_relationship_action(
@@ -775,10 +774,11 @@ class JsonapiRouteBase(InitialRouteBase):
         return item_data.data
 
     def relationships_restricts_check(
-        self, item: JsonApiMixin, data: JsonApiDataSchema, related_field_name: str
+        self, item: JsonApiMixin, data: JsonApiDataSchema, related_field_name: str, action: str
     ):
         """
-        Applies the `filter:` restrictions of the field to the referenced objects.
+        Applies the `filter:` restrictions of the field: the objects the action links and
+        unlinks must match them (an update keeps the linked objects that do not match).
         """
         field_info = item.get_fields_info().relations[related_field_name]
         value = data.relationships.model_dump(exclude_unset=True)[related_field_name]
@@ -786,12 +786,18 @@ class JsonapiRouteBase(InitialRouteBase):
 
         if field_info.to_many:
             ids = {str(it['id']) for it in (value.get('data') or [])}
-            allowed = data.check_restrict_m2m(related_field_name, value, rel_model)
+            if action == 'set':
+                current = getattr(item, related_field_name).values_list('pk', flat=True)
+                ids ^= {str(pk) for pk in current}
+            if not ids:
+                return
+            touched = {'data': [{'id': pk} for pk in ids]}
+            allowed = data.check_restrict_m2m(related_field_name, touched, rel_model)
             allowed_ids = {str(pk) for pk in allowed.values_list('pk', flat=True)}
             if ids - allowed_ids:
                 raise JsonApi403Exception()
         else:
-            f_pk = (value.get('data') or {}).get('id')
+            f_pk = None if action == 'remove' else (value.get('data') or {}).get('id')
             if not data.check_restrict_rel(related_field_name, f_pk, rel_model, instance=item):
                 raise JsonApi403Exception()
 
