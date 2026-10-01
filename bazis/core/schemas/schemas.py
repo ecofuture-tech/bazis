@@ -81,7 +81,7 @@ class JsonApiDataSchema(BaseModel):
                 restrict_q = QueryToOrm(restricts, f_model).q
                 # if a value was previously set in the relation and the user has no access to it,
                 # then the action is not allowed
-                if instance and (rel_val := getattr(instance, f_name)):
+                if instance and (rel_val := getattr(instance, f_name, None)):
                     if not f_model.objects.filter(restrict_q & Q(pk=rel_val.pk)).exists():
                         return False
 
