@@ -31,7 +31,7 @@ def test_packages():
     core = packages['bazis']
     assert core['module'] == 'bazis.core'
     assert core['manifest']['package']['name'] == 'bazis'
-    assert core['agents_md'] == 'bazis.core/AGENTS.md'
+    assert core['agents_md'].endswith('bazis/core/AGENTS.md')
 
 
 def test_settings_hide_secrets():
@@ -42,6 +42,18 @@ def test_settings_hide_secrets():
     dynamic = [it for it in settings_info.values() if it['dynamic']]
     assert dynamic
     assert all('value' not in it for it in dynamic)
+
+
+def test_secrets_are_hidden_at_any_depth():
+    databases = {'default': {'HOST': 'db', 'PASSWORD': 'pw', 'OPTIONS': {'sslpassword': 'x'}}}
+    assert introspect._jsonable(databases, 'DATABASES') == {
+        'default': {'HOST': 'db', 'PASSWORD': '***', 'OPTIONS': {'sslpassword': 'x'}}
+    }
+    assert introspect._jsonable('redis://:pw@redis:6379/1') == 'redis://:***@redis:6379/1'
+    assert introspect._jsonable('https://key@sentry.io/1', 'SENTRY_DSN') == '***'
+    assert introspect._jsonable('x', 'BAZIS_G_AUTH_CLIENT_SECRET') == '***'
+    assert introspect._jsonable([{'NAME': 'v'}], 'AUTH_PASSWORD_VALIDATORS') == [{'NAME': 'v'}]
+    assert introspect._jsonable(object()) == '<object>'
 
 
 def test_models():

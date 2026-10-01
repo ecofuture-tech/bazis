@@ -23,12 +23,13 @@ Tags: RAG, EXPORT
 """
 
 import inspect
+import re
 import sys
 import tomllib
 from collections.abc import Iterator, Sequence
 from importlib import import_module, metadata, resources
 from importlib.util import find_spec
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from django.apps import apps
 from django.conf import settings
@@ -41,8 +42,10 @@ from starlette.routing import BaseRoute
 MANIFEST_FILE = 'bazis_manifest.toml'
 AGENTS_FILE = 'AGENTS.md'
 
-#: substrings of setting names whose values are not shown
-SECRET_MARKERS = ('SECRET', 'PASSWORD', 'TOKEN', 'PRIVATE')
+#: the last word of the names of secret settings and keys (SECRET_KEY, EMAIL_HOST_PASSWORD)
+SECRET_WORDS = {'SECRET', 'PASSWORD', 'PASS', 'TOKEN', 'KEY', 'DSN', 'CREDENTIALS'}
+#: the password of a URL: scheme://user:password@host
+URL_PASSWORD_RE = re.compile(r'(://[^:/@\s]*):[^@\s]+@')
 
 
 def package_module(dist_name: str) -> str | None:
@@ -101,7 +104,8 @@ def validate_manifest(module: str) -> list[str]:
         for path in Path(str(resources.files(module))).rglob('*.py')
     )
     for pitfall in manifest.get('pitfalls', []):
-        if (check := pitfall.get('check')) and f"'{check}'" not in sources:
+        check = pitfall.get('check')
+        if check and not re.search(rf'id=[\'"]{re.escape(check)}[\'"]', sources):
             problems.append(f'pitfall check {check!r} is not defined in {module}')
     return problems
 
@@ -110,25 +114,29 @@ def packages() -> list[dict]:
     """
     The installed Bazis distributions with their versions, modules and manifests.
     """
-    result = {}
-    for dist in metadata.distributions():
-        name = (dist.metadata['Name'] or '').lower()
-        if name != 'bazis' and not name.startswith('bazis-'):
-            continue
+    names = {
+        re.sub(r'[-_.]+', '-', dist.metadata['Name'] or '').lower()
+        for dist in metadata.distributions()
+    }
+    result = []
+    for name in sorted(it for it in names if it == 'bazis' or it.startswith('bazis-')):
         module = package_module(name)
-        has_agents = module is not None and (resources.files(module) / AGENTS_FILE).is_file()
-        result[name] = {
-            'name': name,
-            'version': dist.version,
-            'module': module,
-            'manifest': read_manifest(module) if module else None,
-            'agents_md': f'{module}/{AGENTS_FILE}' if has_agents else None,
-        }
-    return [result[name] for name in sorted(result)]
+        agents_md = resources.files(module) / AGENTS_FILE if module else None
+        result.append(
+            {
+                'name': name,
+                # the distribution that is imported (a stale copy may also be installed)
+                'version': metadata.version(name),
+                'module': module,
+                'manifest': read_manifest(module) if module else None,
+                'agents_md': str(agents_md) if agents_md and agents_md.is_file() else None,
+            }
+        )
+    return result
 
 
 def _is_secret(name: str) -> bool:
-    return any(marker in name for marker in SECRET_MARKERS) or name.endswith('_KEY')
+    return name.upper().rsplit('_', 1)[-1] in SECRET_WORDS
 
 
 def settings_info() -> list[dict]:
@@ -158,19 +166,29 @@ def settings_info() -> list[dict]:
             }
             if not dynamic:
                 value = getattr(settings, name, None)
-                item['value'] = '***' if value and _is_secret(name) else _jsonable(value)
+                item['value'] = _jsonable(value, name)
             result[name] = item
     return [result[name] for name in sorted(result)]
 
 
-def _jsonable(value):
-    if value is None or isinstance(value, bool | int | float | str):
+def _jsonable(value, name: str = ''):
+    """
+    The value as JSON, with the secrets hidden at any depth (by the name of the setting or
+    of the key) and the passwords of URLs. Other objects are shown by their type name.
+    """
+    if value and _is_secret(name):
+        return '***'
+    if value is None or isinstance(value, bool | int | float):
         return value
+    if isinstance(value, str):
+        return URL_PASSWORD_RE.sub(r'\1:***@', value)
     if isinstance(value, dict):
-        return {str(k): _jsonable(v) for k, v in value.items()}
+        return {str(k): _jsonable(v, str(k)) for k, v in value.items()}
     if isinstance(value, list | tuple | set | frozenset):
         return [_jsonable(v) for v in value]
-    return str(value)
+    if isinstance(value, PurePath):
+        return str(value)
+    return f'<{type(value).__name__}>'
 
 
 def models_info() -> list[dict]:
