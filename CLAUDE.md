@@ -56,6 +56,10 @@ package installs its Bazis dependencies from PyPI):
 4. `bazis-statusy` (permit), `bazis-bg` (author)
 5. `bazis-async-background` (ws, Kafka) → `bazis-async-request`
 
+The Integration workflow runs the tests of every package against the code of the core and
+of the packages it depends on (see `docs/integration.md`); it runs on every pull request of
+the core.
+
 A package requires the versions of Bazis and of the sibling packages whose API or behavior it
 relies on (for example a security fix it builds on); new releases of the other packages do
 not raise the floors.
