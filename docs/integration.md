@@ -9,7 +9,8 @@ its migrations check, `manage.py bazis_doctor` and its tests, with the Bazis pac
 depends on installed from their repositories by `scripts/integration_install.sh`:
 
 - on every pull request of the core: the core of the pull request, the other packages at
-  the branch of the same name if their repository has it, otherwise at `main`;
+  the branch of the same name if their repository has it and it is based on the current
+  `main` (a merged branch left behind is ignored), otherwise at `main`;
 - nightly, at `main`;
 - on demand (**Run workflow**, input `ref`): for a change that spans several repositories,
   push the same branch to all of them and run the workflow at that branch before merging
