@@ -60,6 +60,11 @@ A package requires the versions of Bazis and of the sibling packages whose API o
 relies on (for example a security fix it builds on); new releases of the other packages do
 not raise the floors.
 
+Each package ships `AGENTS.md` and `bazis_manifest.toml` in its module for tools and AI
+agents (format: `docs/agents.md`); keep them exact when the package changes, its
+`test_manifest.py` verifies the imports and check ids. `manage.py bazis_introspect` and
+`manage.py bazis_doctor` show the facts and the problems of a project.
+
 Security boundaries that span packages:
 
 - Every way of changing an object must go through the checks of an update: the
