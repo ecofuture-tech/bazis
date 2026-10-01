@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # usage: scripts/integration_install.sh <package> [ref]
 # Installs <package> with its test extra, then replaces every Bazis package it depends on
-# with the code of its repository at <ref> (default: main), cloned with tags so that
-# setuptools-scm computes the versions. CORE_DIR: a checkout of the core to use instead.
+# with the code of its repository at <ref> (default: main; main where <ref> is missing or
+# not based on main), cloned with tags so that setuptools-scm computes the versions.
+# CORE_DIR: a checkout of the core to use instead of its repository.
 set -euo pipefail
 PACKAGE=$1
 REF=${2:-main}
@@ -14,8 +15,14 @@ clone() {
     ln -s "$CORE_DIR" "$SRC/bazis"
   fi
   if [ ! -d "$SRC/$1" ]; then
-    git clone --quiet --branch "$REF" "https://github.com/ecofuture-tech/$1" "$SRC/$1" \
-      || git clone --quiet "https://github.com/ecofuture-tech/$1" "$SRC/$1"
+    git clone --quiet "https://github.com/ecofuture-tech/$1" "$SRC/$1"
+    # the branch of the change if the repository has it and it is based on the current main
+    # (a branch that was merged and left behind is ignored)
+    if [ "$REF" != main ] && git -C "$SRC/$1" rev-parse -q --verify "origin/$REF" >/dev/null \
+        && git -C "$SRC/$1" merge-base --is-ancestor origin/main "origin/$REF"; then
+      git -C "$SRC/$1" checkout --quiet "$REF"
+    fi
+    echo "$1: $(git -C "$SRC/$1" rev-parse --abbrev-ref HEAD)"
   fi
 }
 

@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Branch of the package repositories (repositories without it use main)
+        description: Branch of the package repositories (main where it is missing or behind main)
         default: main
   pull_request:
 
@@ -160,4 +160,4 @@ jobs:
 
       - name: Consumer log
         if: failure() && matrix.kafka
-        run: cat "$RUNNER_TEMP/consumer.log"
+        run: cat "$RUNNER_TEMP/consumer.log" || true
