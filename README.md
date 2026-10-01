@@ -469,65 +469,27 @@ class Settings(BaseSettings):
 
 ### Filtering
 
-The framework provides powerful filtering capabilities through query parameters:
+The `filter` query parameter holds one expression (URL-encode it):
 
-#### Filter Types
-
-**Exact Match:**
 ```
-# Single value
-?filter[type]=FIRST
+# exact match, several conditions (and)
+?filter=type=FIRST&is_active=true
 
-# Multiple values
-?filter[type]=FIRST&filter[type]=SECOND
-```
+# or, grouping
+?filter=(price=100|price=200)
 
-**Boolean Values:**
-```
-# False value
-?filter[is_active]=false
+# ranges: gt, gte, lt, lte (numbers and dates)
+?filter=dt_created__gte=2022-05-16&price__lt=5.2
 
-# True value (anything except 'false')
-?filter[is_active]=true
+# fields of related objects
+?filter=org_owner__tin=7845612348
+
+# full-text search in a field (also of related objects)
+?filter=facility_operations__fkkos__$search=test
 ```
 
-**Range Filters:**
-
-Available for numeric and datetime fields with postfixes:
-- `gt` - greater than
-- `gte` - greater than or equal
-- `lt` - less than
-- `lte` - less than or equal
-
-Examples:
-```
-?filter[dt_created__gte]=2022-05-16
-?filter[price__lt]=5.2
-```
-
-**Nested Filters:**
-
-For fields defined in the relationships block:
-1. Determine the type of nested object
-2. Find the nested object schema
-3. Get fields available for filtering
-
-Example:
-```
-# For organization.organization type
-?filter[org_owner__tin]=7845612348
-```
-
-**Full-Text Search:**
-
-Use the `$search` modifier for full-text search:
-```
-# Search in nested relationships (two levels deep)
-?filter[facility_operations__fkkos__$search]=test
-
-# Search in root results
-?filter[$search]=test
-```
+`false` is false for boolean fields, any other value is true. The `search` parameter
+(`?search=test`) searches the search fields of the route.
 
 ### Included Resources (JSON:API)
 

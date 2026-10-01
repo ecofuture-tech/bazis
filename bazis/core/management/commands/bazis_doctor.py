@@ -38,7 +38,19 @@ class Command(BaseCommand):
 
     def handle(self, *args, deploy, as_json, **options):
         # the checks of the routes need the application
-        from bazis.core.app import app  # noqa: F401
+        try:
+            from bazis.core.app import app  # noqa: F401
+        except Exception as err:
+            if as_json:
+                problem = {
+                    'id': 'bazis.app',
+                    'level': 'critical',
+                    'message': f'The application cannot be loaded: {err!r}',
+                    'hint': None,
+                    'object': None,
+                }
+                self.stdout.write(json.dumps([problem], ensure_ascii=False, indent=2))
+            raise CommandError(f'The application cannot be loaded: {err!r}') from err
 
         messages = checks.run_checks(include_deployment_checks=deploy)
         messages = [m for m in messages if not m.is_silenced()]

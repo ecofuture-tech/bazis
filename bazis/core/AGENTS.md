@@ -29,9 +29,11 @@ sample/router.py         # root router, BS_BAZIS_ROUTER_MODULE=sample.router
 
 Settings are environment variables with the `BS_` prefix (`BS_DEBUG`, `BS_SECRET_KEY`,
 `BS_DATABASES__DEFAULT__HOST`, lists and dicts as JSON). Apps, including Bazis packages,
-are listed in `BS_INSTALLED_APPS` (`'["myapp", "bazis.contrib.permit"]'`). Requirements:
-PostgreSQL with PostGIS and Redis (`BS_CACHES__DEFAULT__LOCATION`). `BS_SECRET_KEY` is
-required unless `BS_DEBUG=true`.
+are listed in `BS_INSTALLED_APPS` (`'["myapp", "bazis.contrib.permit"]'`). The settings of
+all installed Bazis packages are loaded unless `BS_BAZIS_APPS` lists the packages to load
+them from: leave it unset, or list every Bazis package of the project there. Requirements:
+PostgreSQL with PostGIS and Redis (`BS_CACHES__DEFAULT__LOCATION`). `DEBUG` is true by
+default: set `BS_DEBUG=false` and `BS_SECRET_KEY` (required without DEBUG) in production.
 
 ## Models
 
@@ -46,7 +48,8 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
 ```
 
 - Every model and mixin inherits from `InitialBase` (the mixins above do). `JsonApiMixin`
-  makes the model a JSON:API resource; its type is `<app_label>.<model_name>`.
+  makes the model a JSON:API resource; its type is `<app_label>.<class name in snake_case>`
+  (`CarrierTask` in the app `crm` is `crm.carrier_task`).
 - A missing `Meta` is inherited from all parents (unlike plain Django).
 - Calculated fields: `@calc_property([...])` from `bazis.core.utils.orm`, declared with the
   fields they need (`FieldRelated`, `FieldJson`, ...) so that the query fetches them in one
@@ -82,8 +85,10 @@ class OrderRouteSet(JsonapiRouteBase):
 
 ## API conventions
 
-- `filter[field]=value`, several values repeat the parameter; `__gt/__gte/__lt/__lte` for
-  ranges; nested: `filter[customer__name]=...`; full-text: `filter[$search]=...`.
+- `filter` is one expression: `filter=status=new&price__gte=20`, `filter=(a=1|b=2)`,
+  nested fields `filter=customer__name=Acme`, lookups `__gt/__gte/__lt/__lte`, full-text
+  in a field `filter=description__$search=text`; `search=text` searches the search fields of
+  the route. URL-encode the value of `filter`.
 - `sort=-dt_created,number`, `page[limit]` / `page[offset]`
   (`BAZIS_API_PAGINATION_PAGE_SIZE_MAX` caps the limit), `include=customer,items`,
   `fields[crm.order]=number,customer` (sparse fieldsets).
