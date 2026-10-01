@@ -43,3 +43,26 @@ Claude Code sessions cannot push tags. Release through the **Release** workflow 
 
 Pick the version by semver: breaking changes (settings renamed or required, dependency
 removed, behavior changed) bump the minor version while the project is below 3.0.
+
+## The Bazis packages
+
+The framework is split into packages in separate repositories of `ecofuture-tech`, each with
+its own `CLAUDE.md`, Tests and Release workflows. Release them in dependency order (CI of a
+package installs its Bazis dependencies from PyPI):
+
+1. `bazis` → `bazis-test-utils`
+2. `bazis-users`, `bazis-ws`, `bazis-bulk`, `bazis-uploadable`
+3. `bazis-author`, `bazis-authing` (users) → `bazis-permit` (users, author for its tests)
+4. `bazis-statusy` (permit), `bazis-bg` (author)
+5. `bazis-async-background` (ws, Kafka) → `bazis-async-request`
+
+Security boundaries that span packages:
+
+- Every way of changing an object must go through the checks of an update: the
+  relationships endpoints (`JsonapiRouteBase.relationships_change`) accept only the
+  relations of the update schema and call `hook_before/after_relationships_change`, which
+  bazis-permit uses.
+- Session JWTs (bazis-users) require `exp` and `sub`; a token without `exp` (the store token
+  of bazis-authing) is anonymous.
+- Anonymous WebSocket channels (bazis-ws) live under `user_ws:anon:`; bazis-async-background
+  resolves channels with the same functions.
