@@ -33,30 +33,18 @@ from typing import Any
 from pydantic import BaseModel
 
 
-__all__ = [
-    'DEFAULT_SCHEMA_CACHE_TTL',
-    'SCHEMAS_CACHE',
-    'TTLCache',
-    'get_schema_cache_ttl',
-    'get_schema_from_cache',
-    'set_schema_to_cache',
-]
-
-DEFAULT_SCHEMA_CACHE_TTL = 3600
-
-
 def get_schema_cache_ttl() -> float:
     """
     Returns the idle lifetime of the cached schemas in seconds from the settings.
     """
     from django.conf import settings
 
-    return getattr(settings, 'BAZIS_SCHEMA_CACHE_TTL', DEFAULT_SCHEMA_CACHE_TTL)
+    return settings.BAZIS_SCHEMA_CACHE_TTL
 
 
 class TTLCache:
     """
-    Thread-safe dictionary-like cache that evicts entries not accessed for the TTL.
+    Thread-safe cache that evicts entries not accessed for the TTL.
 
     :param ttl: Idle lifetime in seconds, or a callable returning it; 0 disables eviction.
     :param on_evict: Optional callback called with the key and value of an evicted entry.
@@ -91,29 +79,10 @@ class TTLCache:
             self._data[key] = (value, now)
             return value
 
-    def __getitem__(self, key: str) -> Any:
-        marker = object()
-        value = self.get(key, marker)
-        if value is marker:
-            raise KeyError(key)
-        return value
-
     def __setitem__(self, key: str, value: Any) -> None:
         with self._lock:
             self._data[key] = (value, time.monotonic())
             self._sweep()
-
-    def __contains__(self, key: str) -> bool:
-        marker = object()
-        return self.get(key, marker) is not marker
-
-    def __len__(self) -> int:
-        return len(self._data)
-
-    def clear(self) -> None:
-        with self._lock:
-            for key in list(self._data):
-                self._evict(key)
 
     def _evict(self, key: str) -> None:
         value, _ = self._data.pop(key)

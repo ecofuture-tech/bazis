@@ -56,13 +56,17 @@ package installs its Bazis dependencies from PyPI):
 4. `bazis-statusy` (permit), `bazis-bg` (author)
 5. `bazis-async-background` (ws, Kafka) → `bazis-async-request`
 
+A package requires the versions of Bazis and of the sibling packages whose API or behavior it
+relies on (for example a security fix it builds on); new releases of the other packages do
+not raise the floors.
+
 Security boundaries that span packages:
 
 - Every way of changing an object must go through the checks of an update: the
   relationships endpoints (`JsonapiRouteBase.relationships_change`) accept only the
   relations of the update schema and call `hook_before/after_relationships_change`, which
   bazis-permit uses.
-- Session JWTs (bazis-users) require `exp` and `sub`; a token without `exp` (the store token
-  of bazis-authing) is anonymous.
+- Session JWTs (bazis-users) require `exp` and `sub`; on HTTP a token without `exp` (the
+  store token of bazis-authing) is anonymous, bazis-ws rejects it.
 - Anonymous WebSocket channels (bazis-ws) live under `user_ws:anon:`; bazis-async-background
   resolves channels with the same functions.
