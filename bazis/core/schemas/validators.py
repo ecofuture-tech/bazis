@@ -20,8 +20,6 @@ from pydantic import (
     ValidationInfo,
 )
 
-from typing_extensions import deprecated
-
 from bazis.core.models_abstract import InitialBase
 
 from .utils import get_types
@@ -55,13 +53,13 @@ def not_blank_validator(cls: type[BaseModel], v: Any, field: ValidationInfo):
     return v
 
 
-@deprecated(
-    'disabled because there are transition-type operations that require mandatory fields, which may well be read-only'
-)
 def readonly_validator(cls: type[BaseModel], values: Any):
     """
     Validator to remove read-only fields from the values if the schema action does
     not support read-only operations.
+
+    It is used by the schema builders. It was marked as deprecated while still in use,
+    which emitted a DeprecationWarning on every validated request.
     """
     if not cls.schema_factory.api_action.for_read_only:
         for f_name, field_info in cls.model_fields.items():
