@@ -630,6 +630,13 @@ class ParentEntityAdmin(DtAdminMixin, admin.ModelAdmin):
     inlines = (ChildEntityInline, DependentEntityInline)
 ```
 
+## Tools and AI Agents
+
+`python manage.py bazis_introspect` prints the Bazis packages, settings, models and routes of
+a project as JSON, and `python manage.py bazis_doctor` checks the project for errors and
+risky settings. Every package ships `AGENTS.md` and `bazis_manifest.toml` describing how to
+use it (see [docs/agents.md](docs/agents.md)).
+
 ## Architecture
 
 ### Package Structure

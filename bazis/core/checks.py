@@ -19,7 +19,7 @@ Tags: RAG, INTERNAL
 """
 
 from django.conf import settings
-from django.core.checks import Error, Tags, register
+from django.core.checks import Error, Tags, Warning, register
 
 
 @register(Tags.caches)
@@ -41,6 +41,23 @@ def check_cache_backend(app_configs, **kwargs):
                     f'(current backend: {settings.CACHES["default"]["BACKEND"]}).'
                 ),
                 id='bazis.E001',
+            )
+        ]
+    return []
+
+
+@register(Tags.security, deploy=True)
+def check_allowed_hosts(app_configs, **kwargs):
+    """
+    A wildcard in ALLOWED_HOSTS accepts any Host header (Django checks only that the list
+    is not empty).
+    """
+    if '*' in settings.ALLOWED_HOSTS:
+        return [
+            Warning(
+                "ALLOWED_HOSTS contains '*': any Host header is accepted.",
+                hint='List the domains of the project in BS_ALLOWED_HOSTS.',
+                id='bazis.W001',
             )
         ]
     return []
