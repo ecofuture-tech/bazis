@@ -69,4 +69,4 @@ def test_relationship_of_invalid_type_is_rejected(sample_app):
         f'/api/v1/entity/child_entity/{child.id}/relationships/parent_entities',
         data=json.dumps({'data': {'type': 'entity.parent_entity', 'id': 'not-a-list'}}),
     )
-    assert response.status_code in (400, 422)
+    assert response.status_code == 422
