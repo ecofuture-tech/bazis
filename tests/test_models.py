@@ -15,6 +15,7 @@
 from decimal import Decimal
 
 from django.db.utils import IntegrityError
+from django.test.utils import isolate_apps
 
 import pytest
 from entity.models import ChildEntity, DependentEntity, ExtendedEntity
@@ -101,3 +102,53 @@ def test_models():
     assert ChildEntity.objects.filter(id=child_entity.id).exists()
     assert not DependentEntity.objects.filter(id=dependent_entity_1.id).exists()
     assert not ExtendedEntity.objects.filter(id=extended_entity.id).exists()
+
+
+@isolate_apps('entity')
+def test_fields_info_of_a_symmetrical_relation_to_itself():
+    """
+    A symmetrical many-to-many relation of a model to itself has no reverse accessor: it is
+    not a relation of the model (its name was None and broke sorting them).
+    """
+    from django.db import models
+
+    from bazis.core.utils.model_meta import FieldsInfo
+
+    class Node(models.Model):
+        linked = models.ManyToManyField('self', blank=True)
+
+        class Meta:
+            app_label = 'entity'
+
+    info = FieldsInfo.get_fields_info(Node)
+
+    assert list(info.relations) == ['linked']
+
+
+@isolate_apps('entity')
+def test_translated_fields_in_a_language_without_a_column():
+    """
+    A translated field with fixed languages (bazis-permit, bazis-statusy) is read, and the
+    calculated fields select it, in its first language when the current one has no column.
+    """
+    from django.db import models
+    from django.utils import translation
+
+    from translated_fields import TranslatedField
+
+    from bazis.core.utils.orm import translated_column
+
+    class Item(models.Model):
+        title = TranslatedField(models.CharField(max_length=10, blank=True), languages=['en', 'ru'])
+
+        class Meta:
+            app_label = 'entity'
+
+    item = Item(title_en='Book', title_ru='Книга')
+    with translation.override('de'):
+        assert translated_column('title', Item.title) == 'title_en'
+        assert item.title == 'Book'
+    with translation.override('ru'):
+        assert translated_column('title', Item.title) == 'title_ru'
+    with translation.override('en-us'):
+        assert translated_column('title', Item.title) == 'title_en'

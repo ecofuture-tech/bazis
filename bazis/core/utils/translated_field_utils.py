@@ -20,7 +20,8 @@ from translated_fields import to_attribute
 
 def translated_attrgetter(name, field):
     def _getter(self):
-        val = getattr(self, to_attribute(name, get_language() or field.languages[0]))
+        # None in a language the field has no column for (its languages can be fixed)
+        val = getattr(self, to_attribute(name, get_language() or field.languages[0]), None)
         if not val:
             for lang in field.languages:
                 val = getattr(self, to_attribute(name, lang))

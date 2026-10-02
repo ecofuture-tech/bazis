@@ -360,6 +360,9 @@ class FieldsInfo:
         all_related_many_to_many_objects = [r for r in opts.related_objects if r.field.many_to_many]
         for relation in all_related_many_to_many_objects:
             accessor_name = relation.get_accessor_name()
+            if accessor_name is None:
+                # a symmetrical relation to the model itself has no reverse accessor
+                continue
             reverse_relations[accessor_name] = RelationInfo(
                 name=relation.name,
                 model_field=relation,
