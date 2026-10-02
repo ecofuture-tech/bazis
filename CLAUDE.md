@@ -24,6 +24,15 @@ Lint: `ruff check bazis tests sample`.
 Test expectations must not depend on the database collation (CI uses `en_US.utf8`),
 and SQL assertions go through `tests/utils/assert_sql.py`, which normalizes the SQL.
 
+## Authorship
+
+Every commit, tag and pull request of the Bazis repositories is authored by the maintainer,
+Ilya Kharyn <ilya.tt07@gmail.com>. AI assistants never appear as an author, committer or
+co-author: no `Co-Authored-By` or session trailers in commit messages, no "Generated with"
+lines in pull requests. Set `git config user.name "Ilya Kharyn"` and
+`git config user.email "ilya.tt07@gmail.com"` in every clone before committing, and check
+`git log -1 --format='%an <%ae>'` before pushing.
+
 ## Releasing
 
 A release is the tag `vX.Y.Z` on `main`: the Build and Publish workflow builds the package
