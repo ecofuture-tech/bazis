@@ -6,7 +6,9 @@ only be seen after the core is released.
 
 The **Integration** workflow (`.github/workflows/integration.yml`) runs, for every package,
 its migrations check, `manage.py bazis_doctor` and its tests, with the Bazis packages it
-depends on installed from their repositories by `scripts/integration_install.sh`:
+depends on (also through the others) installed from their repositories by
+`scripts/integration_install.sh`. The checkouts override the requirements on them, so a
+change can raise the minimal version of a Bazis package to the one it is about to release:
 
 - on every pull request of the core: the core of the pull request, the other packages at
   the branch of the same name if their repository has it and it is based on the current

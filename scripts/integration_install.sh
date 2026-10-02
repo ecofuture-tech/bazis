@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # usage: scripts/integration_install.sh <package> [ref]
-# Installs <package> with its test extra, then replaces every Bazis package it depends on
-# with the code of its repository at <ref> (default: main; main where <ref> is missing or
-# not based on main), cloned with tags so that setuptools-scm computes the versions.
+# Installs <package> with its test extra and every Bazis package it depends on (also through
+# the others) from the code of their repositories at <ref> (default: main; main where <ref>
+# is missing or not based on main), cloned with tags so that setuptools-scm computes the
+# versions. The checkouts override the requirements on them: a change can raise the minimal
+# version of a Bazis package to the one it is about to release.
 # CORE_DIR: a checkout of the core to use instead of its repository.
 set -euo pipefail
 PACKAGE=$1
@@ -26,23 +28,33 @@ clone() {
   fi
 }
 
+# the Bazis packages a checkout requires (its dependencies and its test extra)
+bazis_deps() {
+  python - "$SRC/$1/pyproject.toml" <<'PY'
+import re, sys, tomllib
+project = tomllib.load(open(sys.argv[1], 'rb'))['project']
+requirements = project.get('dependencies', []) + project.get('optional-dependencies', {}).get('test', [])
+names = {re.match(r'[A-Za-z0-9_.-]+', r).group().lower().replace('_', '-') for r in requirements}
+print(' '.join(sorted(n for n in names if n == 'bazis' or n.startswith('bazis-'))))
+PY
+}
+
 mkdir -p "$SRC"
 clone "$PACKAGE"
-uv pip install -e "$SRC/$PACKAGE[test]"
-
-# the Bazis packages the package needs (resolved from PyPI above)
-DEPS=$(uv pip list --format json | python -c '
-import json, sys
-names = sorted({p["name"].lower().replace("_", "-") for p in json.load(sys.stdin)})
-print(" ".join(n for n in names if n == "bazis" or n.startswith("bazis-")))
-')
-ARGS=()
-for dep in $DEPS; do
-  [ "$dep" = "$PACKAGE" ] && continue
-  clone "$dep"
-  ARGS+=(-e "$SRC/$dep")
+DONE=" $PACKAGE "
+TODO=$(bazis_deps "$PACKAGE")
+OVERRIDES="$SRC/overrides.txt"
+: > "$OVERRIDES"
+while [ -n "${TODO// /}" ]; do
+  NEXT=""
+  for dep in $TODO; do
+    case "$DONE" in *" $dep "*) continue ;; esac
+    DONE="$DONE$dep "
+    clone "$dep"
+    echo "$dep @ file://$(cd "$SRC/$dep" && pwd -P)" >> "$OVERRIDES"
+    NEXT="$NEXT $(bazis_deps "$dep")"
+  done
+  TODO=$NEXT
 done
-if [ ${#ARGS[@]} -gt 0 ]; then
-  uv pip install "${ARGS[@]}" -e "$SRC/$PACKAGE[test]"
-fi
+uv pip install --override "$OVERRIDES" -e "$SRC/$PACKAGE[test]"
 uv pip list | grep -i '^bazis'
