@@ -56,6 +56,7 @@ from django.db.models.expressions import Expression
 from django.db.models.functions import JSONObject
 from django.utils.functional import Promise, cached_property
 from django.utils.text import capfirst, slugify
+from django.utils.translation import get_language
 
 from pydantic import BaseModel, create_model
 
@@ -94,6 +95,18 @@ def get_file_path(instance, filename):
     hash_code = md5((settings.SECRET_KEY + name).encode('utf-8')).hexdigest()
     path = os.path.join('files', subpath, hash_code[0], hash_code[1], hash_code[2])
     return os.path.join(path, f'{hash_code[:16]}.{slugify(name, allow_unicode=True)}{ext}')
+
+
+def translated_column(name: str, field: TranslatedField) -> str:
+    """
+    The column of a translated field in the current language, or in its first language
+    when the field has no column for the current one (its languages can be fixed).
+    """
+    language = (get_language() or '').lower()
+    for code in (language, language.split('-')[0]):
+        if code in field.languages:
+            return to_attribute(name, code)
+    return to_attribute(name, field.languages[0])
 
 
 class CountAll(Func):
@@ -1072,7 +1085,7 @@ def _apply_calc_queryset(  # noqa: C901
                                 pass
                             else:
                                 if isinstance(attr, TranslatedField):
-                                    fields_sources.append(to_attribute(_f_name))
+                                    fields_sources.append(translated_column(_f_name, attr))
                                     continue
                             fields_sources.append(_f_name)
 
