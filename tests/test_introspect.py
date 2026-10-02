@@ -47,13 +47,38 @@ def test_settings_hide_secrets():
 def test_secrets_are_hidden_at_any_depth():
     databases = {'default': {'HOST': 'db', 'PASSWORD': 'pw', 'OPTIONS': {'sslpassword': 'x'}}}
     assert introspect._jsonable(databases, 'DATABASES') == {
-        'default': {'HOST': 'db', 'PASSWORD': '***', 'OPTIONS': {'sslpassword': 'x'}}
+        'default': {'HOST': 'db', 'PASSWORD': '***', 'OPTIONS': {'sslpassword': '***'}}
     }
     assert introspect._jsonable('redis://:pw@redis:6379/1') == 'redis://:***@redis:6379/1'
+    assert introspect._jsonable('redis://u:p@ss@redis:6379/1') == 'redis://u:***@redis:6379/1'
     assert introspect._jsonable('https://key@sentry.io/1', 'SENTRY_DSN') == '***'
     assert introspect._jsonable('x', 'BAZIS_G_AUTH_CLIENT_SECRET') == '***'
     assert introspect._jsonable([{'NAME': 'v'}], 'AUTH_PASSWORD_VALIDATORS') == [{'NAME': 'v'}]
+    assert introspect._jsonable('users.User', 'AUTH_USER_MODEL') == 'users.User'
     assert introspect._jsonable(object()) == '<object>'
+
+
+@pytest.mark.parametrize(
+    'name',
+    ['api_keys', 'apikey', 'private_key_pem', 'connection_string', 'Authorization',
+     'x-api-key', 'AWS_SECRET_ACCESS_KEY', 'access_token', 'credentials'],
+)
+def test_secret_names(name):
+    assert introspect._jsonable({name: 'value'}) == {name: '***'}
+
+
+def test_authorization_values_are_hidden():
+    assert introspect._jsonable({'headers': ['Bearer abc', 'Basic YWJj']}) == {
+        'headers': ['***', '***']
+    }
+
+
+def test_check_messages(settings):
+    settings.ALLOWED_HOSTS = ['*']
+    assert 'bazis.W001' not in {it['id'] for it in introspect.check_messages()}
+    warning = next(it for it in introspect.check_messages(deploy=True) if it['id'] == 'bazis.W001')
+    assert warning['level'] == 'warning'
+    assert set(warning) == {'id', 'level', 'message', 'hint', 'object'}
 
 
 def test_models():

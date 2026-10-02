@@ -18,7 +18,7 @@ Module Purpose:
 - Implements the basic logic of class-based routes
 - Provides class implementations for FastAPI
 - Allows defining routes as class methods
-- Decorators of the form `http\_...` serve as replacements for standard FastAPI decorators
+- Decorators of the form `http_...` serve as replacements for standard FastAPI decorators
 - `http_internal` - a special decorator. Implements the possibility for programmatic route invocation.
 
 An object of the `InitialRouteBase` class is created when FastAPI initializes the route object
