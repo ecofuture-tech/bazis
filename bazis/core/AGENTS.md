@@ -14,6 +14,9 @@ Facts about a concrete project come from the project itself, not from this text:
 - `python manage.py bazis_doctor [--deploy] [--json]` runs the system checks of Django and
   of the Bazis packages and fails on errors. Run it after every change.
 
+With bazis-mcp installed, the MCP server `bazis-mcp` gives the same facts and checks and the
+guides of all Bazis packages, also the ones not installed.
+
 ## Project layout
 
 ```

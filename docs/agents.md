@@ -13,6 +13,8 @@ project needs, use them the way they are meant to be used and check the result.
   including the checks of the Bazis packages that need the routes, and exits with an error
   if any check fails with an error. `--deploy` adds the deployment checks.
 - `bazis.core.introspect` is the Python API of the same data.
+- [bazis-mcp](https://github.com/ecofuture-tech/bazis-mcp) serves the same data and the
+  catalog of all Bazis packages to MCP clients (Claude Code, IDEs).
 
 ## In a package
 
