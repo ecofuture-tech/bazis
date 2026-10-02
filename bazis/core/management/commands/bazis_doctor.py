@@ -14,8 +14,9 @@
 
 import json
 
-from django.core import checks
 from django.core.management.base import BaseCommand, CommandError
+
+from bazis.core import introspect
 
 
 class Command(BaseCommand):
@@ -52,34 +53,21 @@ class Command(BaseCommand):
                 self.stdout.write(json.dumps([problem], ensure_ascii=False, indent=2))
             raise CommandError(f'The application cannot be loaded: {err!r}') from err
 
-        messages = checks.run_checks(include_deployment_checks=deploy)
-        messages = [m for m in messages if not m.is_silenced()]
+        messages = introspect.check_messages(deploy)
 
         if as_json:
-            self.stdout.write(
-                json.dumps([_message_dict(m) for m in messages], ensure_ascii=False, indent=2)
-            )
+            self.stdout.write(json.dumps(messages, ensure_ascii=False, indent=2))
         else:
             for message in messages:
-                self.stdout.write(str(message))
+                self.stdout.write(_message_text(message))
             self.stdout.write(f'{len(messages)} issue(s).')
 
-        if any(m.level >= checks.ERROR for m in messages):
+        if any(m['level'] in ('error', 'critical') for m in messages):
             raise CommandError('The project has errors.')
 
 
-def _message_dict(message: checks.CheckMessage) -> dict:
-    return {
-        'id': message.id,
-        'level': _level_name(message.level),
-        'message': message.msg,
-        'hint': message.hint,
-        'object': str(message.obj) if message.obj is not None else None,
-    }
-
-
-def _level_name(level: int) -> str:
-    for name in ('CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'):
-        if level >= getattr(checks, name):
-            return name.lower()
-    return 'debug'
+def _message_text(message: dict) -> str:
+    text = f'{message["object"] or "?"}: ({message["id"]}) {message["message"]}'
+    if message['hint']:
+        text += f'\n\tHINT: {message["hint"]}'
+    return text

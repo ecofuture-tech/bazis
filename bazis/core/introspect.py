@@ -42,10 +42,19 @@ from starlette.routing import BaseRoute
 MANIFEST_FILE = 'bazis_manifest.toml'
 AGENTS_FILE = 'AGENTS.md'
 
-#: the last word of the names of secret settings and keys (SECRET_KEY, EMAIL_HOST_PASSWORD)
-SECRET_WORDS = {'SECRET', 'PASSWORD', 'PASS', 'TOKEN', 'KEY', 'DSN', 'CREDENTIALS'}
-#: the password of a URL: scheme://user:password@host
-URL_PASSWORD_RE = re.compile(r'(://[^:/@\s]*):[^@\s]+@')
+#: parts of the names of secret settings and keys (EMAIL_HOST_PASSWORD, sslpassword, apikey)
+SECRET_PARTS = (
+    'SECRET', 'PASSWORD', 'PASSWD', 'TOKEN', 'CREDENTIAL', 'PRIVATE', 'APIKEY', 'API_KEY',
+    'ACCESS_KEY', 'ACCOUNTKEY', 'CONNECTION_STRING', 'AUTHORIZATION',
+)
+#: the last word of the names of secret settings and keys (SECRET_KEY, SENTRY_DSN, api_keys)
+SECRET_WORDS = {'KEY', 'KEYS', 'PASS', 'DSN', 'AUTH'}
+#: settings of Django that match the parts above but hold no secret
+NOT_SECRET = {'AUTH_PASSWORD_VALIDATORS', 'PASSWORD_HASHERS', 'PASSWORD_RESET_TIMEOUT'}
+#: the password of a URL: scheme://user:password@host (the password may contain "@")
+URL_PASSWORD_RE = re.compile(r'(://[^:/@\s]*):[^/\s]*@')
+#: the credentials of an HTTP Authorization value
+AUTH_VALUE_RE = re.compile(r'^\s*(Bearer|Basic|Token)\s+\S', re.IGNORECASE)
 
 
 def package_module(dist_name: str) -> str | None:
@@ -136,7 +145,10 @@ def packages() -> list[dict]:
 
 
 def _is_secret(name: str) -> bool:
-    return name.upper().rsplit('_', 1)[-1] in SECRET_WORDS
+    name = name.upper().replace('-', '_')
+    if name in NOT_SECRET:
+        return False
+    return name.rsplit('_', 1)[-1] in SECRET_WORDS or any(it in name for it in SECRET_PARTS)
 
 
 def settings_info() -> list[dict]:
@@ -181,6 +193,8 @@ def _jsonable(value, name: str = ''):
     if value is None or isinstance(value, bool | int | float):
         return value
     if isinstance(value, str):
+        if AUTH_VALUE_RE.match(value):
+            return '***'
         return URL_PASSWORD_RE.sub(r'\1:***@', value)
     if isinstance(value, dict):
         return {str(k): _jsonable(v, str(k)) for k, v in value.items()}
@@ -296,3 +310,33 @@ def project_info(app=None) -> dict:
         'models': models_info(),
         'routes': routes_info(app) if app is not None else None,
     }
+
+
+def check_messages(deploy: bool = False) -> list[dict]:
+    """
+    The messages of the Django system checks, including those of the Bazis packages (the
+    checks of the routes need the application: import `bazis.core.app` first). `deploy`
+    adds the deployment checks. Silenced messages are left out.
+    """
+    from django.core import checks
+
+    return [
+        {
+            'id': message.id,
+            'level': _level_name(message.level),
+            'message': message.msg,
+            'hint': message.hint,
+            'object': str(message.obj) if message.obj is not None else None,
+        }
+        for message in checks.run_checks(include_deployment_checks=deploy)
+        if not message.is_silenced()
+    ]
+
+
+def _level_name(level: int) -> str:
+    from django.core import checks
+
+    for name in ('CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'):
+        if level >= getattr(checks, name):
+            return name.lower()
+    return 'debug'
