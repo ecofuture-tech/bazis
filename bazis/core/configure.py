@@ -215,7 +215,10 @@ def conf_modules():
     """
     Discovers and yields all configuration modules from Bazis framework and project.
 
-    Search order (reverse priority):
+    Search order. The modules become the bases of one Settings class in this order and,
+    as in any Python class, the first base that declares a field gives its default: the
+    core wins over the packages and the packages over the project (an environment
+    variable BS_<NAME> wins over every default):
     1. bazis.core.conf
     2. Bazis contrib apps: all installed ones, or those listed in BS_BAZIS_CONFIG_APPS or
        BS_BAZIS_APPS (an explicit override)
@@ -243,7 +246,7 @@ def conf_modules():
         for conf in get_modules_from_pkg(bazis.contrib, 'conf'):
             yield conf
 
-    # Project configuration (highest priority)
+    # Project configuration
     if PROJECT_MODULE:
         for conf in get_modules_from_pkg(PROJECT_MODULE, 'conf'):
             yield conf
