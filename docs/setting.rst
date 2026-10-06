@@ -19,6 +19,22 @@ The project configuration is organized so that all configuration parameters are 
 Configuration parameters at the Bazis level are stored in conf.py files inside Bazis applications.
 Configuration parameters at the project level are stored in the conf.py file inside the target project folder, where files such as settings.py, urls.py, etc., are usually located.
 
+Settings of the Bazis packages
+------------------------------
+
+The conf.py modules of all Bazis packages installed in the environment (``bazis.contrib.<name>``) are loaded, also of the packages the project does not use. A setting is read from its ``BS_*`` variable only if a conf.py declares it, so:
+
+- the core (``bazis.core.conf``) declares the settings of Django that a project sets with ``BS_*``, with the defaults of Django, including ``AUTH_USER_MODEL`` (``auth.User``) and ``AUTHENTICATION_BACKENDS``; the project sets them, e.g. ``BS_AUTH_USER_MODEL=users.User``;
+- a package declares only the settings it owns (``BAZIS_*``, ``KAFKA_*``, or names of its own such as ``AUTH_ANONYMOUS_USER_MODEL`` of bazis-users), which have no effect without the code of the package, and never redeclares or defaults a setting of Django. bazis-users and bazis-authing drop their ``AUTH_USER_MODEL`` and ``AUTHENTICATION_BACKENDS`` in their next releases, which require this version of the core.
+
+``BS_BAZIS_APPS`` (or ``BS_BAZIS_CONFIG_APPS``) is only an explicit override: the exact list of the packages to load the settings from.
+
+.. code-block:: bash
+
+    BS_BAZIS_APPS='["bazis.contrib.users", "bazis.contrib.permit"]'
+
+Leave it unset in projects. An empty list (``'[]'``) turns off the settings of all Bazis packages, also of the ones the project uses, and is a configuration error unless intended: the system check ``bazis.W002`` (``manage.py bazis_doctor``) warns about it.
+
 Structure of the conf.py file
 -----------------------------
 

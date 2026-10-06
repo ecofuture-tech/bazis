@@ -166,6 +166,12 @@ class Settings(BazisSettings):
     WSGI_APPLICATION: str = ''
     DEFAULT_AUTO_FIELD: str = 'django.db.models.BigAutoField'
     AUTH_PASSWORD_VALIDATORS: list[dict] = []
+    # Django settings bound to the models of the project are declared here, with the Django
+    # defaults, so that BS_* sets them; Bazis packages must not declare or default them.
+    AUTH_USER_MODEL: str = Field('auth.User', title=_('User model'))
+    AUTHENTICATION_BACKENDS: list[str] = Field(
+        ['django.contrib.auth.backends.ModelBackend'], title=_('Authentication backends')
+    )
     # Must be set per project in the environment (BS_SECRET_KEY) and be the same for all
     # processes; see validate_security_settings in bazis.core.configure.
     SECRET_KEY: str = Field('', title=_('Secret key'))

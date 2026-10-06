@@ -201,13 +201,27 @@ def parse_list_env(value: str) -> list[str]:
     return list(result)
 
 
+def listed_bazis_apps() -> list[str] | None:
+    """
+    The Bazis packages to load the settings from, listed in BS_BAZIS_CONFIG_APPS or
+    BS_BAZIS_APPS; None if neither is set (the settings of all installed packages are
+    loaded). An empty list loads the settings of no package (see the check bazis.W002).
+    """
+    value = os.environ.get('BS_BAZIS_CONFIG_APPS') or os.environ.get('BS_BAZIS_APPS')
+    return parse_list_env(value) if value else None
+
+
 def conf_modules():
     """
     Discovers and yields all configuration modules from Bazis framework and project.
 
-    Search order (reverse priority):
+    Search order. The modules become the bases of one Settings class in this order and,
+    as in any Python class, the first base that declares a field gives its default: the
+    core wins over the packages and the packages over the project (an environment
+    variable BS_<NAME> wins over every default):
     1. bazis.core.conf
-    2. Bazis contrib apps (from BS_BAZIS_CONFIG_APPS or BS_BAZIS_APPS)
+    2. Bazis contrib apps: all installed ones, or those listed in BS_BAZIS_CONFIG_APPS or
+       BS_BAZIS_APPS (an explicit override)
     3. Project-level conf modules
 
     Yields:
@@ -221,11 +235,9 @@ def conf_modules():
         yield conf
 
     # Bazis contrib apps configuration
-    BAZIS_CONFIG_APPS = os.environ.get('BS_BAZIS_CONFIG_APPS') or os.environ.get('BS_BAZIS_APPS')
-    if BAZIS_CONFIG_APPS:
-        BAZIS_CONFIG_APPS = reversed(parse_list_env(BAZIS_CONFIG_APPS))
-
-        for bazis_app_name in BAZIS_CONFIG_APPS:
+    BAZIS_CONFIG_APPS = listed_bazis_apps()
+    if BAZIS_CONFIG_APPS is not None:
+        for bazis_app_name in reversed(BAZIS_CONFIG_APPS):
             for conf in get_modules_from_pkg(
                 import_module(bazis_app_name), 'conf', first_level_only=True
             ):
@@ -234,7 +246,7 @@ def conf_modules():
         for conf in get_modules_from_pkg(bazis.contrib, 'conf'):
             yield conf
 
-    # Project configuration (highest priority)
+    # Project configuration
     if PROJECT_MODULE:
         for conf in get_modules_from_pkg(PROJECT_MODULE, 'conf'):
             yield conf
