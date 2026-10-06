@@ -62,7 +62,8 @@ with the error 400 ``ERR_FILTER``.
   ``__iexact``, ``__istartswith``, ``__iregex``, ``__search``.
 - **For other fields** (strings, numbers, dates, choices, identifiers, calculated filters without ``filter_field``):
   without a suffix, exact match; comparison ``__gt``, ``__gte``, ``__lt``, ``__lte`` (for example, ``number__gte=5``);
-  ``__iexact``, ``__istartswith``, ``__iregex``, ``__search`` and substring search ``__$search``.
+  ``__iexact``, ``__istartswith``, ``__iregex`` and substring search ``__$search``; full-text ``__search``
+  only for string fields (CharField).
 - ``__iexact``, ``__istartswith``, ``__iregex``, ``__search`` and ``__$search`` apply to every word of the value
   (words are separated by spaces or commas), all words must match.
 - **For array fields**: values are listed separated by commas. Without a suffix or with ``__overlap``, match one of

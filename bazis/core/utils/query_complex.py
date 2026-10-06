@@ -69,7 +69,9 @@ LOOKUP_PREFIXES: dict[str, str] = {
 
 # Lookup suffixes a filter accepts after a field, by the kind of the field (None: no suffix).
 # `isnull` is accepted for every kind. Any other suffix is an error, never ignored.
-LOOKUPS_EXACT = frozenset({None, *RANGE_SUFFIX, *LOOKUP_PREFIXES.values(), SEARCH_TERM})
+# Django registers the full-text `search` lookup on string fields only.
+LOOKUPS_STRING = frozenset({None, *RANGE_SUFFIX, *LOOKUP_PREFIXES.values(), SEARCH_TERM})
+LOOKUPS_EXACT = LOOKUPS_STRING - {'search'}
 LOOKUPS_TEXT = frozenset({None, *LOOKUP_PREFIXES.values(), SEARCH_TERM})
 LOOKUPS_BOOL = frozenset({None})
 LOOKUPS_ARRAY = frozenset({None, 'overlap', 'contains', 'contained_by'})
@@ -832,6 +834,8 @@ class QueryToOrm:
             func, lookups = self._func_overlap, LOOKUPS_ARRAY
         elif isinstance(field, models.TextField):
             func, lookups = self._func_text, LOOKUPS_TEXT
+        elif isinstance(field, models.CharField):
+            func, lookups = self._func_exact, LOOKUPS_STRING
         else:
             func, lookups = self._func_exact, LOOKUPS_EXACT
 

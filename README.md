@@ -497,7 +497,7 @@ relations, which use `exists`):
 - `TextField`: none (substring), `iexact`, `istartswith`, `iregex`, `search`, `$search`;
 - other scalar fields (strings, numbers, dates, choices, ids; calculated filters without a
   `filter_field`): none (equality), `gt`, `gte`, `lt`, `lte`, `iexact`, `istartswith`,
-  `iregex`, `search`, `$search`;
+  `iregex`, `$search`, and `search` for string fields (`CharField`) only;
 - boolean fields: none;
 - array fields: none (= `overlap`), `overlap`, `contains`, `contained_by`;
 - range fields: `contains`, `contained_by`, `overlap`, `fully_lt`, `fully_gt`, `not_lt`,

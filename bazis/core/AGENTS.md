@@ -96,7 +96,8 @@ class OrderRouteSet(JsonapiRouteBase):
   for every field that is not a relation):
   - text `TextField`: none (substring), `iexact`, `istartswith`, `iregex`, `search`, `$search`;
   - other scalar fields (calculated filters without `filter_field` too): none (equality),
-    `gt`, `gte`, `lt`, `lte`, `iexact`, `istartswith`, `iregex`, `search`, `$search`;
+    `gt`, `gte`, `lt`, `lte`, `iexact`, `istartswith`, `iregex`, `$search`, and `search`
+    for string fields (`CharField`) only;
   - boolean: none; array: none (= `overlap`), `overlap`, `contains`, `contained_by` with
     `a,b`; range: `contains`, `contained_by`, `overlap`, `fully_lt`, `fully_gt`, `not_lt`,
     `not_gt`, `adjacent_to` with `start,end`; point: none (within 10 m), `near`, `in_bbox`.

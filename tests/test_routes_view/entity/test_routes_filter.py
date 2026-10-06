@@ -298,6 +298,8 @@ def test_char_field_search_iexact(sample_app):
     # whole value, case-insensitive
     assert names('name__iexact=apple') == ['Apple'] * 3
     assert names('name__istartswith=pine') == ['Pineapple'] * 3
+    # full-text (PostgreSQL), string fields only
+    assert names('name__search=apple') == ['Apple'] * 3
 
 
 @pytest.mark.django_db(transaction=True)
@@ -316,6 +318,9 @@ def test_char_field_search_iexact(sample_app):
         'dt_approved__date=2024-01-01',
         'name__iexact__extra=Apple',
         'has_inactive_children__in=false',
+        # Django has the full-text lookup on string fields only (FieldError before)
+        'price__search=1',
+        'dt_approved__search=2024',
         'child_entities__child_name__in=a,b',
     ],
 )
