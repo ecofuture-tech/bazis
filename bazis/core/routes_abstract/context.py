@@ -29,7 +29,7 @@ from starlette.routing import BaseRoute
 
 from pydantic import BaseModel
 
-from bazis.core.schemas.enums import ApiAction
+from bazis.core.schemas.enums import ApiAction, RouteKind
 
 
 if TYPE_CHECKING:
@@ -119,6 +119,8 @@ class RouteContext:
     store: dict = dataclasses.field(default_factory=dict)
     #: Reference to the fastapi route
     route: BaseRoute | None = None
+    #: What the route does for API clients; None takes the kind of the overridden route
+    kind: RouteKind | None = None
 
     def __set_name__(self, owner: type['InitialRouteBase'], name: str):
         """

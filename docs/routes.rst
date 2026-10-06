@@ -65,6 +65,7 @@ In each class, there is a class variable :py:attr:`~bazis.core.routes_abstract.i
 - ``cls``: If the decorator is applied to a method, specifying it is not necessary. If the route is defined by directly calling the decorator as a function, the associated class route can be explicitly passed to ``cls``.
 - ``endpoint_callbacks``: List of functions that will be applied to the :py:class:`~bazis.core.routes_abstract.initial.RouteContext` object during route initialization. Function signature: ``(cls=cls, route_ctx=route_ctx)``.
 - ``inject_tags``: List of tags based on which corresponding Injects will be applied to the route.
+- ``kind``: What the route does for API clients, a :py:class:`~bazis.core.schemas.enums.RouteKind`; it is the ``kind`` of the ``x-bazis`` extension of the OpenAPI operation (see :doc:`openapi`). Without it, an override keeps the kind of the route it overrides and a new route is ``other``.
 - The remaining parameters are identical to the route parameters in FastAPI.
 
 **Injects**:

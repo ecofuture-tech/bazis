@@ -176,6 +176,35 @@ class CrudApiAction(ApiAction):
         return False
 
 
+class RouteKind(enum.StrEnum):
+    """
+    What a route of a route class does, for API clients: the `kind` of the `x-bazis`
+    extension of its OpenAPI operation. The HTTP method of a `relationship` route tells
+    whether it adds (POST), replaces (PATCH) or removes (DELETE) the related objects.
+    Declared with the `kind` argument of the `http_*` decorators; an override of a route
+    keeps the kind of the route it overrides.
+
+    Tags: RAG, EXPORT
+    """
+
+    #: a JSON:API document with a list of resources
+    COLLECTION = 'collection'
+    #: creates a resource
+    CREATE = 'create'
+    #: a JSON:API document with one resource
+    ITEM = 'item'
+    #: updates a resource
+    UPDATE = 'update'
+    #: deletes a resource
+    DELETE = 'delete'
+    #: changes the related resources of a relation of a resource
+    RELATIONSHIP = 'relationship'
+    #: describes the schema or the filter fields of the routes
+    SCHEMA = 'schema'
+    #: any other route (the default)
+    OTHER = 'other'
+
+
 class HttpMethod(enum.StrEnum):
     GET = 'get'
     POST = 'post'

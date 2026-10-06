@@ -7,7 +7,7 @@ summary = "JSON:API services on Django + FastAPI with schemas generated from the
 solves = [
     "REST/JSON:API CRUD for Django models",
     "filtering, sorting, pagination, sparse fieldsets, included resources",
-    "OpenAPI documentation",
+    "OpenAPI documentation, with the resource, action and kind of each operation (x-bazis) for client generators",
     "settings from environment variables and dynamic settings in the admin",
 ]
 requires = []
@@ -32,6 +32,11 @@ use_when = "include or exclude fields of a route, per action (CrudApiAction)"
 name = "calc_property"
 import = "bazis.core.utils.orm.calc_property"
 use_when = "a calculated field fetched in the same query"
+
+[[extension_points]]
+name = "RouteKind"
+import = "bazis.core.schemas.enums.RouteKind"
+use_when = "declare what a custom route does (`kind=` of the http_* decorators, `x-bazis` in OpenAPI)"
 
 [[extension_points]]
 name = "BazisRouter"
