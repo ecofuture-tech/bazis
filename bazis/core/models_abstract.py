@@ -516,9 +516,10 @@ class UuidMixin(InitialBase):
     def get_id_example(cls):
         """
         Returns a string representation of a UUID example for the model's primary key.
-        This is useful for schema generation.
+        This is useful for schema generation, so the example is derived from the model
+        label: the generated OpenAPI must be the same on every build.
         """
-        return str(uuid.uuid4())
+        return str(uuid.uuid5(uuid.NAMESPACE_OID, cls.get_resource_label()))
 
 
 class UniqNumberMixin(InitialBase):

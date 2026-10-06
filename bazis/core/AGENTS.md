@@ -57,6 +57,13 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
 - Calculated fields: `@calc_property([...])` from `bazis.core.utils.orm`, declared with the
   fields they need (`FieldRelated`, `FieldJson`, ...) so that the query fetches them in one
   pass; then add them to the route with `SchemaField(source=..., required=False)`.
+- A callable default of a model field (`auto_now`, `timezone.now`, `uuid.uuid4`, `dict`, a
+  database lookup) is never evaluated by the schemas, neither when they are built nor when
+  a request or a response is validated: the field is optional, without a `default` in the
+  OpenAPI, and an omitted field gets the default of the model on save (only the attributes
+  sent by the client are written). Static defaults (`True`, `'new'`) stay in the OpenAPI.
+  The generated OpenAPI must not depend on the process or the time (it is hashed to detect a
+  stale frontend contract): do not put random or time-based values into schemas.
 
 ## Routes
 
