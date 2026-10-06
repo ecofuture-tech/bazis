@@ -67,6 +67,30 @@ LOOKUP_PREFIXES: dict[str, str] = {
     '$': 'iregex',
 }
 
+# Lookup suffixes a filter accepts after a field, by the kind of the field (None: no suffix).
+# `isnull` is accepted for every kind. Any other suffix is an error, never ignored.
+# Django registers the full-text `search` lookup on string fields only.
+LOOKUPS_STRING = frozenset({None, *RANGE_SUFFIX, *LOOKUP_PREFIXES.values(), SEARCH_TERM})
+LOOKUPS_EXACT = LOOKUPS_STRING - {'search'}
+LOOKUPS_TEXT = frozenset({None, *LOOKUP_PREFIXES.values(), SEARCH_TERM})
+LOOKUPS_BOOL = frozenset({None})
+LOOKUPS_ARRAY = frozenset({None, 'overlap', 'contains', 'contained_by'})
+LOOKUPS_RANGE = frozenset(
+    {
+        'contains',
+        'contained_by',
+        'overlap',
+        'fully_lt',
+        'fully_gt',
+        'not_lt',
+        'not_gt',
+        'adjacent_to',
+    }
+)
+LOOKUPS_GEO = frozenset({None, 'near', 'in_bbox'})
+# Lookups of a relation itself; anything else after a relation is a field of the related model.
+RELATION_LOOKUPS = frozenset({'exists', 'isnull'})
+
 DJANGO_SEARCH_FIELDS = [
     models.CharField,
     models.TextField,
@@ -717,41 +741,46 @@ class QueryToOrm:
                 queries[1].extend(_f)
 
         if '.' in param:
-            q = self._filter_by_type(param, value, model)
-            if q:
-                queries_add(q)
-
-        if field_info := fields_info.fields.get(param):
+            if params:
+                raise ValueError(f"The filter by objects of '{param}' takes no lookup")
+            queries_add(self._filter_by_type(param, value, model))
+        elif field_info := fields_info.fields.get(param):
             if params and param in fields_info.relations:
                 queries_add(self._filters_apply_relation(params, value, field_info))
             else:
                 queries_add(self._filters_apply_native(params, value, field_info))
-        elif param == SEARCH_TERM and value:
+        elif param == SEARCH_TERM:
+            if params:
+                raise ValueError(f"The filter '{SEARCH_TERM}' takes no lookup")
             queries_add(self._filters_apply_search(model, value))
-        elif func_calc := get_attr(model, param):
-            if isinstance(func_calc, calc_cached_property) and func_calc.as_filter:
-                if func_calc.response_type is bool or value in ('true', 'false'):
-                    value = BOOLS.get(value)
+        elif (
+            isinstance(func_calc := get_attr(model, param), calc_cached_property)
+            and func_calc.as_filter
+        ):
+            if func_calc.response_type is bool or value in ('true', 'false'):
+                value = BOOLS.get(value)
 
-                type_calc = func_calc.filter_field or FieldDummy
+            type_calc = func_calc.filter_field or FieldDummy
 
-                type_obj = type_calc(name=param)
-                type_obj.model = model
+            type_obj = type_calc(name=param)
+            type_obj.model = model
 
-                queries_add(
-                    self._filters_apply_native(params, value, type_obj), func_calc.fields_calc
-                )
+            queries_add(self._filters_apply_native(params, value, type_obj), func_calc.fields_calc)
+        else:
+            raise ValueError(f"Unknown filter field '{param}' of {model._meta.label}")
 
         return queries
 
     def _filter_by_type(self, model_label, ids, target_model):
         source_model = InitialBase.get_model_by_label(model_label)
-        if not source_model:
-            return None
-
-        relations_by_model = source_model.get_fields_info().relations_by_model
+        relations_by_model = (
+            source_model.get_fields_info().relations_by_model if source_model else {}
+        )
         if target_model not in relations_by_model:
-            return None
+            raise ValueError(
+                f"Unknown filter field '{model_label}': not a model related to "
+                f'{target_model._meta.label}'
+            )
 
         ids = ids.split(',')
 
@@ -771,24 +800,26 @@ class QueryToOrm:
         :return: An Exists subquery representing the filter condition.
         """
         exists_qs = field_info.get_subqueryset()
+
+        # the existence of related objects: `rel__exists=true`, `rel__isnull=true` (none)
+        if (lookup := LOOKUP_SEP.join(params)) in RELATION_LOOKUPS:
+            is_true = value not in BOOLS_NEG
+            exists = Exists(exists_qs.values('id'))
+            return exists if is_true is (lookup == 'exists') else ~exists
+
         q, fields_calc = self._filters_apply(params, value, exists_qs.model)
         if fields_calc:
             exists_qs = apply_calc_queryset(exists_qs, fields_calc, context=self.fiter_context)
 
         # expression of the existence of a nested query
-        exists_qs = Exists(exists_qs.filter(q).values('id'))
-
-        # if the query contains an existence expression - handle it separately
-        if 'exists' == params[0]:
-            if value in BOOLS_NEG:
-                exists_qs = ~exists_qs
-
-        return exists_qs
+        return Exists(exists_qs.filter(q).values('id'))
 
     def _filters_apply_native(self, params, value, field):
         """
         For the final value, perform null conversion and apply the appropriate filter based on
-        the field type.
+        the field type. The remaining parameters are the lookup suffix: it must be one of the
+        lookups of the field kind (`LOOKUPS_*`) or `isnull`, otherwise ValueError is raised
+        (ServiceFiltering answers it with 400 ERR_FILTER).
 
         :param params: list of parameters derived from the lookup key.
         :param value: the value to filter by.
@@ -801,17 +832,32 @@ class QueryToOrm:
             value = None
 
         if isinstance(field, PointField):
-            func = self._func_geo
+            func, lookups = self._func_geo, LOOKUPS_GEO
         elif isinstance(field, RangeField):
-            func = self._func_range
+            func, lookups = self._func_range, LOOKUPS_RANGE
         elif isinstance(field, models.BooleanField):
-            func = self._func_bool
+            func, lookups = self._func_bool, LOOKUPS_BOOL
         elif isinstance(field, ArrayField):
-            func = self._func_overlap
+            func, lookups = self._func_overlap, LOOKUPS_ARRAY
         elif isinstance(field, models.TextField):
-            func = self._func_text
+            func, lookups = self._func_text, LOOKUPS_TEXT
+        elif isinstance(field, models.CharField):
+            func, lookups = self._func_exact, LOOKUPS_STRING
         else:
-            func = self._func_exact
+            func, lookups = self._func_exact, LOOKUPS_EXACT
+
+        lookup = LOOKUP_SEP.join(params) or None
+        if lookup in BOOL_SUFFIX:
+            return Q(**{f'{field.name}__{lookup}': value not in BOOLS_NEG})
+        if lookup not in lookups:
+            supported = ', '.join(sorted(it for it in lookups | BOOL_SUFFIX if it))
+            if lookup:
+                problem = (
+                    f"The filter lookup '{lookup}' is not supported for the field '{field.name}'"
+                )
+            else:
+                problem = f"The filter field '{field.name}' requires a lookup"
+            raise ValueError(f'{problem}; supported lookups: {supported}')
 
         return func(value, params, field)
 
@@ -845,8 +891,6 @@ class QueryToOrm:
                 return self._filters_apply_search(field.model, value, field_name)
             if action == SEARCH_TERM:
                 return self._filters_apply_search(field.model, value, field.name)
-            if action in BOOL_SUFFIX:
-                return self._func_bool(value, params, field)
         if isinstance(value, list | set | tuple):
             return Q(**{f'{field.name}__in': value})
         return Q(**{field.name: value})
@@ -934,19 +978,17 @@ class QueryToOrm:
         :param field: The range model field to apply the filter to.
         :return: A Q object representing the range filter condition.
         """
-        if value and params:
-            action = params[0]
-            if action in RangeField.class_lookups:
-                start, end = value.split(',')
+        if value:
+            start, end = value.split(',')
 
-                if field.base_field.get_internal_type() == 'DateRangeField':
-                    start = parse_date(start)
-                    end = parse_date(end)
-                elif field.base_field.get_internal_type() == 'DateTimeRangeField':
-                    start = parse_datetime(start)
-                    end = parse_datetime(end)
+            if field.base_field.get_internal_type() == 'DateRangeField':
+                start = parse_date(start)
+                end = parse_date(end)
+            elif field.base_field.get_internal_type() == 'DateTimeRangeField':
+                start = parse_datetime(start)
+                end = parse_datetime(end)
 
-                return Q(**{f'{field.name}__{action}': (start, end)})
+            return Q(**{f'{field.name}__{params[0]}': (start, end)})
         return Q()
 
     def _func_bool(self, value, params, field):
@@ -958,11 +1000,7 @@ class QueryToOrm:
         :param field: The boolean model field to apply the filter to.
         :return: A Q object representing the boolean filter condition.
         """
-        is_true = value not in BOOLS_NEG
-        if action := get_attr(params, 0):
-            if action in BOOL_SUFFIX:
-                return Q(**{f'{field.name}__{action}': is_true})
-        return Q(**{field.name: is_true})
+        return Q(**{field.name: value not in BOOLS_NEG})
 
     def _func_text(self, value, params, field):
         """
