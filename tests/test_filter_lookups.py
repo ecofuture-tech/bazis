@@ -65,3 +65,12 @@ def test_isnull(field):
 def test_unsupported_lookups(field, key, value, message):
     with pytest.raises(ValueError, match=message):
         _native(field, key.split('__')[0], key, value)
+
+
+def test_filters_aliases():
+    aliases = {'title': 'name', 'kids': 'child_entities'}
+
+    assert QueryToOrm('title=x', ParentEntity, aliases).q == Q(name='x')
+    assert QueryToOrm('kids__exists=true', ParentEntity, aliases).q
+    with pytest.raises(ValueError, match="Unknown filter field 'title'"):
+        QueryToOrm('title=x', ParentEntity)

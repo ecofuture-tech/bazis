@@ -491,8 +491,8 @@ The `filter` query parameter holds one expression (URL-encode it):
 `false` is false for boolean fields, any other value is true. The `search` parameter
 (`?search=test`) searches the search fields of the route.
 
-The lookup suffixes are not Django lookups; a field accepts only these (and `isnull`, except
-relations, which use `exists`):
+The lookup suffixes are not Django lookups; a field accepts only these (and `isnull`).
+A relation accepts `exists` and `isnull` (`true`/`false`) or a field of the related model:
 
 - `TextField`: none (substring), `iexact`, `istartswith`, `iregex`, `search`, `$search`;
 - other scalar fields (strings, numbers, dates, choices, ids; calculated filters without a
@@ -505,7 +505,8 @@ relations, which use `exists`):
 - geo points: none (within 10 m), `near`, `in_bbox`.
 
 `iexact`, `istartswith`, `iregex`, `search` and `$search` apply to every word of the value. Any
-other suffix (`__in`, `__icontains`, ...) is an error 400 `ERR_FILTER`. The server decodes the
+other suffix (`__in`, `__icontains`, ...), an unknown field (also after a relation) and a
+calculated field that is not a filter are an error 400 `ERR_FILTER`. The server decodes the
 expression once more and every value once more: percent-encode a value containing
 `&|()[]~=+%` twice inside the expression. See `docs/openapi.rst` for details.
 

@@ -56,3 +56,6 @@ text = "reverse relations are not in the schemas by default: add them to `fields
 
 [[pitfalls]]
 text = "`filter` lookups are not Django lookups: `__in`, `__icontains`, `__contains` on a text or number field are 400 ERR_FILTER; the supported suffixes are in AGENTS.md"
+
+[[pitfalls]]
+text = "an unknown `filter` field (also after a relation, such as `author__in`) is 400 ERR_FILTER, and a `filter:` restriction or permission condition with one fails the request"

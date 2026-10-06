@@ -53,9 +53,10 @@ Filtering implementation in Bazis: :py:mod:`~bazis.core.services.filtering`
 The key of a condition is a field label with an optional lookup suffix separated by ``__``.
 The suffixes are not Django lookups: only the ones listed here are supported, any other suffix
 (for example ``__in``, ``__icontains`` or ``__contains`` on a text or number field) is rejected
-with the error 400 ``ERR_FILTER``.
+with the error 400 ``ERR_FILTER``. So is an unknown field, also after a relation (``author__in``,
+``author__unknown``), and a calculated field that is not a filter.
 
-- **For any field** except relations (they use ``__exists``, see below): ``__isnull=true|false``.
+- **For any field**: ``__isnull=true|false``; for a relation it is the opposite of ``__exists`` (see below).
   For example, ``point__isnull=true`` for the *point* field.
 - **For boolean fields**: values *false*, *0* are false, any other value is true. For example, ``is_validate=false``.
 - **For text fields (TextField)**: without a suffix, substring search (also ``__$search``);
@@ -90,3 +91,5 @@ A related entity is available in the **relationships** block in the OpenAPI sche
 
 A special filter for checking the existence of a related object is available through the postfix ``__exists``:
 For example, to check if there is a related *facility* object in the current object, you can use: ``facility__exists=true``.
+``facility__isnull=true`` is the same as ``facility__exists=false``. After a relation, any other name must be a field
+(or a calculated filter) of the related entity or ``$search``.

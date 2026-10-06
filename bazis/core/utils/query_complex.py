@@ -88,6 +88,8 @@ LOOKUPS_RANGE = frozenset(
     }
 )
 LOOKUPS_GEO = frozenset({None, 'near', 'in_bbox'})
+# Lookups of a relation itself; anything else after a relation is a field of the related model.
+RELATION_LOOKUPS = frozenset({'exists', 'isnull'})
 
 DJANGO_SEARCH_FIELDS = [
     models.CharField,
@@ -739,41 +741,46 @@ class QueryToOrm:
                 queries[1].extend(_f)
 
         if '.' in param:
-            q = self._filter_by_type(param, value, model)
-            if q:
-                queries_add(q)
-
-        if field_info := fields_info.fields.get(param):
+            if params:
+                raise ValueError(f"The filter by objects of '{param}' takes no lookup")
+            queries_add(self._filter_by_type(param, value, model))
+        elif field_info := fields_info.fields.get(param):
             if params and param in fields_info.relations:
                 queries_add(self._filters_apply_relation(params, value, field_info))
             else:
                 queries_add(self._filters_apply_native(params, value, field_info))
-        elif param == SEARCH_TERM and value:
+        elif param == SEARCH_TERM:
+            if params:
+                raise ValueError(f"The filter '{SEARCH_TERM}' takes no lookup")
             queries_add(self._filters_apply_search(model, value))
-        elif func_calc := get_attr(model, param):
-            if isinstance(func_calc, calc_cached_property) and func_calc.as_filter:
-                if func_calc.response_type is bool or value in ('true', 'false'):
-                    value = BOOLS.get(value)
+        elif (
+            isinstance(func_calc := get_attr(model, param), calc_cached_property)
+            and func_calc.as_filter
+        ):
+            if func_calc.response_type is bool or value in ('true', 'false'):
+                value = BOOLS.get(value)
 
-                type_calc = func_calc.filter_field or FieldDummy
+            type_calc = func_calc.filter_field or FieldDummy
 
-                type_obj = type_calc(name=param)
-                type_obj.model = model
+            type_obj = type_calc(name=param)
+            type_obj.model = model
 
-                queries_add(
-                    self._filters_apply_native(params, value, type_obj), func_calc.fields_calc
-                )
+            queries_add(self._filters_apply_native(params, value, type_obj), func_calc.fields_calc)
+        else:
+            raise ValueError(f"Unknown filter field '{param}' of {model._meta.label}")
 
         return queries
 
     def _filter_by_type(self, model_label, ids, target_model):
         source_model = InitialBase.get_model_by_label(model_label)
-        if not source_model:
-            return None
-
-        relations_by_model = source_model.get_fields_info().relations_by_model
+        relations_by_model = (
+            source_model.get_fields_info().relations_by_model if source_model else {}
+        )
         if target_model not in relations_by_model:
-            return None
+            raise ValueError(
+                f"Unknown filter field '{model_label}': not a model related to "
+                f'{target_model._meta.label}'
+            )
 
         ids = ids.split(',')
 
@@ -793,19 +800,19 @@ class QueryToOrm:
         :return: An Exists subquery representing the filter condition.
         """
         exists_qs = field_info.get_subqueryset()
+
+        # the existence of related objects: `rel__exists=true`, `rel__isnull=true` (none)
+        if (lookup := LOOKUP_SEP.join(params)) in RELATION_LOOKUPS:
+            is_true = value not in BOOLS_NEG
+            exists = Exists(exists_qs.values('id'))
+            return exists if is_true is (lookup == 'exists') else ~exists
+
         q, fields_calc = self._filters_apply(params, value, exists_qs.model)
         if fields_calc:
             exists_qs = apply_calc_queryset(exists_qs, fields_calc, context=self.fiter_context)
 
         # expression of the existence of a nested query
-        exists_qs = Exists(exists_qs.filter(q).values('id'))
-
-        # if the query contains an existence expression - handle it separately
-        if 'exists' == params[0]:
-            if value in BOOLS_NEG:
-                exists_qs = ~exists_qs
-
-        return exists_qs
+        return Exists(exists_qs.filter(q).values('id'))
 
     def _filters_apply_native(self, params, value, field):
         """

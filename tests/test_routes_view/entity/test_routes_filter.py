@@ -485,3 +485,90 @@ def test_calc_field(sample_app):
 
     for it in data['data']:
         assert it['attributes']['has_inactive_children'] is False
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    'filter_str',
+    [
+        # an unknown field gave no condition at all
+        'nonexistent=1',
+        'nonexistent__in=1',
+        # a calculated field that is not a filter
+        'extended_entity_price=1',
+        # after a relation, an unknown name gave "has related objects"
+        'child_entities__in=1,2',
+        'child_entities__nonexistent=1',
+        'child_entities__exists__extra=true',
+        # objects of a model that does not exist or is not related
+        'entity.nonexistent=1',
+        'entity.vehicle=1',
+        '$search__extra=x',
+    ],
+)
+def test_unknown_filter_field_returns_bad_request(sample_app, filter_str):
+    factories.ParentEntityFactory()
+
+    response = get_api_client(sample_app).get(
+        '/api/v1/entity/parent_entity/', params={'filter': filter_str}
+    )
+
+    assert response.status_code == 400
+    error = response.json()['errors'][0]
+    assert error['code'] == 'ERR_FILTER'
+    assert error['source'] == {'pointer': '/query/filter'}
+
+
+def _parent_ids(sample_app, filter_str):
+    response = get_api_client(sample_app).get(
+        '/api/v1/entity/parent_entity/', params={'filter': filter_str}
+    )
+    assert response.status_code == 200, response.json()
+    return {it['id'] for it in response.json()['data']}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_relation_exists_isnull(sample_app):
+    """`isnull` of a relation is the opposite of `exists` (it was "has related objects" for
+    any value)."""
+    child = factories.ChildEntityFactory()
+    with_children = factories.ParentEntityFactory()
+    with_children.child_entities.add(child)
+    without_children = factories.ParentEntityFactory()
+
+    has = {str(with_children.pk)}
+    has_not = {str(without_children.pk)}
+    assert _parent_ids(sample_app, 'child_entities__exists=true') == has
+    assert _parent_ids(sample_app, 'child_entities__exists=false') == has_not
+    assert _parent_ids(sample_app, 'child_entities__isnull=false') == has
+    assert _parent_ids(sample_app, 'child_entities__isnull=true') == has_not
+    # a reverse foreign key: every parent has its dependent entity (RelatedFactory)
+    assert _parent_ids(sample_app, 'dependent_entities__exists=true') == has | has_not
+    assert _parent_ids(sample_app, f'child_entities__child_name={child.child_name}') == has
+    assert _parent_ids(sample_app, f'entity.child_entity={child.pk}') == has
+
+
+@pytest.mark.django_db(transaction=True)
+def test_array_field_lookups(sample_app):
+    first = factories.ParentEntityFactory(field=['first_field'])
+    both = factories.ParentEntityFactory(field=['first_field', 'second_field'])
+    third = factories.ParentEntityFactory(field=['third_field'])
+
+    assert _parent_ids(sample_app, 'field=first_field,second_field') == {
+        str(first.pk),
+        str(both.pk),
+    }
+    assert _parent_ids(sample_app, 'field__overlap=third_field') == {str(third.pk)}
+    assert _parent_ids(sample_app, 'field__contains=first_field,second_field') == {str(both.pk)}
+    assert _parent_ids(sample_app, 'field__contained_by=first_field,third_field') == {
+        str(first.pk),
+        str(third.pk),
+    }
+
+
+@pytest.mark.django_db(transaction=True)
+def test_calc_field_isnull(sample_app):
+    parent = factories.ParentEntityFactory()
+
+    assert _parent_ids(sample_app, 'has_inactive_children__isnull=false') == {str(parent.pk)}
+    assert _parent_ids(sample_app, 'has_inactive_children__isnull=true') == set()
