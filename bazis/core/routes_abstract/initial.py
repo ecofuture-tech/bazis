@@ -80,9 +80,13 @@ from asgiref.sync import async_to_sync
 
 from bazis.core.routes_abstract.context import RouteContext, RouteParams
 from bazis.core.routing import BazisRoute, BazisRouter
-from bazis.core.schemas.enums import ApiAction, HttpMethod
+from bazis.core.schemas.enums import ApiAction, HttpMethod, RouteKind
 from bazis.core.utils.functools import func_sig_params_append, func_sig_transfer, get_class_name
 from bazis.core.utils.orm import close_old_connections
+
+
+#: the OpenAPI extension of the operations of the route classes (see `InitialRouteBase.route_meta`)
+OPENAPI_EXTENSION = 'x-bazis'
 
 
 def inject_make(*args: ApiAction):
@@ -126,6 +130,7 @@ def http_action_decor(
     response_model_route: RouteContext | Callable[..., Any] | None,
     endpoint_callbacks: list[Callable[..., Any] | partial] | None,
     *,
+    kind: RouteKind | None = None,
     status_code: int | None = None,
     tags: list[str | Enum] | None = None,
     dependencies: Sequence[DependsCls] | None = None,
@@ -150,6 +155,8 @@ def http_action_decor(
     """
     Universal decorator for registering HTTP handlers of all types.
     Not used directly; it is called from specialized decorators.
+    `kind` tells API clients what the route does (`x-bazis` in OpenAPI); without it an
+    override keeps the kind of the route it overrides, a new route is `other`.
 
     Tags: RAG
     """
@@ -171,6 +178,7 @@ def http_action_decor(
             http_method=http_method.value,
             inject_tags=set(inject_tags) if inject_tags is not None else set(),
             endpoint_callbacks=endpoint_callbacks,
+            kind=kind,
             route_params=RouteParams(
                 path=path,
                 response_model=response_model,
@@ -458,6 +466,9 @@ class InitialRouteBaseMeta(type):
                         routes_ctx[route_ctx.name] = route_ctx_for_cls
                         # Overriding the route object attribute in the class
                         setattr(route_cls, route_ctx.name, route_ctx_for_cls)
+                    elif routes_ctx[route_ctx.name].kind is None:
+                        # an override keeps the kind of the route it overrides
+                        routes_ctx[route_ctx.name].kind = route_ctx.kind
         route_cls.routes_ctx = routes_ctx
         # Launching class custom initialization
         route_cls.cls_init()
@@ -680,13 +691,33 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
         return route_ctx
 
     @classmethod
+    def route_meta(cls, route_ctx: RouteContext) -> dict:
+        """
+        The facts about a route for API clients and tools: the `x-bazis` extension of its
+        OpenAPI operation, also reported by `bazis_introspect`. `resource` is the JSON:API
+        type of the model of the class (None without a model), `action` is the name of the
+        route (as `as_router(actions=...)` takes it), `kind` is a `RouteKind`.
+        """
+        model = getattr(cls, 'model', None)
+        return {
+            'resource': model.get_resource_label() if model is not None else None,
+            'route_set': f'{cls.__module__}.{cls.__qualname__}',
+            'action': route_ctx.name,
+            'kind': (route_ctx.kind or RouteKind.OTHER).value,
+        }
+
+    @classmethod
     def endpoint_register(cls, router: BazisRouter, route_ctx: RouteContext):
         """
-        Register the route in the router defined in the class.
+        Register the route in the router defined in the class, with the `x-bazis`
+        extension of its OpenAPI operation.
         """
-        getattr(router, route_ctx.http_method)(**dataclasses.asdict(route_ctx.route_params))(
-            route_ctx.endpoint
-        )
+        route_params = dataclasses.asdict(route_ctx.route_params)
+        route_params['openapi_extra'] = {
+            **(route_params['openapi_extra'] or {}),
+            OPENAPI_EXTENSION: cls.route_meta(route_ctx),
+        }
+        getattr(router, route_ctx.http_method)(**route_params)(route_ctx.endpoint)
 
         # save the reference to the low-level route in the context
         route_ctx.route = router.routes[-1]

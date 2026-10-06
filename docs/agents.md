@@ -8,11 +8,15 @@ project needs, use them the way they are meant to be used and check the result.
 - `python manage.py bazis_introspect [packages|settings|models|routes]` prints the facts
   about the project as JSON: the installed Bazis packages with their manifests, the
   settings (secrets hidden, dynamic settings without a value), the JSON:API models with
-  their relations, and the route classes with their base classes and routes.
+  their relations, and the route classes with their base classes and routes (path,
+  methods, `action`, `kind`).
 - `python manage.py bazis_doctor [--deploy] [--json]` runs the Django system checks,
   including the checks of the Bazis packages that need the routes, and exits with an error
   if any check fails with an error. `--deploy` adds the deployment checks.
 - `bazis.core.introspect` is the Python API of the same data.
+- The OpenAPI schema (`/api/openapi.json`) carries the same facts about each operation of a
+  route class in the extension `x-bazis` (`resource`, `route_set`, `action`, `kind`; see
+  the OpenAPI docs), for client generators; other operations have none.
 - [bazis-mcp](https://github.com/ecofuture-tech/bazis-mcp) serves the same data and the
   catalog of all Bazis packages to MCP clients (Claude Code, IDEs).
 

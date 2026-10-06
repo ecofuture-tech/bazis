@@ -82,6 +82,13 @@ class OrderRouteSet(JsonapiRouteBase):
 - Logic around writes: override `hook_before_create`, `hook_after_create`,
   `hook_before_update`, `hook_after_update` (and `hook_before/after_relationships_change`
   for the relationships endpoints). They run inside the transaction.
+- Custom routes: `@http_get('/{item_id}/card/', kind=RouteKind.ITEM)` (decorators from
+  `bazis.core.routes_abstract.initial`, `RouteKind` from `bazis.core.schemas.enums`). Every
+  operation of a route class has the OpenAPI extension
+  `x-bazis: {resource, route_set, action, kind}` (`action` is the method name,
+  `kind` is collection, create, item, update, delete, relationship, schema or other);
+  client generators read it instead of parsing `operationId`. Without `kind` a route is
+  `other`; an override keeps the kind of the route it overrides.
 - Register: `router = BazisRouter(tags=['CRM'])`, `router.register(OrderRouteSet.as_router())`
   in `<app>/router.py`; the root router (`BazisRouter(prefix='/api/v1')`) registers the app
   routers by module name: `router.register('crm.router')`.

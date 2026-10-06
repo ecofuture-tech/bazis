@@ -262,37 +262,46 @@ def loaded_app():
 
 def route_sets(app) -> dict[type, list[dict]]:
     """
-    The route classes of the application with their routes.
+    The route classes of the application with their routes. The facts about a route are
+    the `x-bazis` extension of its OpenAPI operation (`InitialRouteBase.route_meta`).
     """
+    from bazis.core.routes_abstract.initial import OPENAPI_EXTENSION
+
     result: dict[type, list[dict]] = {}
     for path, route in iter_routes_with_paths(app.routes):
-        route_ctx = getattr(route.endpoint, 'route_ctx', None)
-        route_cls = getattr(route_ctx, 'route_cls', None)
-        if route_cls is None:
+        meta = (route.openapi_extra or {}).get(OPENAPI_EXTENSION)
+        if meta is None:
             continue
-        result.setdefault(route_cls, []).append(
-            {'path': path, 'methods': sorted(route.methods or ()), 'action': route_ctx.name}
+        result.setdefault(route.endpoint.route_ctx.route_cls, []).append(
+            {'path': path, 'methods': sorted(route.methods or ()), **meta}
         )
     return result
 
 
+#: the facts of `x-bazis` that are the same for all routes of a route class
+CLASS_FACTS = ('route_set', 'resource')
+
+
 def routes_info(app) -> list[dict]:
     """
-    The route classes of the application: the model, the base classes and the routes.
+    The route classes of the application: the resource, the base classes and the routes
+    with their action and kind.
     """
     result = []
     for route_cls, routes in route_sets(app).items():
-        model = getattr(route_cls, 'model', None)
         result.append(
             {
-                'route_set': f'{route_cls.__module__}.{route_cls.__qualname__}',
-                'resource': model.get_resource_label() if model is not None else None,
+                'route_set': routes[0]['route_set'],
+                'resource': routes[0]['resource'],
                 'bases': [
                     f'{base.__module__}.{base.__qualname__}'
                     for base in route_cls.__mro__[1:]
                     if base.__module__.startswith('bazis.')
                 ],
-                'routes': sorted(routes, key=lambda it: (it['path'], it['methods'])),
+                'routes': sorted(
+                    ({k: v for k, v in it.items() if k not in CLASS_FACTS} for it in routes),
+                    key=lambda it: (it['path'], it['methods']),
+                ),
             }
         )
     return sorted(result, key=lambda it: it['route_set'])
