@@ -65,6 +65,13 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
 - Calculated fields: `@calc_property([...])` from `bazis.core.utils.orm`, declared with the
   fields they need (`FieldRelated`, `FieldJson`, ...) so that the query fetches them in one
   pass; then add them to the route with `SchemaField(source=..., required=False)`.
+- A callable default of a model field (`auto_now`, `timezone.now`, `uuid.uuid4`, `dict`, a
+  database lookup) is never evaluated by the schemas, neither when they are built nor when
+  a request or a response is validated: the field is optional, without a `default` in the
+  OpenAPI, and an omitted field gets the default of the model on save (only the attributes
+  sent by the client are written). Static defaults (`True`, `'new'`) stay in the OpenAPI.
+  The generated OpenAPI must not depend on the process or the time (it is hashed to detect a
+  stale frontend contract): do not put random or time-based values into schemas.
 
 ## Routes
 
@@ -90,6 +97,13 @@ class OrderRouteSet(JsonapiRouteBase):
 - Logic around writes: override `hook_before_create`, `hook_after_create`,
   `hook_before_update`, `hook_after_update` (and `hook_before/after_relationships_change`
   for the relationships endpoints). They run inside the transaction.
+- Custom routes: `@http_get('/{item_id}/card/', kind=RouteKind.ITEM)` (decorators from
+  `bazis.core.routes_abstract.initial`, `RouteKind` from `bazis.core.schemas.enums`). Every
+  operation of a route class has the OpenAPI extension
+  `x-bazis: {resource, route_set, action, kind}` (`action` is the method name,
+  `kind` is collection, create, item, update, delete, relationship, schema or other);
+  client generators read it instead of parsing `operationId`. Without `kind` a route is
+  `other`; an override keeps the kind of the route it overrides.
 - Register: `router = BazisRouter(tags=['CRM'])`, `router.register(OrderRouteSet.as_router())`
   in `<app>/router.py`; the root router (`BazisRouter(prefix='/api/v1')`) registers the app
   routers by module name: `router.register('crm.router')`.
@@ -97,9 +111,27 @@ class OrderRouteSet(JsonapiRouteBase):
 ## API conventions
 
 - `filter` is one expression: `filter=status=new&price__gte=20`, `filter=(a=1|b=2)`,
-  nested fields `filter=customer__name=Acme`, lookups `__gt/__gte/__lt/__lte`, full-text
-  in a field `filter=description__$search=text`; `search=text` searches the search fields of
-  the route. URL-encode the value of `filter`.
+  `~a=1` (not), nested fields `filter=customer__name=Acme` (an `EXISTS` subquery),
+  `customer__exists=true|false` (`customer__isnull` is the opposite), full-text
+  `$search=text` (all text and integer fields of the model) or `customer__$search=text`;
+  `search=text` searches the search fields of the route.
+  The lookup suffixes after a field are not Django lookups; only these exist (plus `isnull`
+  for every field):
+  - text `TextField`: none (substring), `iexact`, `istartswith`, `iregex`, `search`, `$search`;
+  - other scalar fields (calculated filters without `filter_field` too): none (equality),
+    `gt`, `gte`, `lt`, `lte`, `iexact`, `istartswith`, `iregex`, `$search`, and `search`
+    for string fields (`CharField`) only;
+  - boolean: none; array: none (= `overlap`), `overlap`, `contains`, `contained_by` with
+    `a,b`; range: `contains`, `contained_by`, `overlap`, `fully_lt`, `fully_gt`, `not_lt`,
+    `not_gt`, `adjacent_to` with `start,end`; point: none (within 10 m), `near`, `in_bbox`.
+
+  Any other suffix (`__in`, `__icontains`, `__contains` on a text or number field), an
+  unknown field (also after a relation, such as `customer__in`) and a calculated field that
+  is not `as_filter` are an error 400 `ERR_FILTER`. `iexact`/`istartswith`/`iregex`/
+  `search`/`$search` apply to every word of the value. URL-encode the value of `filter`;
+  the server decodes the expression once more and every value once more, so a value with
+  `&|()[]~=+%` is percent-encoded twice inside the expression; quotes are removed from
+  values.
 - `sort=-dt_created,number`, `page[limit]` / `page[offset]`
   (`BAZIS_API_PAGINATION_PAGE_SIZE_MAX` caps the limit), `include=customer,items`,
   `fields[crm.order]=number,customer` (sparse fieldsets).

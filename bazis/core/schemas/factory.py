@@ -20,7 +20,6 @@ from typing import Optional
 from django.contrib.postgres import fields as postgres_fields
 from django.db import models as django_models
 from django.utils.functional import cached_property
-from django.utils.timezone import now
 
 from pydantic import BaseModel
 
@@ -229,12 +228,13 @@ class SchemaFactory:
 
                 # trying to find the default value if it is not explicitly set
                 if field.default == PydanticUndefined:
-                    if getattr(field_db, 'auto_now_add', None):
-                        field.default = now()
-                    elif getattr(field_db, 'auto_now', None):
-                        field.default = now()
+                    if getattr(field_db, 'auto_now_add', None) or getattr(field_db, 'auto_now', None):
+                        field.default = None
                     elif getattr(field_db, 'has_default', None) and field_db.has_default():
-                        field.default = field_db.get_default()
+                        # a callable default (timezone.now, uuid4, a database lookup) is never
+                        # evaluated by the schemas: its value does not belong to the OpenAPI,
+                        # and the model applies its own default on save
+                        field.default = None if callable(field_db.default) else field_db.get_default()
                     # if the field is optional - trying to find the default value
                     elif field.required is False:
                         # if the field is optional and can be null - set the default value

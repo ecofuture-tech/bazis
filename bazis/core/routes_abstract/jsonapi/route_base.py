@@ -47,7 +47,7 @@ from bazis.core.routes_abstract.initial import (
     http_post,
     inject_make,
 )
-from bazis.core.schemas.enums import ApiAction, CrudAccessAction, CrudApiAction
+from bazis.core.schemas.enums import ApiAction, CrudAccessAction, CrudApiAction, RouteKind
 from bazis.core.schemas.factory import SchemaFactory
 from bazis.core.schemas.fields import (
     CallableContext,
@@ -348,11 +348,11 @@ class JsonapiRouteBase(InitialRouteBase):
                 ) from e
             return data
 
-    @http_get('/schema_list/', response_model=dict[str, Any])
+    @http_get('/schema_list/', response_model=dict[str, Any], kind=RouteKind.SCHEMA)
     def action_schema_list(self, **kwargs):
         return with_cache_openapi_schema(self.schemas[CrudApiAction.LIST])
 
-    @http_get('/schema_create/', response_model=dict[str, Any])
+    @http_get('/schema_create/', response_model=dict[str, Any], kind=RouteKind.SCHEMA)
     def action_schema_create(
         self,
         include: str | None = Depends(include_to_list),
@@ -360,7 +360,7 @@ class JsonapiRouteBase(InitialRouteBase):
     ):
         return with_cache_openapi_schema(self.schemas[CrudApiAction.CREATE])
 
-    @http_get('/{item_id}/schema_retrieve/', response_model=dict[str, Any])
+    @http_get('/{item_id}/schema_retrieve/', response_model=dict[str, Any], kind=RouteKind.SCHEMA)
     def action_schema_retrieve(
         self,
         item_id: str,
@@ -371,7 +371,7 @@ class JsonapiRouteBase(InitialRouteBase):
         self.set_item(item_id)
         return with_cache_openapi_schema(self.schemas[CrudApiAction.RETRIEVE])
 
-    @http_get('/{item_id}/schema_update/', response_model=dict[str, Any])
+    @http_get('/{item_id}/schema_update/', response_model=dict[str, Any], kind=RouteKind.SCHEMA)
     def action_schema_update(
         self,
         item_id: str,
@@ -382,7 +382,7 @@ class JsonapiRouteBase(InitialRouteBase):
         self.set_item(item_id)
         return with_cache_openapi_schema(self.schemas[CrudApiAction.UPDATE])
 
-    @http_get('/route_filter_fields/', response_model=FieldListModel)
+    @http_get('/route_filter_fields/', response_model=FieldListModel, kind=RouteKind.SCHEMA)
     def get_route_filter_fields(self, **kwargs):
         """
         Return a list of filterable fields for the current route.
@@ -407,6 +407,7 @@ class JsonapiRouteBase(InitialRouteBase):
     @http_get(
         '/',
         inject_tags=[CrudApiAction.LIST],
+        kind=RouteKind.COLLECTION,
     )
     def action_list(self, **kwargs):
         """
@@ -421,6 +422,7 @@ class JsonapiRouteBase(InitialRouteBase):
     @http_get(
         '/{item_id}/',
         inject_tags=[CrudApiAction.RETRIEVE],
+        kind=RouteKind.ITEM,
     )
     def action_retrieve(self, item_id: str, **kwargs):
         """
@@ -448,6 +450,7 @@ class JsonapiRouteBase(InitialRouteBase):
         '/',
         status_code=201,
         inject_tags=[CrudApiAction.CREATE],
+        kind=RouteKind.CREATE,
     )
     def action_create(
         self,
@@ -469,6 +472,7 @@ class JsonapiRouteBase(InitialRouteBase):
     @http_patch(
         '/{item_id}/',
         inject_tags=[CrudApiAction.UPDATE],
+        kind=RouteKind.UPDATE,
     )
     def action_update(
         self,
@@ -490,6 +494,7 @@ class JsonapiRouteBase(InitialRouteBase):
     @http_post(
         '/{item_id}/relationships/{related_field_name}',
         status_code=204,
+        kind=RouteKind.RELATIONSHIP,
     )
     def action_post_relationships(
         self,
@@ -510,6 +515,7 @@ class JsonapiRouteBase(InitialRouteBase):
     @http_patch(
         '/{item_id}/relationships/{related_field_name}',
         status_code=204,
+        kind=RouteKind.RELATIONSHIP,
     )
     def action_update_relationships(
         self,
@@ -529,6 +535,7 @@ class JsonapiRouteBase(InitialRouteBase):
     @http_delete(
         '/{item_id}/relationships/{related_field_name}',
         status_code=204,
+        kind=RouteKind.RELATIONSHIP,
     )
     def action_delete_relationships(
         self,
@@ -546,7 +553,9 @@ class JsonapiRouteBase(InitialRouteBase):
             self.relationships_change('remove', item_id, related_field_name, relationships_data)
         return Response(status_code=204)
 
-    @http_delete('/{item_id}/', inject_tags=[CrudApiAction.DESTROY], status_code=204)
+    @http_delete(
+        '/{item_id}/', inject_tags=[CrudApiAction.DESTROY], status_code=204, kind=RouteKind.DELETE
+    )
     def action_destroy(self, item_id: str, **kwargs):
         """
         Handles the HTTP DELETE request to delete an item by its ID.

@@ -7,7 +7,7 @@ summary = "JSON:API services on Django + FastAPI with schemas generated from the
 solves = [
     "REST/JSON:API CRUD for Django models",
     "filtering, sorting, pagination, sparse fieldsets, included resources",
-    "OpenAPI documentation",
+    "OpenAPI documentation, with the resource, action and kind of each operation (x-bazis) for client generators",
     "settings from environment variables and dynamic settings in the admin",
 ]
 requires = []
@@ -32,6 +32,11 @@ use_when = "include or exclude fields of a route, per action (CrudApiAction)"
 name = "calc_property"
 import = "bazis.core.utils.orm.calc_property"
 use_when = "a calculated field fetched in the same query"
+
+[[extension_points]]
+name = "RouteKind"
+import = "bazis.core.schemas.enums.RouteKind"
+use_when = "declare what a custom route does (`kind=` of the http_* decorators, `x-bazis` in OpenAPI)"
 
 [[extension_points]]
 name = "BazisRouter"
@@ -60,3 +65,9 @@ check = "bazis.E001"
 
 [[pitfalls]]
 text = "reverse relations are not in the schemas by default: add them to `fields` of the route"
+
+[[pitfalls]]
+text = "`filter` lookups are not Django lookups: `__in`, `__icontains`, `__contains` on a text or number field are 400 ERR_FILTER; the supported suffixes are in AGENTS.md"
+
+[[pitfalls]]
+text = "an unknown `filter` field (also after a relation, such as `author__in`) is 400 ERR_FILTER, and a `filter:` restriction or permission condition with one fails the request"
