@@ -89,9 +89,23 @@ class OrderRouteSet(JsonapiRouteBase):
 ## API conventions
 
 - `filter` is one expression: `filter=status=new&price__gte=20`, `filter=(a=1|b=2)`,
-  nested fields `filter=customer__name=Acme`, lookups `__gt/__gte/__lt/__lte`, full-text
-  in a field `filter=description__$search=text`; `search=text` searches the search fields of
-  the route. URL-encode the value of `filter`.
+  `~a=1` (not), nested fields `filter=customer__name=Acme` (an `EXISTS` subquery),
+  `customer__exists=true|false`, full-text `$search=text` (all text and integer fields of the
+  model) or `customer__$search=text`; `search=text` searches the search fields of the route.
+  The lookup suffixes after a field are not Django lookups; only these exist (plus `isnull`
+  for every field that is not a relation):
+  - text `TextField`: none (substring), `iexact`, `istartswith`, `iregex`, `search`, `$search`;
+  - other scalar fields (calculated filters without `filter_field` too): none (equality),
+    `gt`, `gte`, `lt`, `lte`, `iexact`, `istartswith`, `iregex`, `search`, `$search`;
+  - boolean: none; array: none (= `overlap`), `overlap`, `contains`, `contained_by` with
+    `a,b`; range: `contains`, `contained_by`, `overlap`, `fully_lt`, `fully_gt`, `not_lt`,
+    `not_gt`, `adjacent_to` with `start,end`; point: none (within 10 m), `near`, `in_bbox`.
+
+  Any other suffix (`__in`, `__icontains`, `__contains` on a text or number field) is an
+  error 400 `ERR_FILTER`. `iexact`/`istartswith`/`iregex`/`search`/`$search` apply to every
+  word of the value. URL-encode the value of `filter`; the server decodes the expression once
+  more and every value once more, so a value with `&|()[]~=+%` is percent-encoded twice
+  inside the expression; quotes are removed from values.
 - `sort=-dt_created,number`, `page[limit]` / `page[offset]`
   (`BAZIS_API_PAGINATION_PAGE_SIZE_MAX` caps the limit), `include=customer,items`,
   `fields[crm.order]=number,customer` (sparse fieldsets).

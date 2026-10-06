@@ -35,6 +35,10 @@ Filter string format - extended query string:
 - Grouping operation is enclosed in parentheses: ``()``
 
 **Important**: When adding this string to the URL request in the *filter* parameter, it must be URL-encoded.
+The server decodes the expression once more (``+`` becomes a space) and then every value once more, so a value
+that contains one of the characters ``& | ( ) [ ] ~ = + %`` is percent-encoded twice inside the expression
+(the value ``a&b`` is written ``name=a%2526b``) before the expression is URL-encoded. Quotes (``'``, ``"``) and the
+surrounding spaces are removed from every value.
 
 **Example of Filtering**
 
@@ -46,16 +50,29 @@ Filtering implementation in Bazis: :py:mod:`~bazis.core.services.filtering`
 
 **Supported Operations in Filters**
 
-- **For boolean fields**: values *false*, *0*. For example, ``is_validate=false``.
+The key of a condition is a field label with an optional lookup suffix separated by ``__``.
+The suffixes are not Django lookups: only the ones listed here are supported, any other suffix
+(for example ``__in``, ``__icontains`` or ``__contains`` on a text or number field) is rejected
+with the error 400 ``ERR_FILTER``.
+
+- **For any field** except relations (they use ``__exists``, see below): ``__isnull=true|false``.
+  For example, ``point__isnull=true`` for the *point* field.
+- **For boolean fields**: values *false*, *0* are false, any other value is true. For example, ``is_validate=false``.
+- **For text fields (TextField)**: without a suffix, substring search (also ``__$search``);
+  ``__iexact``, ``__istartswith``, ``__iregex``, ``__search``.
+- **For other fields** (strings, numbers, dates, choices, identifiers, calculated filters without ``filter_field``):
+  without a suffix, exact match; comparison ``__gt``, ``__gte``, ``__lt``, ``__lte`` (for example, ``number__gte=5``);
+  ``__iexact``, ``__istartswith``, ``__iregex``, ``__search`` and substring search ``__$search``.
+- ``__iexact``, ``__istartswith``, ``__iregex``, ``__search`` and ``__$search`` apply to every word of the value
+  (words are separated by spaces or commas), all words must match.
+- **For array fields**: values are listed separated by commas. Without a suffix or with ``__overlap``, match one of
+  the values (``types=type1,type2,type3``); ``__contains``: all the values; ``__contained_by``: only these values.
+- **For range fields**: ``__contains``, ``__contained_by``, ``__overlap``, ``__fully_lt``, ``__fully_gt``, ``__not_lt``,
+  ``__not_gt``, ``__adjacent_to`` with the value ``start,end``; a range field requires one of these suffixes.
 - **For geo-point fields**:
   - Match to within 10m: ``point=49.124,55.76480``.
   - Match with specified accuracy in meters: ``point__near=49.124,55.76480,100``, where the last parameter is the accuracy in meters.
   - Fall within specified bbox: ``point__in_bbox=160.6,-55.95,-170,-25.89``.
-- **For array fields**: match one of several values. Values are listed separated by commas. For example, ``types=type1,type2,type3``.
-- **For text fields (TextField)**: substring search.
-- **For other fields**: exact match search.
-- **For explicit null value search**: special postfix ``__isnull``. For example, ``point__isnull=true`` for the *point* field.
-- **For numeric fields**: comparison operations *'gt'*, *'gte'*, *'lt'*, *'lte'*. For example, ``number__gte=5``.
 
 Full-Text Search in Filtering
 ------------------------------

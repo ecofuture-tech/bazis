@@ -140,6 +140,7 @@ def test_boolean_fields(sample_app):
     assert response.status_code == 200
 
     data = response.json()
+    assert len(data['data']) > 0
 
     for it in data['data']:
         assert it['attributes']['is_active'] is False
@@ -203,6 +204,7 @@ def test_decimal_negative(sample_app):
     assert response.status_code == 200
 
     data = response.json()
+    assert len(data['data']) > 0
 
     for it in data['data']:
         assert Decimal(it['attributes']['price']) != Decimal(300)
@@ -246,7 +248,7 @@ def test_decimal_isnull(sample_app):
     assert response.status_code == 200
 
     data = response.json()
-    # assert len(data['data']) == 1
+    assert len(data['data']) == 1
 
     for it in data['data']:
         price = it['attributes']['price']
@@ -269,6 +271,7 @@ def test_decimal_nested(sample_app):
     assert response.status_code == 200
 
     data = response.json()
+    assert len(data['data']) > 0
 
     for it in data['data']:
         assert (
@@ -278,19 +281,76 @@ def test_decimal_nested(sample_app):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_char_field_icontain_iexact(sample_app):
-    factories.ParentEntityFactory.create_batch(10, name='Apple')
-    factories.ParentEntityFactory.create_batch(10, name='Banana')
+def test_char_field_search_iexact(sample_app):
+    factories.ParentEntityFactory.create_batch(3, name='Apple')
+    factories.ParentEntityFactory.create_batch(3, name='Pineapple')
+    factories.ParentEntityFactory.create_batch(3, name='Banana')
 
-    query_icontains = urlencode({'filter': 'name__icontains=app'})
-    response = get_api_client(sample_app).get(f'/api/v1/entity/parent_entity/?{query_icontains}')
-    assert response.status_code == 200
-    assert all('app' in it['attributes']['name'].lower() for it in response.json()['data'])
+    def names(filter_str):
+        response = get_api_client(sample_app).get(
+            '/api/v1/entity/parent_entity/', params={'filter': filter_str}
+        )
+        assert response.status_code == 200
+        return sorted(it['attributes']['name'] for it in response.json()['data'])
 
-    query_iexact = urlencode({'filter': 'name__iexact=Apple'})
-    response = get_api_client(sample_app).get(f'/api/v1/entity/parent_entity/?{query_iexact}')
-    assert response.status_code == 200
-    assert all(it['attributes']['name'] == 'Apple' for it in response.json()['data'])
+    # substring, case-insensitive
+    assert names('name__$search=APP') == ['Apple'] * 3 + ['Pineapple'] * 3
+    # whole value, case-insensitive
+    assert names('name__iexact=apple') == ['Apple'] * 3
+    assert names('name__istartswith=pine') == ['Pineapple'] * 3
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    'filter_str',
+    [
+        # Django lookups that the filter does not support were compared for equality with
+        # the whole value (name__in=a,b was name='a,b') and silently gave a wrong result
+        'name__in=Apple,Banana',
+        'name__icontains=app',
+        'name__contains=App',
+        'price__in=100,200',
+        'is_active__in=true',
+        'description__gt=a',
+        'field__len=2',
+        'dt_approved__date=2024-01-01',
+        'name__iexact__extra=Apple',
+        'has_inactive_children__in=false',
+        'child_entities__child_name__in=a,b',
+    ],
+)
+def test_unsupported_lookup_returns_bad_request(sample_app, filter_str):
+    factories.ParentEntityFactory(name='Apple', price=100)
+
+    response = get_api_client(sample_app).get(
+        '/api/v1/entity/parent_entity/', params={'filter': filter_str}
+    )
+
+    assert response.status_code == 400
+    error = response.json()['errors'][0]
+    assert error['code'] == 'ERR_FILTER'
+    assert error['source'] == {'pointer': '/query/filter'}
+    assert 'is not supported' in error['detail']
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('field_name', ['description', 'field'])
+def test_isnull_text_and_array_fields(sample_app, field_name):
+    """`isnull` works for every field kind (a text field searched for the word "true" and
+    an array field failed before)."""
+    empty = factories.ParentEntityFactory(**{field_name: None})
+    filled = factories.ParentEntityFactory(description='text', field=['first_field'])
+
+    def ids(filter_str):
+        response = get_api_client(sample_app).get(
+            '/api/v1/entity/parent_entity/', params={'filter': filter_str}
+        )
+        assert response.status_code == 200
+        return {it['id'] for it in response.json()['data']}
+
+    assert ids(f'{field_name}__isnull=true') == {str(empty.pk)}
+    assert str(filled.pk) in ids(f'{field_name}__isnull=false')
+    assert str(empty.pk) not in ids(f'{field_name}__isnull=false')
 
 
 @pytest.mark.django_db(transaction=True)

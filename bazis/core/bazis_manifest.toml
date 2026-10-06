@@ -53,3 +53,6 @@ check = "bazis.E001"
 
 [[pitfalls]]
 text = "reverse relations are not in the schemas by default: add them to `fields` of the route"
+
+[[pitfalls]]
+text = "`filter` lookups are not Django lookups: `__in`, `__icontains`, `__contains` on a text or number field are 400 ERR_FILTER; the supported suffixes are in AGENTS.md"
