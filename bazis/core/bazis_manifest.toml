@@ -44,6 +44,13 @@ import = "bazis.core.utils.schemas.BazisSettings"
 use_when = "settings of an app (conf.py), read from BS_* variables"
 
 [[pitfalls]]
+text = "the settings of all installed Bazis packages are loaded: a package's conf.py declares only its own BAZIS_*/KAFKA_* settings, never defaults of Django settings bound to project models or apps (AUTH_USER_MODEL, AUTHENTICATION_BACKENDS, INSTALLED_APPS, MIDDLEWARE); the project sets those with BS_*"
+
+[[pitfalls]]
+text = "BS_BAZIS_APPS (or BS_BAZIS_CONFIG_APPS) is an explicit override: '[]' turns off the settings of all Bazis packages, also of the ones the project uses; leave it unset"
+check = "bazis.W002"
+
+[[pitfalls]]
 text = "ALLOWED_HOSTS is ['*'] by default: set BS_ALLOWED_HOSTS in production"
 check = "bazis.W001"
 

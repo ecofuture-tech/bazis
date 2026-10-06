@@ -19,6 +19,19 @@ The project configuration is organized so that all configuration parameters are 
 Configuration parameters at the Bazis level are stored in conf.py files inside Bazis applications.
 Configuration parameters at the project level are stored in the conf.py file inside the target project folder, where files such as settings.py, urls.py, etc., are usually located.
 
+Settings of the Bazis packages
+------------------------------
+
+The conf.py modules of all Bazis packages installed in the environment (``bazis.contrib.<name>``) are loaded, also of the packages the project does not use. Therefore a package declares only settings of its own namespace (``BAZIS_*``, ``KAFKA_*``, ...), which have no effect without the code of the package. Settings of Django that bind the models and apps of the project (``AUTH_USER_MODEL``, ``AUTHENTICATION_BACKENDS``, ``INSTALLED_APPS``, ``MIDDLEWARE``, ...) are never defaulted by a package: the project sets them, e.g. ``BS_AUTH_USER_MODEL=users.User``.
+
+``BS_BAZIS_APPS`` (or ``BS_BAZIS_CONFIG_APPS``) is only an explicit override: the exact list of the packages to load the settings from.
+
+.. code-block:: bash
+
+    BS_BAZIS_APPS='["bazis.contrib.users", "bazis.contrib.permit"]'
+
+Leave it unset in projects. An empty list (``'[]'``) turns off the settings of all Bazis packages, also of the ones the project uses, and is a configuration error unless intended: the system check ``bazis.W002`` (``manage.py bazis_doctor``) warns about it.
+
 Structure of the conf.py file
 -----------------------------
 

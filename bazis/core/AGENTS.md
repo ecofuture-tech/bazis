@@ -32,9 +32,15 @@ sample/router.py         # root router, BS_BAZIS_ROUTER_MODULE=sample.router
 
 Settings are environment variables with the `BS_` prefix (`BS_DEBUG`, `BS_SECRET_KEY`,
 `BS_DATABASES__DEFAULT__HOST`, lists and dicts as JSON). Apps, including Bazis packages,
-are listed in `BS_INSTALLED_APPS` (`'["myapp", "bazis.contrib.permit"]'`). The settings of
-all installed Bazis packages are loaded unless `BS_BAZIS_APPS` lists the packages to load
-them from: leave it unset, or list every Bazis package of the project there. Requirements:
+are listed in `BS_INSTALLED_APPS` (`'["myapp", "bazis.contrib.permit"]'`). The settings
+(`conf.py`) of all installed Bazis packages are loaded, also of the packages the project does
+not use, so a package declares only settings of its own namespace (`BAZIS_*`, `KAFKA_*`),
+inert without its code; settings of Django that bind the models and apps of the project
+(`AUTH_USER_MODEL`, `AUTHENTICATION_BACKENDS`, `INSTALLED_APPS`, `MIDDLEWARE`) are set by the
+project (`BS_AUTH_USER_MODEL=users.User`), never defaulted by a package. `BS_BAZIS_APPS` (or
+`BS_BAZIS_CONFIG_APPS`) is only an explicit override: the exact list of the packages to load
+the settings from. Leave it unset; `'[]'` turns off the settings of all Bazis packages, also
+of the ones the project uses (`bazis_doctor` warns, `bazis.W002`). Requirements:
 PostgreSQL with PostGIS and Redis (`BS_CACHES__DEFAULT__LOCATION`). `DEBUG` is true by
 default: set `BS_DEBUG=false` and `BS_SECRET_KEY` (required without DEBUG) in production.
 

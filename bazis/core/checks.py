@@ -61,3 +61,26 @@ def check_allowed_hosts(app_configs, **kwargs):
             )
         ]
     return []
+
+
+@register()
+def check_bazis_apps(app_configs, **kwargs):
+    """
+    An empty BS_BAZIS_APPS (or BS_BAZIS_CONFIG_APPS) turns off the settings of all Bazis
+    packages, also of the ones the project uses: their code then fails on missing settings.
+    """
+    from bazis.core.configure import listed_bazis_apps
+
+    if listed_bazis_apps() == []:
+        return [
+            Warning(
+                'BS_BAZIS_APPS (or BS_BAZIS_CONFIG_APPS) is an empty list: the settings of '
+                'no Bazis package are loaded.',
+                hint=(
+                    'Unset it to load the settings of all installed Bazis packages, or list '
+                    'the Bazis packages of the project in it.'
+                ),
+                id='bazis.W002',
+            )
+        ]
+    return []
