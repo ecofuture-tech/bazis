@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 import os
 import subprocess
@@ -23,6 +24,8 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.core.mail import mailers
 from django.test import override_settings
+
+from pydantic import create_model
 
 import pytest
 
@@ -263,24 +266,22 @@ def test_empty_bazis_apps_warning(monkeypatch, env, warned):
     assert [it.id for it in checks.check_bazis_apps(None)] == (['bazis.W002'] if warned else [])
 
 
-def test_sample_starts_with_all_installed_contrib_packages():
-    # the settings of every Bazis package installed in the environment are loaded, so the
-    # sample must start without BS_BAZIS_APPS whichever packages are installed
+def run_in_sample(code: str, **env_vars: str) -> str:
+    """
+    Runs the code with the settings of the sample in a new process (the settings are
+    assembled from the environment once per process) and returns the last line it prints.
+    """
     root = Path(__file__).resolve().parent.parent
     env = {
         name: value
         for name, value in os.environ.items()
         if name not in ('BS_BAZIS_APPS', 'BS_BAZIS_CONFIG_APPS')
     }
+    env.update(env_vars)
     env['DJANGO_SETTINGS_MODULE'] = 'sample.settings'
     env['PYTHONPATH'] = os.pathsep.join(filter(None, [str(root), env.get('PYTHONPATH')]))
     result = subprocess.run(
-        [
-            sys.executable,
-            '-c',
-            'import django; django.setup(); '
-            'from django.contrib.auth import get_user_model; print(get_user_model()._meta.label)',
-        ],
+        [sys.executable, '-c', code],
         cwd=root / 'sample',
         env=env,
         capture_output=True,
@@ -288,4 +289,77 @@ def test_sample_starts_with_all_installed_contrib_packages():
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip().splitlines()[-1] == 'auth.User'
+    return result.stdout.strip().splitlines()[-1]
+
+
+def test_sample_starts_with_all_installed_contrib_packages():
+    # the settings of every Bazis package installed in the environment are loaded, so the
+    # sample must start without BS_BAZIS_APPS whichever packages are installed
+    code = (
+        'import django; django.setup(); '
+        'from django.contrib.auth import get_user_model; print(get_user_model()._meta.label)'
+    )
+    assert run_in_sample(code) == 'auth.User'
+
+
+def test_core_declares_django_auth_settings_with_django_defaults():
+    from django.conf import global_settings
+
+    from bazis.core.conf import Settings
+
+    fields = Settings.model_fields
+    assert fields['AUTH_USER_MODEL'].default == global_settings.AUTH_USER_MODEL
+    assert fields['AUTHENTICATION_BACKENDS'].default == global_settings.AUTHENTICATION_BACKENDS
+
+
+@pytest.mark.parametrize(
+    'env, expected',
+    [
+        ({}, 'auth.User'),
+        ({'BS_AUTH_USER_MODEL': 'entity.User'}, 'entity.User'),
+    ],
+)
+def test_core_auth_user_model_wins_over_package_default(
+    fake_contrib, tmp_path, monkeypatch, env, expected
+):
+    # a package that still declares AUTH_USER_MODEL with its own default (bazis-users before
+    # it dropped it) does not override the core: the core conf is the first base
+    conf = tmp_path / 'contrib' / 'cfgtest_used' / 'conf.py'
+    conf.write_text(
+        'from bazis.core.utils.schemas import BazisSettings\n\n\n'
+        'class Settings(BazisSettings):\n'
+        "    AUTH_USER_MODEL: str = 'users.User'\n"
+    )
+    # neither the environment nor the env files of the sample (read from the working directory)
+    monkeypatch.delenv('BS_AUTH_USER_MODEL', raising=False)
+    monkeypatch.chdir(tmp_path)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    settings_class = create_model(
+        'Settings',
+        __base__=tuple(it.Settings for it in configure.conf_modules() if hasattr(it, 'Settings')),
+    )
+    assert settings_class().AUTH_USER_MODEL == expected
+
+
+@pytest.mark.parametrize(
+    'packages',
+    [
+        # only the settings of the core
+        {'BS_BAZIS_APPS': '[]'},
+        # the settings of all installed packages
+        {},
+    ],
+)
+def test_django_auth_settings_are_read_from_env(packages):
+    code = (
+        'import json; from django.conf import settings; '
+        'print(json.dumps([settings.AUTH_USER_MODEL, settings.AUTHENTICATION_BACKENDS]))'
+    )
+    output = run_in_sample(
+        code,
+        BS_AUTH_USER_MODEL='entity.User',
+        BS_AUTHENTICATION_BACKENDS='["sample.backends.Backend"]',
+        **packages,
+    )
+    assert json.loads(output) == ['entity.User', ['sample.backends.Backend']]
