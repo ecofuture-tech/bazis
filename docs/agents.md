@@ -16,7 +16,9 @@ project needs, use them the way they are meant to be used and check the result.
 - `bazis.core.introspect` is the Python API of the same data.
 - The OpenAPI schema (`/api/openapi.json`) carries the same facts about each operation of a
   route class in the extension `x-bazis` (`resource`, `route_set`, `action`, `kind`; see
-  the OpenAPI docs), for client generators; other operations have none.
+  the OpenAPI docs), for client generators; other operations have none. The operations
+  also document the JSON:API errors they fail with (404 of the item routes, 403 of the
+  relationships routes; a package that adds authentication adds the 401 of its routes).
 - [bazis-mcp](https://github.com/ecofuture-tech/bazis-mcp) serves the same data and the
   catalog of all Bazis packages to MCP clients (Claude Code, IDEs).
 

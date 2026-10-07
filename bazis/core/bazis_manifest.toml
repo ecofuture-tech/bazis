@@ -39,6 +39,16 @@ import = "bazis.core.schemas.enums.RouteKind"
 use_when = "declare what a custom route does (`kind=` of the http_* decorators, `x-bazis` in OpenAPI)"
 
 [[extension_points]]
+name = "InitialRouteBase.route_responses"
+import = "bazis.core.routes_abstract.initial.InitialRouteBase"
+use_when = "document in OpenAPI the error statuses (SchemaErrors) a route class fails its routes with: extend the classmethod route_responses"
+
+[[extension_points]]
+name = "InitialRouteBase.route_openapi_extra"
+import = "bazis.core.routes_abstract.initial.InitialRouteBase"
+use_when = "add facts to the OpenAPI operation of the routes of a class (security, extensions): extend the classmethod route_openapi_extra, never change the route context"
+
+[[extension_points]]
 name = "BazisRouter"
 import = "bazis.core.routing.BazisRouter"
 use_when = "register route classes and app routers"
