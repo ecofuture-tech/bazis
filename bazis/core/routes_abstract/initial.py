@@ -89,6 +89,20 @@ from bazis.core.utils.orm import close_old_connections
 OPENAPI_EXTENSION = 'x-bazis'
 
 
+def deep_merge(base: dict, override: dict) -> dict:
+    """
+    A copy of `base` with `override` merged in: dictionaries are merged key by key, any
+    other value of `override` replaces the one of `base`. Neither argument is changed.
+    """
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def inject_make(*args: ApiAction):
     """
     This decorator is applied to classes inside a route class and creates a dataclass
@@ -707,16 +721,40 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
         }
 
     @classmethod
+    def route_responses(cls, route_ctx: RouteContext) -> dict[int | str, dict[str, Any]]:
+        """
+        The OpenAPI responses the class adds to the operation of a route: the statuses the
+        route fails with (a route class or a package that fails a route with a status
+        extends the result of `super()`). The responses the route declares itself (the
+        `responses` argument of the decorator, the callbacks) take priority. None by default.
+        """
+        return {}
+
+    @classmethod
+    def route_openapi_extra(cls, route_ctx: RouteContext) -> dict[str, Any]:
+        """
+        The `openapi_extra` the class adds to the operation of a route: the `x-bazis`
+        extension, which a route class or a package extends with its own facts (extend the
+        result of `super()`, for example `security`). It is merged, key by key and on a copy,
+        under the `openapi_extra` the route declares itself, which takes priority; the route
+        context is never changed.
+        """
+        return {OPENAPI_EXTENSION: cls.route_meta(route_ctx)}
+
+    @classmethod
     def endpoint_register(cls, router: BazisRouter, route_ctx: RouteContext):
         """
-        Register the route in the router defined in the class, with the `x-bazis`
-        extension of its OpenAPI operation.
+        Register the route in the router defined in the class, with the
+        `route_openapi_extra` (`x-bazis`) and the `route_responses` of its OpenAPI operation.
         """
         route_params = dataclasses.asdict(route_ctx.route_params)
-        route_params['openapi_extra'] = {
-            **(route_params['openapi_extra'] or {}),
-            OPENAPI_EXTENSION: cls.route_meta(route_ctx),
+        route_params['responses'] = {
+            **cls.route_responses(route_ctx),
+            **(route_params['responses'] or {}),
         }
+        route_params['openapi_extra'] = deep_merge(
+            cls.route_openapi_extra(route_ctx), route_params['openapi_extra'] or {}
+        )
         getattr(router, route_ctx.http_method)(**route_params)(route_ctx.endpoint)
 
         # save the reference to the low-level route in the context

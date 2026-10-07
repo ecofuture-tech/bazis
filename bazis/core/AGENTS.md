@@ -104,6 +104,14 @@ class OrderRouteSet(JsonapiRouteBase):
   `kind` is collection, create, item, update, delete, relationship, schema or other);
   client generators read it instead of parsing `operationId`. Without `kind` a route is
   `other`; an override keeps the kind of the route it overrides.
+- The OpenAPI operations document the errors they fail with (`SchemaErrors`): 400 and 422
+  on the CRUD operations, 404 on every route of an item (`{item_id}` in the path), 403 on
+  the relationships routes. The core has no authentication, so no 401 and no `security`.
+  A route class or package that fails its routes with a status adds it by extending the
+  classmethod `route_responses(route_ctx)` (call `super()`); `responses=` of a decorator
+  wins. Other facts of the operation (`security`, extensions) are added the same way by
+  extending `route_openapi_extra(route_ctx)` (`x-bazis` is its base; never change the route
+  context there). Document only what the route can really return.
 - Register: `router = BazisRouter(tags=['CRM'])`, `router.register(OrderRouteSet.as_router())`
   in `<app>/router.py`; the root router (`BazisRouter(prefix='/api/v1')`) registers the app
   routers by module name: `router.register('crm.router')`.

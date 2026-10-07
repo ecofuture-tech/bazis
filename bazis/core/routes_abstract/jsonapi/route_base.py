@@ -29,6 +29,8 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 
+from starlette.status import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
+
 from pydantic import BaseModel, ValidationError
 
 from bazis.core.errors import (
@@ -37,8 +39,10 @@ from bazis.core.errors import (
     JsonApiBazisException,
     JsonApiHttpException,
     JsonApiRequestValidationError,
+    SchemaErrors,
 )
 from bazis.core.models_abstract import JsonApiMixin
+from bazis.core.routes_abstract.context import RouteContext
 from bazis.core.routes_abstract.initial import (
     InitialRouteBase,
     http_delete,
@@ -207,6 +211,20 @@ class JsonapiRouteBase(InitialRouteBase):
         if cls.model._meta.proxy:
             cls.actions_exclude = cls.actions_exclude or []
             cls.actions_exclude.extend(['action_create', 'action_update'])
+
+    @classmethod
+    def route_responses(cls, route_ctx: RouteContext) -> dict[int | str, dict[str, Any]]:
+        """
+        Adds the errors the core routes fail with: 404 for a route of an item (`item_id` in
+        the path, the item is not found) and 403 for a route of a relationship (the
+        relationship is read-only or the objects violate its restrictions).
+        """
+        responses = super().route_responses(route_ctx)
+        if '{item_id}' in route_ctx.route_params.path:
+            responses[HTTP_404_NOT_FOUND] = {'model': SchemaErrors}
+        if route_ctx.kind is RouteKind.RELATIONSHIP:
+            responses[HTTP_403_FORBIDDEN] = {'model': SchemaErrors}
+        return responses
 
     @classmethod
     def get_url_prefix(cls) -> str:
