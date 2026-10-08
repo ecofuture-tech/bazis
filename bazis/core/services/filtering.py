@@ -22,7 +22,8 @@ from django.utils.translation import gettext_lazy as _
 from typing_extensions import deprecated
 
 from bazis.core.errors import JsonApiBazisError, JsonApiBazisException
-from bazis.core.utils.query_complex import QueryToOrm
+from bazis.core.services.route_ctx import REQUEST_SCOPE, request_query_scope
+from bazis.core.utils.query_complex import QueryScope, QueryToOrm
 
 
 class ServiceFiltering:
@@ -42,7 +43,11 @@ class ServiceFiltering:
         self.query_str = unquote_plus(filter)
 
     def apply(
-        self, queryset: QuerySet, filters_aliases: dict[str, str] = None, fiter_context: dict = None
+        self,
+        queryset: QuerySet,
+        filters_aliases: dict[str, str] = None,
+        fiter_context: dict = None,
+        scope: QueryScope | None = REQUEST_SCOPE,
     ):
         """
         Applies the filtering to the given QuerySet using the specified filter aliases and context.
@@ -50,6 +55,8 @@ class ServiceFiltering:
         :param queryset: The Django QuerySet to filter.
         :param filters_aliases: Optional dictionary mapping filter aliases to actual field names.
         :param fiter_context: Optional context dictionary for additional filtering logic.
+        :param scope: what the keys may reach; by default the scope of the route of the
+            request (`query_scope`), None: not restricted.
         :return: Filtered QuerySet.
         """
         try:
@@ -58,6 +65,7 @@ class ServiceFiltering:
                 self.query_str,
                 filters_aliases=filters_aliases,
                 fiter_context=fiter_context,
+                scope=request_query_scope(scope),
             )
         except (FieldError, ValidationError, ValueError, IndexError) as e:
             # a malformed filter is a client error, not a server failure

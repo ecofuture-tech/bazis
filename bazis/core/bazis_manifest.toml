@@ -34,6 +34,11 @@ import = "bazis.core.schemas.fields.SchemaFields"
 use_when = "include or exclude fields of a route, per action (CrudApiAction)"
 
 [[extension_points]]
+name = "JsonapiRouteBase.query_fields"
+import = "bazis.core.routes_abstract.jsonapi.JsonapiRouteBase"
+use_when = "a package changes the LIST schema of a route per user: override the classmethod query_fields(user=None, **kwargs) so that the filter, sort and search of a request reach only the fields that user sees (QueryScope)"
+
+[[extension_points]]
 name = "calc_property"
 import = "bazis.core.utils.orm.calc_property"
 use_when = "a calculated field fetched in the same query"
@@ -103,6 +108,17 @@ text = "`filter` lookups are not Django lookups: `__in`, `__icontains`, `__conta
 
 [[pitfalls]]
 text = "an unknown `filter` field (also after a relation, such as `author__in`) is 400 ERR_FILTER, and a `filter:` restriction or permission condition with one fails the request"
+
+[[pitfalls]]
+text = "`filter`, `sort` and `search` reach only the fields of the LIST schema of the route (and through a relation of it, the objects and the LIST fields of the default route of the related model): a field the route hides, `search` on a route without `search_fields` and `sort` by a to-many relation are 400 ERR_FILTER; show the field in `fields` of the route"
+
+[[pitfalls]]
+text = "a search field that is not a field of the LIST schema of its route is left out of the search"
+check = "bazis.W007"
+
+[[pitfalls]]
+text = "BS_BAZIS_FILTERS_STRICT=false is a transitional rollback to the unrestricted filter, sort and search of 2.8 (hidden fields and invisible related objects are reachable); it will be removed"
+check = "bazis.W006"
 
 [[pitfalls]]
 text = "restricting the objects of a model only in get_queryset of its route: the relationships and `included` of the other routes see them; restrict them in restrict_queryset of the default route of the model"

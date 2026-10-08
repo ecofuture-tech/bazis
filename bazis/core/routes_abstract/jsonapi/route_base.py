@@ -56,6 +56,7 @@ from bazis.core.schemas.enums import ApiAction, CrudAccessAction, CrudApiAction,
 from bazis.core.schemas.factory import SchemaFactory
 from bazis.core.schemas.fields import (
     CallableContext,
+    SchemaField,
     SchemaFields,
     SchemaInclusions,
     SchemaMetaFields,
@@ -70,6 +71,7 @@ from bazis.core.services.sorting import SortingSearching
 from bazis.core.services.sparse_fieldsets import ServiceSparseFieldsets
 from bazis.core.utils.functools import get_attr
 from bazis.core.utils.orm import calc_cached_property
+from bazis.core.utils.query_complex import QueryScope
 
 from ...services.relationships import RelationshipsService
 from .cache import with_cache_openapi_schema
@@ -335,6 +337,38 @@ class JsonapiRouteBase(InitialRouteBase):
         return {
             'route': route,
         }
+
+    @classmethod
+    def query_fields(cls, user=None, **kwargs) -> list[SchemaField]:
+        """
+        The fields of the LIST schema of the route for the user: the keys of `filter`
+        (the fields that can filter) and `sort` (that can order) of a request start with
+        one of them (their source), and the search fields of the route must be among them.
+        A relation of them leads into the fields of the default route of the related model.
+        A package that changes the LIST schema per user overrides it (accept `**kwargs`).
+        """
+        factory = cls.schema_factories.get(CrudApiAction.LIST)
+        if factory is None:
+            # a route without the list action, e.g. the default route of a related model
+            if (factory := vars(cls).get('_query_schema_factory')) is None:
+                factory = cls._query_schema_factory = cls.build_schema_factory(
+                    CrudApiAction.LIST
+                )
+        return factory.fields_list
+
+    def query_scope(self) -> QueryScope | None:
+        """
+        What the filter, the sorting and the search of the request may reach
+        (`QueryScope.for_route` with the user of the route), or None when
+        `BAZIS_FILTERS_STRICT` is off (transitional: not restricted, as before 2.9).
+        """
+        if not settings.BAZIS_FILTERS_STRICT:
+            return None
+        if (scope := vars(self).get('_query_scope')) is None:
+            scope = self._query_scope = QueryScope.for_route(
+                type(self), user=getattr(self.inject, 'user', None)
+            )
+        return scope
 
     def route_run(self, *args, **kwargs):
         """
