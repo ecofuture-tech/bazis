@@ -369,12 +369,12 @@ class JsonApiMixin(InitialBase):
         return cls.validate_item is not JsonApiMixin.validate_item
 
     @classmethod
-    def from_db(cls, db, field_names, values):
+    def from_db(cls, *args, **kwargs):
         """
         Remembers the loaded values of an item that is validated, to tell the changed
         fields of its next save.
         """
-        instance = super().from_db(db, field_names, values)
+        instance = super().from_db(*args, **kwargs)
         if cls.has_validate_item():
             snapshot_take(instance)
         return instance
