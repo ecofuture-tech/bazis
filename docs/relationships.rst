@@ -19,6 +19,48 @@ General features
 * **Transactionality:** All operations are executed within transactions
 * **Validation:** Object existence and type correctness are verified
 
+Access to the related objects
+-----------------------------
+
+The default route of a model (``Model.get_default_route()``) defines which of its objects
+the other routes can link and include: the classmethod ``restrict_queryset`` of
+``RestrictedQsRouteMixin``. The core calls it with ``user`` (the user of the request,
+``None`` without bazis-users) and ``route`` (the route of the request); an override accepts
+``**kwargs``.
+
+.. code-block:: python
+
+    class TagRouteSet(RestrictedQsRouteMixin):
+        model = apps.get_model('notes.Tag')
+        default_route = True
+
+        @classmethod
+        def restrict_queryset(cls, qs, access_action, user=None, **kwargs):
+            qs = qs.filter(is_hidden=False)
+            if access_action == CrudAccessAction.CHANGE:
+                qs = qs.filter(is_locked=False)
+            return qs
+
+        def get_queryset(self):
+            # the list and the item of the route itself
+            return self.restrict_queryset(super().get_queryset(), CrudAccessAction.VIEW)
+
+* A created or changed item (create, update, the relationships endpoints above) links only
+  the objects ``restrict_queryset`` returns for ``view``; a reverse relationship changes the
+  foreign key of the objects it links and unlinks, so they must be returned for ``change``.
+  Only the objects whose link changes are checked: an object linked before stays linked
+  and can be unlinked. Otherwise the request fails with ``403``, code
+  ``ERR_RELATION_ACCESS`` and the pointer ``/data/relationships/<field>``.
+* ``included`` contains only the objects ``restrict_queryset`` returns for ``view``; the
+  relationship keeps the identifiers of all linked objects.
+* The objects of a model whose default route does not override ``restrict_queryset``, or
+  that has no route, are not checked (no extra query).
+* ``relations_view_check = False`` on a route turns the check of its relationships off.
+* The default route of a model is the last defined route class of the model (abstract ones
+  never), unless a route class declares ``default_route = True`` in its body (the flag is
+  not inherited). ``bazis_doctor`` warns (``bazis.W003``) about a model with several route
+  sets and not one explicit default route.
+
 M2M (Many-to-Many)
 ------------------
 

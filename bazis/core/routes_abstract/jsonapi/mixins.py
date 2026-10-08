@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections.abc import Callable
+
 from django.contrib.auth import get_user_model
-from django.db.models import QuerySet
+from django.db.models import Model, QuerySet
 
 from bazis.core.schemas.enums import AccessAction, ApiAction, CrudApiAction
 from bazis.core.schemas.fields import SchemaFields
@@ -83,6 +85,10 @@ class RestrictedQsRouteMixin(JsonapiRouteBase):
     A mixin class for JsonapiRouteBase that provides a method to restrict the
     queryset based on access action and user.
 
+    `restrict_queryset` of the default route of a model is the visibility of its objects
+    for the other routes: a relationship links only the objects it returns (VIEW, CHANGE
+    for a reverse relationship) and `included` shows only those objects.
+
     Tags: RAG, EXPORT
     """
 
@@ -94,6 +100,26 @@ class RestrictedQsRouteMixin(JsonapiRouteBase):
     ) -> QuerySet:
         """
         Restricts the provided queryset based on the specified access action and user.
-        This method can be overridden to apply custom restrictions.
+        This method can be overridden to apply custom restrictions. The core calls it on
+        the class with `user` (the user of the request, None without bazis-users) and
+        `route` (the route of the request); an override accepts `**kwargs`.
         """
         return qs
+
+
+def route_restrict_queryset(model: type[Model]) -> Callable[..., QuerySet] | None:
+    """
+    The `restrict_queryset` of the default route of the model, or None if the objects of
+    the model are not restricted: not a JSON:API model, no route, or the route does not
+    override `restrict_queryset`.
+
+    Tags: RAG, INTERNAL
+    """
+    get_default_route = getattr(model, 'get_default_route', None)
+    route_cls = get_default_route() if get_default_route else None
+    restrict = getattr(route_cls, 'restrict_queryset', None)
+    if restrict is None or (
+        getattr(restrict, '__func__', None) is RestrictedQsRouteMixin.restrict_queryset.__func__
+    ):
+        return None
+    return restrict

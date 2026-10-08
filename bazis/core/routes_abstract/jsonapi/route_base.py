@@ -110,6 +110,16 @@ class JsonapiRouteBase(InitialRouteBase):
     schemas_responses: dict[ApiAction, type[BaseModel]] = None
     relationships_service: RelationshipsService = RelationshipsService
 
+    #: the route is the default route of its model (`JsonApiMixin.get_default_route`), whose
+    #: `restrict_queryset` restricts the objects of the model in the relationships and
+    #: `included` of the other routes. Declared in the class body, it is not inherited.
+    #: Without it the last defined route class of the model is the default one.
+    default_route: bool = False
+
+    #: the relationships of a created or changed item link only the objects the default
+    #: route of the related model shows (`relations_access_check`)
+    relations_view_check: bool = True
+
     @inject_make()
     class InjectJsonApi:
         """
@@ -204,8 +214,13 @@ class JsonapiRouteBase(InitialRouteBase):
                 )
             )
 
-        # save the default route
-        cls.model._default_route = cls
+        # save the default route: an explicit one (`default_route` in the class body) is
+        # replaced only by another explicit one
+        current = cls.model.__dict__.get('_default_route')
+        if vars(cls).get('default_route') or not (
+            current and vars(current).get('default_route')
+        ):
+            cls.model._default_route = cls
 
         # for proxy models, create/update actions are not available, as they can change the state
         # of the visibility of proxy model objects
@@ -753,6 +768,7 @@ class JsonapiRouteBase(InitialRouteBase):
             item = self.set_item(str(item_id).strip())
 
             data = self.relationships_validate(item, related_field_name, relationships_data)
+            self.relations_access_check(data, item, action)
             self.relationships_restricts_check(item, data, related_field_name, action)
 
             self.hook_before_relationships_change(item, data, related_field_name, action)
@@ -805,6 +821,87 @@ class JsonapiRouteBase(InitialRouteBase):
                 status=403,
             )
         return item_data.data
+
+    def relations_access_check(
+        self, data: JsonApiDataSchema, item: JsonApiMixin | None = None, action: str = 'set'
+    ):
+        """
+        Checks that the relationships of the item data link only the objects the default
+        route of the related model shows (its `restrict_queryset` with this user): a
+        relationship links the objects the user can view, a reverse relationship changes
+        the foreign key of the objects it links and unlinks, so they must be changeable.
+        For a changed item only the objects whose link changes are checked; `action` is the
+        action of the relationships endpoints (`add`, `remove`, `set`; an update sets the
+        value). The models whose route does not restrict them are not queried. Fails with
+        403 `ERR_RELATION_ACCESS`; `relations_view_check = False` turns the check off.
+        """
+        if not self.relations_view_check or not getattr(data, 'relationships', None):
+            return
+
+        # the mixin module imports this one
+        from .mixins import route_restrict_queryset
+
+        model = type(item) if item is not None else JsonApiMixin.get_model_by_label(data.type)
+        relations = model.get_fields_info().relations
+        user = getattr(self.inject, 'user', None)
+
+        for f_name, value in data.relationships.model_dump(exclude_unset=True).items():
+            if not (field_info := relations.get(f_name)):
+                continue
+            rel_model = field_info.related_model
+            if not (restrict := route_restrict_queryset(rel_model)):
+                continue
+
+            rel_data = (value or {}).get('data')
+            if not isinstance(rel_data, list):
+                rel_data = [rel_data] if rel_data else []
+            # normalized as the primary keys of the database (e.g. a UUID in upper case)
+            ids = {
+                str(self.relationships_service._parse_id(it['id'], rel_model))
+                for it in rel_data
+                if it and it.get('id') is not None
+            }
+            unlinked = set()
+            if item is not None:
+                if field_info.to_many:
+                    current = {str(pk) for pk in getattr(item, f_name).values_list('pk', flat=True)}
+                elif not field_info.reverse:
+                    pk = getattr(item, field_info.model_field.attname, None)
+                    current = {str(pk)} if pk is not None else set()
+                elif current_obj := getattr(item, f_name, None):
+                    current = {str(current_obj.pk)}
+                else:
+                    current = set()
+
+                if action == 'remove':
+                    # removing a to-one relation clears it whatever the request refers to
+                    ids, unlinked = set(), (ids & current if field_info.to_many else current)
+                elif action == 'add':
+                    ids -= current
+                else:
+                    ids, unlinked = ids - current, current - ids
+
+            if field_info.reverse:
+                ids, access_action = ids | unlinked, CrudAccessAction.CHANGE
+            else:
+                access_action = CrudAccessAction.VIEW
+            if not ids:
+                continue
+
+            allowed = restrict(
+                rel_model.objects.filter(pk__in=ids), access_action, user=user, route=self
+            )
+            if ids - {str(pk) for pk in allowed.values_list('pk', flat=True)}:
+                raise JsonApiBazisException(
+                    JsonApiBazisError(
+                        detail=f'No access to the related object of {f_name}',
+                        loc=('body', 'data', 'relationships', f_name),
+                        code='ERR_RELATION_ACCESS',
+                        title='Access denied',
+                        status=403,
+                    ),
+                    status=403,
+                )
 
     def relationships_restricts_check(
         self, item: JsonApiMixin, data: JsonApiDataSchema, related_field_name: str, action: str
@@ -889,6 +986,7 @@ class JsonapiRouteBase(InitialRouteBase):
         Simple attributes are assigned immediately. updates the attributes and
         relationships of an item.
         """
+        self.relations_access_check(data, item)
         self.hook_before_update(item)
         data.update_for(item)
         self.hook_after_update(item)
@@ -898,6 +996,7 @@ class JsonapiRouteBase(InitialRouteBase):
         """
         Get model by type. creates a new item based on the provided data.
         """
+        self.relations_access_check(data)
         try:
             item = data.build_for()
         except ValueError:
