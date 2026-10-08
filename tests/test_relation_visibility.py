@@ -363,7 +363,7 @@ def restrict_users(monkeypatch):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_anonymous_include(sample_app, tags, restrict_users):
+def test_include_without_user(sample_app, tags, restrict_users):
     """A request without a user includes what a user without authentication may see."""
     note = Note.objects.create(name='note')
     note.tags.add(tags['visible'], tags['hidden'])
