@@ -46,6 +46,15 @@ of the ones the project uses (`bazis_doctor` warns, `bazis.W002`). Requirements:
 PostgreSQL with PostGIS and Redis (`BS_CACHES__DEFAULT__LOCATION`). `DEBUG` is true by
 default: set `BS_DEBUG=false` and `BS_SECRET_KEY` (required without DEBUG) in production.
 
+Translations: the core puts into `LOCALE_PATHS` the `locale` directory of the project
+(`<BASE_DIR>/locale`), then those of the installed apps in the order of `INSTALLED_APPS`,
+then those of the other Bazis packages (also the ones used without being installed, such
+as the abstract models of bazis-users) by name. When two catalogs translate the same msgid
+(`"Name"` is translated differently by bazis-permit, bazis-statusy and bazis-uploadable),
+the first one wins, in every process. To change a translation of a package, translate the
+msgid in the project's `locale`, or give the field its own title (`verbose_name` of the
+model field, or `SchemaField(title=...)` in `fields` of the route).
+
 ## Models
 
 ```python

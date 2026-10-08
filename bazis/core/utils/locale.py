@@ -54,29 +54,62 @@ def get_apps_with_locals(package_name) -> set[str]:
     return registered_packages
 
 
-def discover_locale_paths(base_dir: str) -> list[str]:
+def _app_rank(package: str, installed_apps: list[str]) -> int:
     """
-    Discovers and returns a list of paths to 'locale' directories within the given
-    base directory and all imported packages. It first checks for a 'locale'
-    directory in the base directory, then iterates through all imported packages to
-    find their 'locale' directories.
+    The position of the package among the installed apps: the app itself, an AppConfig
+    path inside it (`sequences.apps.SequencesConfig`) or a subpackage of an app. A package
+    that is not an installed app comes after all of them.
     """
+    for i, app in enumerate(installed_apps):
+        if app == package or app.startswith(f'{package}.') or package.startswith(f'{app}.'):
+            return i
+    return len(installed_apps)
+
+
+def discover_locale_paths(base_dir: str, installed_apps: list[str]) -> list[str]:
+    """
+    Discovers the 'locale' directories of the project (`<base_dir>/locale`), of the
+    imported packages and of all Bazis packages (also the ones whose code a project uses
+    without installing them as apps, such as the abstract models of bazis-users).
+
+    The order is the priority of the catalogs (the first path wins when two catalogs
+    translate the same msgid), as Django orders the catalogs of the apps: the project, then
+    the installed apps in the order of INSTALLED_APPS, then the other packages by name.
+    It never depends on the process (the hash seed), or the translated titles in the
+    OpenAPI would change between processes. The global catalog of Django is not included:
+    Django loads it itself, under all the others.
+    """
+    import django
+
+    django_locale_path = str(Path(django.__file__).parent / 'conf' / 'locale')
+
     locale_paths = []
 
     project_locale_path = os.path.join(base_dir, 'locale')
     if os.path.isdir(project_locale_path):
         locale_paths.append(project_locale_path)
 
-    for package in set(sys.modules.keys()) | get_apps_with_locals('bazis'):
+    # the locale directory of a package, by its path: the package that owns it
+    package_paths: dict[str, str] = {}
+    for name in sorted(set(sys.modules) | get_apps_with_locals('bazis')):
         try:
-            module = import_module(package)
-            package_path = Path(module.__file__).parent
-            locale_path = package_path / 'locale'
-            locale_path_str = str(locale_path)
-
-            if locale_path.is_dir() and locale_path_str not in locale_paths:
-                locale_paths.append(locale_path_str)
+            module = import_module(name)
+            package = module.__package__ or name
+            locale_path = str(Path(module.__file__).parent / 'locale')
         except (ModuleNotFoundError, AttributeError, TypeError):
             continue
+        if (
+            locale_path not in package_paths
+            and locale_path not in locale_paths
+            and locale_path != django_locale_path
+            and os.path.isdir(locale_path)
+        ):
+            package_paths[locale_path] = package
 
+    locale_paths.extend(
+        sorted(
+            package_paths,
+            key=lambda path: (_app_rank(package_paths[path], installed_apps), package_paths[path]),
+        )
+    )
     return locale_paths
