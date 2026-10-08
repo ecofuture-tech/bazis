@@ -35,3 +35,21 @@ def test_apidoc():
     assert 'openapi' in response.json().keys()
     assert 'info' in response.json().keys()
     assert 'paths' in response.json().keys()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_no_dict_data_route(sample_app):
+    """
+    A route shows an item through its schema only: `GET /{item_id}/dict_data/`, which every
+    route had, answered all the attributes of the model, past the `fields` of the route.
+    """
+    from bazis.core.app import app
+
+    from tests import factories
+
+    parent = factories.ParentEntityFactory.create()
+    response = get_api_client(sample_app).get(
+        f'/api/v1/entity/parent_entity/{parent.pk}/dict_data/'
+    )
+    assert response.status_code == 404
+    assert not [path for path in app.openapi()['paths'] if 'dict_data' in path]

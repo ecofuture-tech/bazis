@@ -652,15 +652,6 @@ class JsonapiRouteBase(InitialRouteBase):
         """
         self.destroy(str(item_id).strip())
 
-    @http_get(
-        '/{item_id}/dict_data/',
-    )
-    def action_dict_data(self, item_id: str, **kwargs):
-        """
-        Handles the HTTP GET request to retrieve the dictionary representation of an item.
-        """
-        return self.set_item(item_id).dict_data
-
     def get_links(self, api_action: ApiAction):
         """
         Generates and returns pagination links for the list action.

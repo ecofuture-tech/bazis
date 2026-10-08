@@ -29,7 +29,6 @@ ROUTES = [
     ('DELETE', '/{id}/'),
     ('GET', '/{id}/schema_retrieve/'),
     ('GET', '/{id}/schema_update/'),
-    ('GET', '/{id}/dict_data/'),
     ('POST', '/{id}/relationships/parent_entities'),
     ('PATCH', '/{id}/relationships/parent_entities'),
     ('DELETE', '/{id}/relationships/parent_entities'),

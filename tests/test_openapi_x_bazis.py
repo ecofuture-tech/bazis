@@ -63,7 +63,6 @@ def operations():
         ('/{item_id}/schema_update/', 'GET', 'action_schema_update', 'schema'),
         ('/route_filter_fields/', 'GET', 'get_route_filter_fields', 'schema'),
         ('/_id/', 'GET', 'action_list_id', 'other'),
-        ('/{item_id}/dict_data/', 'GET', 'action_dict_data', 'other'),
     ],
 )
 def test_route_set_operations(operations, path, method, action, kind):
