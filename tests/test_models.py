@@ -152,3 +152,79 @@ def test_translated_fields_in_a_language_without_a_column():
         assert translated_column('title', Item.title) == 'title_ru'
     with translation.override('en-us'):
         assert translated_column('title', Item.title) == 'title_en'
+
+
+@isolate_apps('entity')
+def test_names_of_a_generated_model_do_not_depend_on_the_language():
+    """
+    `AbstractForeignKey` makes a model for each model of its target (the history of the
+    statuses of bazis-statusy). Its names were made strings when the model was created, at
+    import, in the language active then: the migrations of a project with `LANGUAGE_CODE`
+    `ru` had Russian names and changed with the translations. They stay lazy, and the
+    migrations get the source texts (`makemigrations` runs without translations).
+    """
+    import importlib
+
+    from django.db import models
+    from django.db.migrations.state import ModelState
+    from django.db.migrations.writer import MigrationWriter
+    from django.utils import translation
+    from django.utils.functional import Promise
+    from django.utils.translation import gettext_lazy as _
+
+    from bazis.core.utils.orm import AbstractForeignKey
+
+    module = importlib.import_module('entity.models')
+
+    class Target(models.Model):
+        __module__ = module.__name__
+
+        class Meta:
+            abstract = True
+
+    item_fk = AbstractForeignKey(Target)
+
+    class Fact(models.Model):
+        __module__ = module.__name__
+        item = item_fk
+
+        class Meta:
+            abstract = True
+            verbose_name = _('Required')
+            verbose_name_plural = _('Optional')
+
+    try:
+        with translation.override('ru'):
+
+            class Item(Target):
+                __module__ = module.__name__
+
+                class Meta:
+                    app_label = 'entity'
+                    verbose_name = _('Creation time')
+                    verbose_name_plural = _('Update time')
+
+        generated = module.ItemFact
+    finally:
+        models.signals.class_prepared.disconnect(item_fk.finalize)
+        vars(module).pop('ItemFact', None)
+
+    opts = generated._meta
+    assert isinstance(opts.verbose_name, Promise)
+    assert isinstance(opts.verbose_name_plural, Promise)
+    with translation.override('ru'):
+        assert str(opts.verbose_name) == 'Время добавления. Требуется'
+    with translation.override('en'):
+        assert str(opts.verbose_name_plural) == 'Update time. Optional'
+
+    # as makemigrations writes them
+    options = ModelState.from_model(generated).options
+    with translation.override(None):
+        written = {
+            name: MigrationWriter.serialize(options[name])[0]
+            for name in ('verbose_name', 'verbose_name_plural')
+        }
+    assert written == {
+        'verbose_name': "'Creation time. Required'",
+        'verbose_name_plural': "'Update time. Optional'",
+    }

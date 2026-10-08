@@ -79,7 +79,11 @@ choice labels (`enumDict`) are translated when a JSON schema is generated, so th
 once per language; `app.openapi()` is in the active language, export it under
 `translation.override(settings.LANGUAGE_CODE)`, or fetch it with `?lang=` or without
 `Accept-Language`). Every HTTP response has `Vary: Accept-Language`. Keep titles lazy (`gettext_lazy`,
-`verbose_name`): a `str` is fixed in the language of the code that made it. In tests set
+`verbose_name`): a `str` is fixed in the language of the code that made it. Compose the
+names of models and fields with `format_lazy`, not an f-string: a name made at import is in
+the language active then and gets into the migrations (the names of the models
+`AbstractForeignKey` makes, such as the status history of bazis-statusy, are lazy, and
+`makemigrations` writes the English msgids). In tests set
 `LANGUAGES` with `monkeypatch.setattr(settings, ...)`, not with the `settings` fixture or
 `override_settings`: their signal makes Django replace the per-request translations of the
 core with thread-local ones.
