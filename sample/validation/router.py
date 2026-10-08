@@ -14,12 +14,11 @@
 
 from bazis.core.routing import BazisRouter
 
+from . import routes
 
-router = BazisRouter(prefix='/api/v1')
 
-router.register('entity.router')
-router.register('dynamic.router')
-router.register('route_injection.router')
-router.register('sparse_fieldsets.router')
-router.register('visibility.router')
-router.register('validation.router')
+router = BazisRouter(tags=['Validation'])
+
+router.register(routes.RoomRouteSet.as_router())
+router.register(routes.PersonRouteSet.as_router())
+router.register(routes.BookingRouteSet.as_router())

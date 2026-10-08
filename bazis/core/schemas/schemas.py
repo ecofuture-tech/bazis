@@ -27,6 +27,7 @@ from pydantic import (
 
 from pydantic_core import PydanticUndefined
 
+from bazis.core.item_validation import reverse_items_link, validates_items
 from bazis.core.models_abstract import InitialBase, JsonApiMixin
 from bazis.core.utils.functools import get_attr
 from bazis.core.utils.orm import set_related_with_delete
@@ -161,7 +162,12 @@ class JsonApiDataSchema(BaseModel):
         # add m2m
         for f_name, objs in m2m.items():
             rel_obj = getattr(item, f_name)
-            rel_obj.set(objs)
+            rel_info = factory.fields[f_name].field_db_rel
+            if rel_info.reverse and not rel_info.is_m2m and validates_items(rel_obj.model):
+                # the linked items are saved one by one (their foreign key), to validate them
+                reverse_items_link(rel_obj, 'set', objs)
+            else:
+                rel_obj.set(objs)
         return item
 
 

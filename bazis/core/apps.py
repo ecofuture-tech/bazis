@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from django.apps import apps
+
 from bazis.core.utils.apps import BaseConfig
 
 
@@ -29,3 +31,6 @@ class BazisCoreConfig(BaseConfig):
     def ready(self):
         super().ready()
         from bazis.core import checks  # noqa: F401  registers the system checks
+        from bazis.core.item_validation import connect_m2m
+
+        connect_m2m(apps.get_models())

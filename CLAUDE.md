@@ -85,6 +85,10 @@ Security boundaries that span packages:
   relationships endpoints (`JsonapiRouteBase.relationships_change`) accept only the
   relations of the update schema and call `hook_before/after_relationships_change`, which
   bazis-permit uses.
+- An invariant of an item lives in `JsonApiMixin.validate_item`, which the core calls once
+  per write whatever writes it (the routes, `save()`, the many-to-many managers); a package
+  that writes an item in several steps (the transits of bazis-statusy) declares them with
+  `defer_validate_item(item, source=...)` so that the item is validated once.
 - A relationship links only the objects the default route of the related model shows
   (`restrict_queryset`), and `included` shows only those objects
   (`JsonapiRouteBase.relations_access_check`, `JsonApiMixin.fields_for_included`): a

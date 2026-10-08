@@ -12,14 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from bazis.core.routing import BazisRouter
+from django.apps import apps
+
+from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
+from bazis.core.schemas.fields import SchemaFields
 
 
-router = BazisRouter(prefix='/api/v1')
+class RoomRouteSet(JsonapiRouteBase):
+    model = apps.get_model('validation.Room')
 
-router.register('entity.router')
-router.register('dynamic.router')
-router.register('route_injection.router')
-router.register('sparse_fieldsets.router')
-router.register('visibility.router')
-router.register('validation.router')
+    fields = {
+        None: SchemaFields(include={'bookings': None}),
+    }
+
+
+class PersonRouteSet(JsonapiRouteBase):
+    model = apps.get_model('validation.Person')
+
+    fields = {
+        None: SchemaFields(include={'bookings': None}),
+    }
+
+
+class BookingRouteSet(JsonapiRouteBase):
+    model = apps.get_model('validation.Booking')

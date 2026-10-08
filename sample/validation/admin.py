@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from bazis.core.routing import BazisRouter
+from django.contrib import admin
+
+from bazis.core.admin_abstract import ValidateItemAdminMixin
+
+from .models import Booking
 
 
-router = BazisRouter(prefix='/api/v1')
-
-router.register('entity.router')
-router.register('dynamic.router')
-router.register('route_injection.router')
-router.register('sparse_fieldsets.router')
-router.register('visibility.router')
-router.register('validation.router')
+@admin.register(Booking)
+class BookingAdmin(ValidateItemAdminMixin, admin.ModelAdmin):
+    fields = ('title', 'start', 'end', 'room', 'participants')

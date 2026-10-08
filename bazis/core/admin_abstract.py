@@ -14,9 +14,12 @@
 
 from django.contrib.admin.widgets import AutocompleteSelect, AutocompleteSelectMultiple
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import NON_FIELD_ERRORS
 
 from rangefilter.filters import DateTimeRangeFilter
 
+from bazis.core.errors import JsonApiItemInvalidException
+from bazis.core.item_validation import defer_validate_item
 from bazis.core.utils.sets_order import OrderedSet
 
 
@@ -202,3 +205,58 @@ class UniqNumberAdminMixin:
         Extend the search fields in Django admin to include 'uniq_number' field.
         """
         return super().get_search_fields(request) + ('uniq_number',)
+
+
+class ValidateItemAdminMixin:
+    """
+    The change form validates the item (`JsonApiMixin.validate_item`) once, after the
+    item, its many-to-many relations and the inlines are saved, with the user of the
+    request; when it fails the save is rolled back and the form shows the errors (on the
+    fields of the form, the others on top). Without the mixin the admin validates each
+    save as any other save, and a failure is a server error.
+
+    Tags: RAG, EXPORT
+    """
+
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        """
+        Saves the form in a block that defers the validation; on a failure shows the form
+        again with the errors.
+        """
+        if request.method != 'POST':
+            return super().changeform_view(request, object_id, form_url, extra_context)
+        try:
+            with defer_validate_item(user=request.user):
+                return super().changeform_view(request, object_id, form_url, extra_context)
+        except JsonApiItemInvalidException as e:
+            # nothing is saved: the form is validated again, with the errors
+            request._bazis_item_invalid = e
+            return super().changeform_view(request, object_id, form_url, extra_context)
+
+    def save_related(self, request, form, formsets, change):
+        """
+        Validates the saved items when the last of them is saved, before the admin logs
+        the change.
+        """
+        super().save_related(request, form, formsets, change)
+        with defer_validate_item() as scope:
+            scope.validate()
+
+    def get_form(self, request, obj=None, **kwargs):
+        """
+        The form of the second pass after a failed validation carries its errors.
+        """
+        form_class = super().get_form(request, obj, **kwargs)
+        if (invalid := getattr(request, '_bazis_item_invalid', None)) is None:
+            return form_class
+
+        class ItemInvalidForm(form_class):
+            def _post_clean(self):
+                super()._post_clean()
+                error = invalid.error
+                errors = getattr(error, 'error_dict', None) or {NON_FIELD_ERRORS: error.error_list}
+                of_form = isinstance(invalid.item, self._meta.model)
+                for name, field_errors in errors.items():
+                    self.add_error(name if of_form and name in self.fields else None, field_errors)
+
+        return ItemInvalidForm
