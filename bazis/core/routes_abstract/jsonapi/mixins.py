@@ -101,7 +101,10 @@ class RestrictedQsRouteMixin(JsonapiRouteBase):
         """
         Restricts the provided queryset based on the specified access action and user.
         This method can be overridden to apply custom restrictions. The core calls it on
-        the class with `user` (the user of the request, None without bazis-users); the
+        the class with `user`, the user of the calling route (`inject.user`): None if the
+        route has no user, or an anonymous user; neither is authenticated. An override
+        must not raise for them: it returns what a user without authentication may see
+        (e.g. `qs.none()`), or falls back to a request-level user of its package. The
         route of the request is `JsonApiMixin.CTX_ROUTE.get()`. An override should accept
         `**kwargs`.
         """

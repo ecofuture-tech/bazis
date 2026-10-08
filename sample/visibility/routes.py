@@ -34,6 +34,9 @@ class TagRouteSet(RestrictedQsRouteMixin):
 
     @classmethod
     def restrict_queryset(cls, qs, access_action, user=None, **kwargs):
+        # user is None (the route has no user) or anonymous without authentication
+        if getattr(user, 'is_staff', False):
+            return qs
         qs = qs.filter(is_hidden=False)
         if access_action == CrudAccessAction.CHANGE:
             qs = qs.filter(is_locked=False)

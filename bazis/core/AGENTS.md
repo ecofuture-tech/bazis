@@ -118,8 +118,11 @@ class OrderRouteSet(JsonapiRouteBase):
 - Visibility of the objects of a model for the other routes: override the classmethod
   `restrict_queryset(qs, access_action, user=None, **kwargs)` of `RestrictedQsRouteMixin`
   (`bazis.core.routes_abstract.jsonapi`) in the default route of the model (the core
-  calls it on the class with `user`, None without bazis-users; the route of the request
-  is `JsonApiMixin.CTX_ROUTE.get()`; accept `**kwargs`). A relationship of a created or changed item (create, update, the
+  calls it on the class with `user`, the `inject.user` of the calling route: None if the
+  route has no user, or anonymous; never raise for them, return what a user without
+  authentication may see, e.g. `qs.none()`, or fall back to a request-level user of the
+  package; the route of the request is `JsonApiMixin.CTX_ROUTE.get()`; accept
+  `**kwargs`). A relationship of a created or changed item (create, update, the
   relationships endpoints) links only the objects it returns for `view`, a reverse
   relationship only the objects it returns for `change` (their foreign key changes), both
   for the objects whose link changes; otherwise 403 `ERR_RELATION_ACCESS` with the pointer

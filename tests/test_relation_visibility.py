@@ -18,10 +18,14 @@ A relationship can link only the objects the route of the related model shows
 The route of `visibility.Tag` hides the hidden tags and does not let change the locked ones.
 """
 
+from django.contrib.auth.models import AnonymousUser, User
+
 import pytest
 from bazis_test_utils.utils import get_api_client
 from visibility.models import Folder, Label, Note, Tag
-from visibility.routes import NoteRouteSet
+from visibility.routes import NoteRouteSet, TagRouteSet
+
+from bazis.core.schemas.enums import CrudAccessAction
 
 from tests.utils.assert_sql import normalize_sql
 
@@ -342,3 +346,50 @@ def test_included_of_update_response_omits_invisible_objects(sample_app, tags):
     data = response.json()
     assert len(data['data']['relationships']['tags']['data']) == 2
     assert [it['id'] for it in data['included']] == [str(tags['visible'].id)]
+
+
+@pytest.fixture
+def restrict_users(monkeypatch):
+    """The `user` the core passes to the restrict_queryset of the route of tags."""
+    users = []
+    restrict = TagRouteSet.restrict_queryset.__func__
+
+    def spy(cls, qs, access_action, user=None, **kwargs):
+        users.append(user)
+        return restrict(cls, qs, access_action, user=user, **kwargs)
+
+    monkeypatch.setattr(TagRouteSet, 'restrict_queryset', classmethod(spy))
+    return users
+
+
+@pytest.mark.django_db(transaction=True)
+def test_anonymous_include(sample_app, tags, restrict_users):
+    """A request without a user includes what a user without authentication may see."""
+    note = Note.objects.create(name='note')
+    note.tags.add(tags['visible'], tags['hidden'])
+
+    response = get_api_client(sample_app).get(f'{NOTES}{note.id}/?include=tags')
+    assert response.status_code == 200, response.text
+    assert [it['id'] for it in response.json()['included']] == [str(tags['visible'].id)]
+    assert restrict_users == [None]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_route_without_user_links_restricted_target(sample_app, tags, restrict_users):
+    """The route of notes has no `inject.user`: the targets are checked for `user=None`."""
+    response = get_api_client(sample_app).post(
+        NOTES, json_data=note_payload(tags=rels('tag', tags['hidden']))
+    )
+    assert_relation_denied(response, 'tags')
+    assert restrict_users == [None]
+
+
+def test_restrict_queryset_without_authentication(tags):
+    qs = Tag.objects.all()
+    visible = {tags['visible'], tags['visible2'], tags['locked']}
+    for user in (None, AnonymousUser()):
+        assert set(TagRouteSet.restrict_queryset(qs, CrudAccessAction.VIEW, user=user)) == visible
+    staff = User(username='staff', is_staff=True)
+    assert set(TagRouteSet.restrict_queryset(qs, CrudAccessAction.VIEW, user=staff)) == set(
+        tags.values()
+    )

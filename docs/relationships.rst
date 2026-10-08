@@ -24,9 +24,12 @@ Access to the related objects
 
 The default route of a model (``Model.get_default_route()``) defines which of its objects
 the other routes can link and include: the classmethod ``restrict_queryset`` of
-``RestrictedQsRouteMixin``. The core calls it on the class with ``user`` (the user of the
-request, ``None`` without bazis-users); the route of the request is
-``JsonApiMixin.CTX_ROUTE.get()``. An override should accept ``**kwargs``.
+``RestrictedQsRouteMixin``. The core calls it on the class with ``user``, the
+``inject.user`` of the calling route: ``None`` if the route has no user, or an anonymous
+user. An override must not raise for them: it returns what a user without authentication
+may see (e.g. ``qs.none()``), or falls back to a request-level user of its package. The
+route of the request is ``JsonApiMixin.CTX_ROUTE.get()``. An override should accept
+``**kwargs``.
 
 .. code-block:: python
 
@@ -36,6 +39,9 @@ request, ``None`` without bazis-users); the route of the request is
 
         @classmethod
         def restrict_queryset(cls, qs, access_action, user=None, **kwargs):
+            # user is None (no user) or anonymous for a request without authentication
+            if getattr(user, 'is_staff', False):
+                return qs
             qs = qs.filter(is_hidden=False)
             if access_action == CrudAccessAction.CHANGE:
                 qs = qs.filter(is_locked=False)
