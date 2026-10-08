@@ -83,6 +83,14 @@ check = "bazis.E001"
 
 [[pitfalls]]
 text = "gettext catalogs are global: when two packages translate the same msgid differently, the first in LOCALE_PATHS wins (the project's locale, then INSTALLED_APPS in order, the project's apps included, then the Bazis packages that are not installed); override the translation in the project's locale or give the field its own verbose_name/title"
+check = "bazis.W004"
+
+[[pitfalls]]
+text = "a language of LANGUAGES other than English needs catalogs: the texts of a package without one stay in English (msgids are English); translate them in the project's locale"
+check = "bazis.W005"
+
+[[pitfalls]]
+text = "the language of a request is ?lang, then Accept-Language (by weight, base code), then LANGUAGE_CODE; titles must stay lazy (gettext_lazy, verbose_name) so that the cached schemas, schema_* routes and /openapi.json follow it; app.openapi() is in the active language"
 
 [[pitfalls]]
 text = "reverse relations are not in the schemas by default: add them to `fields` of the route"

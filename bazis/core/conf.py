@@ -183,7 +183,7 @@ class Settings(BazisSettings):
     MEDIA_URL: str = '/media/'
     STATIC_ROOT: str = '/tmp/static'
     MEDIA_ROOT: str = '/tmp/media'
-    LANGUAGE_CODE: str = 'en-EN'
+    LANGUAGE_CODE: str = 'en'
     TIME_ZONE: str = 'Etc/UTC'
     USE_I18N: bool = True
     USE_TZ: bool = True

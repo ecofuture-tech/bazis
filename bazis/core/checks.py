@@ -133,3 +133,84 @@ def check_default_routes(app_configs, **kwargs):
 
 def _qualname(cls) -> str:
     return f'{cls.__module__}.{cls.__qualname__}' if cls is not None else 'None'
+
+
+@register()
+def check_translation_conflicts(app_configs, **kwargs):
+    """
+    Two Bazis packages translate the same msgid differently: the catalog that comes first in
+    LOCALE_PATHS wins, so the text depends on the packages installed and on their order.
+    A msgid the project translates in its own `locale` is its choice.
+    """
+    import os
+
+    from bazis.core.utils.locale import bazis_locale_paths, read_catalog
+
+    packages = bazis_locale_paths()
+    paths = [path for path in settings.LOCALE_PATHS if path in packages]
+    project_locale = os.path.join(settings.BASE_DIR, 'locale')
+
+    warnings = []
+    for language, _name in settings.LANGUAGES:
+        project = read_catalog(project_locale, language)
+        translations = {}
+        for path in paths:
+            for msgid, msgstr in read_catalog(path, language).items():
+                if msgid not in project:
+                    translations.setdefault(msgid, []).append((packages[path], msgstr))
+        for msgid, found in translations.items():
+            if len({msgstr for _package, msgstr in found}) > 1:
+                texts = ', '.join(f'{package} "{msgstr}"' for package, msgstr in found)
+                warnings.append(
+                    Warning(
+                        f'"{msgid}" is translated into {language} differently by the Bazis '
+                        f'packages: {texts}; the first one wins.',
+                        hint=(
+                            f'Translate "{msgid}" in the locale of the project '
+                            f'({project_locale}), or upgrade the packages.'
+                        ),
+                        id='bazis.W004',
+                    )
+                )
+    return warnings
+
+
+@register()
+def check_translations_of_languages(app_configs, **kwargs):
+    """
+    A language of LANGUAGES (other than English, the language of the msgids) in which no
+    catalog translates texts of an installed Bazis package: they stay in English.
+    """
+    from django.utils.translation import trans_real
+
+    from bazis.core.utils.locale import bazis_locale_paths, catalog_languages, read_catalog
+
+    packages = bazis_locale_paths(settings.INSTALLED_APPS)
+    msgids = {
+        path: {msgid for language in catalog_languages(path) for msgid in read_catalog(path, language)}
+        for path in packages
+    }
+
+    warnings = []
+    for language, _name in settings.LANGUAGES:
+        if language.lower().split('-')[0] == 'en':
+            continue
+        try:
+            translated = trans_real.translation(language)._catalog
+        except OSError:
+            translated = {}
+        untranslated = sorted(
+            f'{packages[path]} ({len(missing)})'
+            for path in packages
+            if (missing := [msgid for msgid in msgids[path] if msgid not in translated])
+        )
+        if untranslated:
+            warnings.append(
+                Warning(
+                    f'The language {language} of LANGUAGES has no translation of texts of the '
+                    f'Bazis packages {", ".join(untranslated)}: they stay in English.',
+                    hint='Translate their msgids in the locale of the project, or remove the language.',
+                    id='bazis.W005',
+                )
+            )
+    return warnings

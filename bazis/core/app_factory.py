@@ -98,6 +98,7 @@ def _initialize_app(app): # noqa: C901
     # ruff: noqa: E402
     import os
     import re
+    import threading
     import traceback
     from urllib.parse import unquote, urlsplit
 
@@ -225,6 +226,29 @@ def _initialize_app(app): # noqa: C901
     app.add_middleware(CloseOldConnectionsMiddleware)
 
     app.add_middleware(LanguageMiddleware)
+
+    openapi_build = app.openapi
+    openapi_by_language = {}
+    openapi_lock = threading.Lock()
+
+    def openapi() -> dict:
+        """
+        The OpenAPI schema in the active language (/openapi.json: the language of the
+        request), built once per language: the titles of the schemas are translated when the
+        OpenAPI is generated, and FastAPI caches one in `app.openapi_schema`. Resetting
+        `app.openapi_schema` to None builds them again, as with FastAPI.
+        """
+        language = get_language()
+        with openapi_lock:
+            if app.openapi_schema is None:
+                openapi_by_language.clear()
+            if language not in openapi_by_language:
+                app.openapi_schema = None
+                openapi_by_language[language] = openapi_build()
+            app.openapi_schema = openapi_by_language[language]
+            return app.openapi_schema
+
+    app.openapi = openapi
 
     app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 
