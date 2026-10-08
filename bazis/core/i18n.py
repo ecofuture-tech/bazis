@@ -14,23 +14,54 @@
 
 # ruff: noqa: N806
 
-import re
 from contextvars import ContextVar
 
 from django.conf import settings
 from django.utils import translation
 from django.utils.translation import trans_real
 
-from starlette.datastructures import QueryParams
+from starlette.datastructures import Headers, QueryParams
 
 
 CTX_TRANS = ContextVar('CTX_LANG', default=None)
 
 
+def match_language(code: str) -> str | None:
+    """
+    The language of LANGUAGES of a language code: the same code or its base code (`ru` of
+    `ru-RU` or `ru_RU`), case-insensitively; None if the project does not have it.
+    """
+    languages = {language.lower(): language for language, _name in settings.LANGUAGES}
+    code = code.strip().lower().replace('_', '-')
+    return languages.get(code) or languages.get(code.split('-')[0])
+
+
+def request_language(query_lang: str | None, accept_language: str | None) -> str:
+    """
+    The language of a request: the query parameter `lang`, then the languages of the header
+    `Accept-Language` by weight, the first one the project has (LANGUAGES); otherwise
+    LANGUAGE_CODE (its base code when only that is in LANGUAGES).
+
+    Tags: RAG, EXPORT
+    """
+    candidates = [query_lang] if query_lang else []
+    if accept_language:
+        candidates += [
+            code
+            for code, weight in trans_real.parse_accept_lang_header(accept_language)
+            if code != '*' and weight > 0
+        ]
+    for code in candidates:
+        if language := match_language(code):
+            return language
+    return match_language(settings.LANGUAGE_CODE) or settings.LANGUAGE_CODE
+
+
 class LanguageMiddleware:
     """
-    Middleware to handle language settings based on query parameters, headers, or
-    default settings.
+    Activates the language of the request (`request_language`): the query parameter
+    `lang`, then the header `Accept-Language`, matched against LANGUAGES by code or base
+    code, otherwise LANGUAGE_CODE.
 
     Tags: RAG, EXPORT
     """
@@ -46,31 +77,13 @@ class LanguageMiddleware:
         ASGI callable to process the incoming request, determine the language, and
         activate the corresponding translation.
         """
-        lang = None
+        if scope['type'] in ('http', 'websocket'):
+            query_lang = QueryParams(scope.get('query_string', b'')).get('lang')
+            accept_language = Headers(scope=scope).get('accept-language')
+        else:
+            query_lang = accept_language = None
 
-        if 'query_string' in scope:
-            query_string = scope['query_string']
-
-            if isinstance(query_string, bytes):
-                query_string = query_string.decode()
-
-            query_params = QueryParams(query_string)
-            if 'lang' in query_params:
-                lang = query_params['lang']
-
-        if lang is None and 'headers' in scope:
-            language_header = dict(scope['headers']).get(b'accept-language')
-            if language_header:
-                if isinstance(language_header, bytes):
-                    language_header = language_header.decode()
-                lang = language_header.split(',')[0]
-
-        if lang is None or lang not in [l_code for l_code, l_name in settings.LANGUAGES]:
-            lang = settings.LANGUAGE_CODE
-
-        lang = re.split(r'[-_]', lang)[0]
-
-        translation.activate(lang)
+        translation.activate(request_language(query_lang, accept_language))
 
         await self.app(scope, receive, send)
 

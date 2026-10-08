@@ -50,11 +50,27 @@ Translations: the core puts into `LOCALE_PATHS` the `locale` directory of the pr
 (`<BASE_DIR>/locale`), then those of the installed apps in the order of `INSTALLED_APPS`
 (the apps of the project included), then those of the Bazis packages that are not installed
 (a project uses the abstract models of bazis-users without installing it) by name. Other
-libraries that are not apps are not included. When two catalogs translate the same msgid
-(`"Name"` is translated differently by bazis-permit, bazis-statusy and bazis-uploadable),
-the first one wins, in every process: the list depends only on the settings. To change a translation of a package, translate the
-msgid in the project's `locale`, or give the field its own title (`verbose_name` of the
-model field, or `SchemaField(title=...)` in `fields` of the route).
+libraries that are not apps are not included. When two catalogs translate the same msgid,
+the first one wins, in every process: the list depends only on the settings
+(`bazis_doctor` warns when two Bazis packages differ, `bazis.W004`). To change a
+translation of a package, translate the msgid in the project's `locale`, or give the field
+its own title (`verbose_name` of the model field, or `SchemaField(title=...)` in `fields` of
+the route). Write the msgids in English (`gettext_lazy`): English needs no catalog, every
+other language of `LANGUAGES` does (`bazis.W005` lists the Bazis packages left untranslated).
+
+Languages: `BS_LANGUAGES` (default `[["en", "English"]]`) and `BS_LANGUAGE_CODE` (default
+`en`, one of them). The language of a request is the query parameter `lang`, otherwise the
+header `Accept-Language` by weight, matched against `LANGUAGES` by code or base code
+(`ru-RU` is `ru`), otherwise `LANGUAGE_CODE` (`bazis.core.i18n.request_language`). The
+schemas are built once per process for all the languages: the titles, descriptions and
+choice labels (`enumDict`) are translated when a JSON schema is generated, so the
+`schema_*` routes answer in the language of the request and `/openapi.json` too (built
+once per language; `app.openapi()` is in the active language, export it under
+`translation.override(settings.LANGUAGE_CODE)`). Keep titles lazy (`gettext_lazy`,
+`verbose_name`): a `str` is fixed in the language of the code that made it. In tests set
+`LANGUAGES` with `monkeypatch.setattr(settings, ...)`, not with the `settings` fixture or
+`override_settings`: their signal makes Django replace the per-request translations of the
+core with thread-local ones.
 
 ## Models
 

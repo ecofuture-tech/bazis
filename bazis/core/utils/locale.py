@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gettext
 import os
 from importlib.util import find_spec
 from pkgutil import iter_modules
@@ -86,3 +87,53 @@ def discover_locale_paths(base_dir: str, installed_apps: list[str]) -> list[str]
         if path not in locale_paths and os.path.isdir(path):
             locale_paths.append(path)
     return locale_paths
+
+
+def bazis_locale_paths(apps: list[str] | None = None) -> dict[str, str]:
+    """
+    The 'locale' directories of the Bazis packages (the core and `bazis.contrib.*`), with
+    the name of their package: of the given entries of INSTALLED_APPS, or of all the Bazis
+    packages present, installed or not.
+    """
+    packages = []
+    for app in ['bazis.core', *_bazis_packages()] if apps is None else apps:
+        parts = app.split('.')
+        if parts[:2] == ['bazis', 'core']:
+            packages.append('bazis.core')
+        elif parts[:2] == ['bazis', 'contrib'] and len(parts) > 2:
+            packages.append('.'.join(parts[:3]))
+    return {
+        os.path.join(path, 'locale'): package
+        for package in packages
+        for path in _app_dirs(package)
+        if os.path.isdir(os.path.join(path, 'locale'))
+    }
+
+
+def read_catalog(locale_path: str, language: str) -> dict[str, str]:
+    """
+    The translations of the compiled catalog `django` of a 'locale' directory in a language
+    (`ru`, `pt-br`): msgid to msgstr, the plural forms left out; empty without a catalog.
+    """
+    from django.utils.translation import to_locale
+
+    try:
+        catalog = gettext.translation('django', locale_path, [to_locale(language)])
+    except OSError:
+        return {}
+    return {
+        msgid: msgstr
+        for msgid, msgstr in catalog._catalog.items()
+        if isinstance(msgid, str) and msgid and msgstr
+    }
+
+
+def catalog_languages(locale_path: str) -> list[str]:
+    """
+    The languages of the compiled catalogs `django` of a 'locale' directory.
+    """
+    return sorted(
+        name
+        for name in os.listdir(locale_path)
+        if os.path.isfile(os.path.join(locale_path, name, 'LC_MESSAGES', 'django.mo'))
+    )

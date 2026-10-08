@@ -18,14 +18,14 @@ the sets of strings): the translated titles and the schema names end up in the O
 is hashed to detect a stale frontend contract.
 """
 
-import array
 import json
 import os
-import struct
 import subprocess
 import sys
 
 import pytest
+
+from .utils.catalogs import write_mo
 
 
 SEEDS = ('0', '1', '2', '3', '4', '5')
@@ -57,34 +57,6 @@ def run_processes(runs: dict[str, tuple[str, str, dict]]) -> dict[str, str]:
         assert process.returncode == 0, stderr
         outputs[key] = stdout.splitlines()[-1]
     return outputs
-
-
-def write_mo(path, messages: dict[str, str]) -> None:
-    """
-    Writes a compiled gettext catalog (the format of `msgfmt`, which CI may not have).
-    """
-    messages = {'': 'Content-Type: text/plain; charset=UTF-8\n', **messages}
-    keys = sorted(messages)
-    ids = strs = b''
-    offsets = []
-    for key in keys:
-        key_bytes, value_bytes = key.encode(), messages[key].encode()
-        offsets.append((len(ids), len(key_bytes), len(strs), len(value_bytes)))
-        ids += key_bytes + b'\0'
-        strs += value_bytes + b'\0'
-    keys_start = 7 * 4 + 16 * len(keys)
-    values_start = keys_start + len(ids)
-    key_offsets, value_offsets = [], []
-    for id_offset, id_len, str_offset, str_len in offsets:
-        key_offsets += [id_len, id_offset + keys_start]
-        value_offsets += [str_len, str_offset + values_start]
-    path.parent.mkdir(parents=True)
-    path.write_bytes(
-        struct.pack('Iiiiiii', 0x950412DE, 0, len(keys), 7 * 4, 7 * 4 + len(keys) * 8, 0, 0)
-        + array.array('i', key_offsets + value_offsets).tobytes()
-        + ids
-        + strs
-    )
 
 
 TRANSLATE_NAME = (

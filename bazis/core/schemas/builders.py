@@ -63,6 +63,21 @@ def schema_create(__model_name, **kwargs):
     return schema
 
 
+def schema_texts(field: SchemaField | SchemaMetaField) -> dict:
+    """
+    The title and the description of a field for its `json_schema_extra`, as they are given
+    (lazy translations stay lazy). A schema is built once and cached for all the languages,
+    while pydantic renders `json_schema_extra` every time it generates a JSON schema (with
+    `to_jsonable_python`, which the core makes call `str`): in the language of the request
+    then. `Field(title=str(...))` would keep the language of the request that built it.
+    """
+    return {
+        key: value
+        for key, value in (('title', field.title), ('description', field.description))
+        if value
+    }
+
+
 class SchemaBuilder:
     """
     Class responsible for building the final schema, including resource schema,
@@ -151,11 +166,7 @@ class SchemaBuilder:
             # build the field
             attributes[field.name] = (
                 field_type | None,
-                Field(
-                    None,
-                    title=field.title and str(field.title),
-                    description=field.description and str(field.description),
-                ),
+                Field(None, json_schema_extra=schema_texts(field)),
             )
         schema = schema_create(schema_name, **attributes)
         set_schema_to_cache(schema_name, schema)
@@ -598,7 +609,7 @@ class SchemaResourceBuilder:
         elif required:
             default = Ellipsis
 
-        field_params = {}
+        field_params = schema_texts(field)
         if field.nullable is not None:
             field_params['nullable'] = field.nullable
         if field.blank is not None:
@@ -623,8 +634,6 @@ class SchemaResourceBuilder:
             field_type | None if not required and field.nullable else field_type,
             Field(
                 default,
-                title=field.title and str(field.title),
-                description=field.description and str(field.description),
                 min_length=field.min_length,
                 max_length=field.max_length,
                 json_schema_extra=field_params,
