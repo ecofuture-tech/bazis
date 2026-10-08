@@ -13,14 +13,16 @@
 # limitations under the License.
 
 from django.db.models import QuerySet
+from django.utils.translation import gettext_lazy as _
 
 from fastapi import Depends
 
 from typing_extensions import deprecated
 
+from bazis.core.errors import JsonApiBazisError, JsonApiBazisException
 from bazis.core.routes_abstract.initial import InitialRouteBase, RouteContext
-from bazis.core.services.route_ctx import get_route_ctx
-from bazis.core.utils.query_complex import DJANGO_SEARCH_FIELDS, SearchToOrm
+from bazis.core.services.route_ctx import REQUEST_SCOPE, get_route_ctx, request_query_scope
+from bazis.core.utils.query_complex import DJANGO_SEARCH_FIELDS, QueryScope, SearchToOrm
 
 
 class ServiceSearching:
@@ -44,14 +46,30 @@ class ServiceSearching:
         self.search = search
         self.route_cls = route_ctx.route_cls
 
-    def apply(self, queryset: QuerySet):
+    def apply(self, queryset: QuerySet, scope: QueryScope | None = REQUEST_SCOPE):
         """
         Applies the search query to the provided queryset by constructing a Q object and
-        filtering the queryset based on the search terms.
+        filtering the queryset based on the search terms. With a scope (by default the
+        scope of the route of the request) only the search fields of the route it reaches
+        are searched, and a search on a route without them is 400 ERR_FILTER; without a
+        scope (None) a route without search fields searches every text field of the model.
         """
-        search = SearchToOrm(
-            queryset.model, self.search, search_fields=self.route_cls.search_fields
-        )
+        scope = request_query_scope(scope)
+        try:
+            search = SearchToOrm(
+                queryset.model, self.search, search_fields=self.route_cls.search_fields, scope=scope
+            )
+        except ValueError as e:
+            raise JsonApiBazisException(
+                JsonApiBazisError(
+                    detail=str(e),
+                    loc=('query', 'search'),
+                    code='ERR_FILTER',
+                    title=_('Invalid filter'),
+                    status=400,
+                ),
+                status=400,
+            ) from e
         return queryset.filter(search.q)
 
 

@@ -199,7 +199,9 @@ class OrderRouteSet(JsonapiRouteBase):
   relationship only the objects it returns for `change` (their foreign key changes), both
   for the objects whose link changes; otherwise 403 `ERR_RELATION_ACCESS` with the pointer
   `/data/relationships/<field>`. `included` shows only the visible objects (the
-  relationship keeps the identifiers). The objects of a model whose default route does not
+  relationship keeps the identifiers), and the filter, sorting and search of the other
+  routes reach only the visible objects through a relation. The objects of a model whose
+  default route does not
   override `restrict_queryset` (or that has no route) are not checked and not queried.
   `relation_targets_check = False` turns the check off for the relationships of a route.
   The route's own list and item do not use `restrict_queryset` by themselves: apply it in
@@ -240,8 +242,27 @@ class OrderRouteSet(JsonapiRouteBase):
 - `filter` is one expression: `filter=status=new&price__gte=20`, `filter=(a=1|b=2)`,
   `~a=1` (not), nested fields `filter=customer__name=Acme` (an `EXISTS` subquery),
   `customer__exists=true|false` (`customer__isnull` is the opposite), full-text
-  `$search=text` (all text and integer fields of the model) or `customer__$search=text`;
-  `search=text` searches the search fields of the route.
+  `$search=text` (the search fields of the route) or `customer__$search=text` (the search
+  fields of the default route of the customers), `crm.customer=<id>,<id>` (the objects
+  related to those customers); `search=text` searches the search fields of the route.
+- The filter, `sort` and `search` reach only what the route shows the user
+  (`BAZIS_FILTERS_STRICT`, on by default since 2.9): a key starts with a field of the LIST
+  schema of the route (its `fields`; `filterLabel`/`orderLabel` of the schema) or `id` (`pk`); a
+  relation of it leads into the objects the default route of the related model shows (its
+  `restrict_queryset` for `view` with the user of the route), where the key goes on with
+  the fields of the LIST schema of that route (a model without a route: only `id`/`pk`,
+  `exists`, `isnull`). `sort` goes through to-one relations only (an invisible object sorts
+  as null; a relation itself sorts by the key of the related object); the search uses only the `search_fields` of the route that are fields of its
+  LIST schema (`bazis.W007` warns), a route without them has no search. Anything else is
+  400 `ERR_FILTER` (pointer `/query/filter`, `/query/sort` or `/query/search`), the same
+  answer as for a field that does not exist: to filter, sort or search by a field, show it
+  in the LIST schema of the route. `filters_aliases` of the route are not checked (the
+  relations they lead to are). `QueryToOrm`/`SearchToOrm` without `scope` (permission
+  conditions, `filter:` restrictions) and the services with `scope=None` are not
+  restricted. A package that changes the LIST schema per user overrides the classmethod
+  `query_fields(user=None, **kwargs)` of the route. `BS_BAZIS_FILTERS_STRICT=false`
+  restores the unrestricted queries of 2.8 for a transition (`bazis.W006`); it will be
+  removed.
   The lookup suffixes after a field are not Django lookups; only these exist (plus `isnull`
   for every field):
   - text `TextField`: none (substring), `iexact`, `istartswith`, `iregex`, `search`, `$search`;
@@ -259,7 +280,7 @@ class OrderRouteSet(JsonapiRouteBase):
   the server decodes the expression once more and every value once more, so a value with
   `&|()[]~=+%` is percent-encoded twice inside the expression; quotes are removed from
   values.
-- `sort=-dt_created,number`, `page[limit]` / `page[offset]`
+- `sort=-dt_created,number,customer__name`, `page[limit]` / `page[offset]`
   (`BAZIS_API_PAGINATION_PAGE_SIZE_MAX` caps the limit), `include=customer,items`,
   `fields[crm.order]=number,customer` (sparse fieldsets).
 - Errors are JSON:API error objects; validation errors are 422.
@@ -275,8 +296,10 @@ class OrderRouteSet(JsonapiRouteBase):
   update do not run for the relationships endpoints, the transits, the admin or `save()`.
 - Restrict the objects of a model that a user must not see in `restrict_queryset` of its
   default route, not only in `get_queryset`: `get_queryset` restricts the route's own
-  list and item, the relationships and `included` of the other routes use
-  `restrict_queryset`.
+  list and item, the relationships, `included` and the filters through a relation of the
+  other routes use `restrict_queryset`.
+- A route that hides fields of its model (a projection with `fields`) hides them from the
+  filter, the sorting and the search too; do not list hidden fields in `search_fields`.
 - Do not access `settings.<dynamic setting>` at import time: dynamic settings are read from
   the database (constance).
 - Do not edit generated schemas by hand; change the model or `fields` of the route.

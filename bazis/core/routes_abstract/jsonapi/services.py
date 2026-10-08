@@ -34,7 +34,6 @@ from pydantic import TypeAdapter
 
 from bazis.core.routes_abstract.initial import InitialRouteBase
 from bazis.core.routing import iter_api_routes
-from bazis.core.schemas import CrudApiAction
 
 from .schemas import InputField, RouteFilterFieldsSchemas
 
@@ -52,11 +51,14 @@ class RouteFilterFieldsService:
 
     @classmethod
     def get_fields(cls, route_cls: type['JsonapiRouteBase']) -> list[InputField]:
-        """Return list of filterable fields for a given route class."""
-        schema_factory = route_cls.schemas[CrudApiAction.LIST].schema_factory
+        """
+        Return list of filterable fields for a given route class (or route of a request):
+        the fields of its `query_fields` that can filter, for the user of the route.
+        """
+        user = getattr(getattr(route_cls, 'inject', None), 'user', None)
         return [
             cls._serialize_field(route_schema_field, route_cls)
-            for route_schema_field in schema_factory.fields_list
+            for route_schema_field in route_cls.query_fields(user=user)
             if route_schema_field.can_filter is True
         ]
 

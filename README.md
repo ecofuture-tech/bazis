@@ -493,6 +493,13 @@ The `filter` query parameter holds one expression (URL-encode it):
 `false` is false for boolean fields, any other value is true. The `search` parameter
 (`?search=test`) searches the search fields of the route.
 
+The filter, the sorting and the search reach only what the route shows the user: a key
+starts with a field of the LIST schema of the route, a relation of it leads into the
+objects the default route of the related model shows (its `restrict_queryset`) and its
+LIST fields, and the search uses the `search_fields` of the route (none: no search). Any
+other key is 400 `ERR_FILTER`, as an unknown field. `BS_BAZIS_FILTERS_STRICT=false` turns
+it off for a transition (see `docs/releases/2.9.0.md`).
+
 The lookup suffixes are not Django lookups; a field accepts only these (and `isnull`).
 A relation accepts `exists` and `isnull` (`true`/`false`) or a field of the related model:
 
