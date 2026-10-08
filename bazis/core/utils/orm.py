@@ -55,7 +55,7 @@ from django.db.models import (
 from django.db.models.expressions import Expression
 from django.db.models.functions import JSONObject
 from django.utils.functional import Promise, cached_property
-from django.utils.text import capfirst, slugify
+from django.utils.text import capfirst, format_lazy, slugify
 from django.utils.translation import get_language
 
 from pydantic import BaseModel, create_model
@@ -438,12 +438,15 @@ class AbstractForeignKey:
                     'Meta',
                     (),
                     {
-                        'verbose_name': (
-                            f'{target_model._meta.verbose_name}. {base_cls._meta.verbose_name}'
+                        # lazy: the model is made at import, in whatever language is
+                        # active then, and the migrations must not depend on it
+                        'verbose_name': format_lazy(
+                            '{}. {}', target_model._meta.verbose_name, base_cls._meta.verbose_name
                         ),
-                        'verbose_name_plural': (
-                            f'{target_model._meta.verbose_name_plural}. '
-                            f'{base_cls._meta.verbose_name_plural}'
+                        'verbose_name_plural': format_lazy(
+                            '{}. {}',
+                            target_model._meta.verbose_name_plural,
+                            base_cls._meta.verbose_name_plural,
                         ),
                     },
                 ),
