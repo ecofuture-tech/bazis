@@ -35,24 +35,31 @@ def _bazis_packages() -> list[str]:
 
 def _app_dirs(app: str) -> list[str]:
     """
-    The directories of an entry of INSTALLED_APPS, found without importing the app: a
-    package (`django.contrib.admin`) or the package of an AppConfig path
-    (`sequences.apps.SequencesConfig`, `users.apps.UsersConfig`). Only the parent packages
-    are imported, as by any import of the app.
+    The directories of an entry of INSTALLED_APPS, found without importing the app: the
+    longest prefix of the entry that is a package or a module, as Django resolves it, so a
+    package (`django.contrib.admin`) or the package (module) that declares an AppConfig
+    (`sequences.apps.SequencesConfig`, `pkg.PkgConfig`, `pkg.apps.Config`). Only packages
+    are imported (to find their submodules), as by any import of the app.
     """
-    try:
-        parent = app.rpartition('.')[0]
-        if parent and (parent_spec := find_spec(parent)) and not parent_spec.submodule_search_locations:
-            # `<module>.<AppConfig>`: the app is the package of the module
-            return [os.path.dirname(parent_spec.origin)]
-        spec = find_spec(app)
-    except (ImportError, ValueError):
+    parts = app.split('.')
+    found = None
+    for i in range(1, len(parts) + 1):
+        try:
+            spec = find_spec('.'.join(parts[:i]))
+        except (ImportError, ValueError):
+            break
+        if spec is None:
+            # the rest is the name of an AppConfig class
+            break
+        found = spec
+        if not spec.submodule_search_locations:
+            # a module: the rest is the name of an AppConfig class in it
+            break
+    if found is None:
         return []
-    if spec is None:
-        return []
-    if spec.submodule_search_locations:
-        return list(spec.submodule_search_locations)
-    return [os.path.dirname(spec.origin)] if spec.origin else []
+    if found.submodule_search_locations:
+        return list(found.submodule_search_locations)
+    return [os.path.dirname(found.origin)] if found.origin else []
 
 
 def discover_locale_paths(base_dir: str, installed_apps: list[str]) -> list[str]:

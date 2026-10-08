@@ -106,10 +106,24 @@ def packages_translating_the_same_msgid(tmp_path):
     """
     packages = [
         tmp_path / 'bazis' / 'contrib' / name for name in ('fake_first', 'fake_second', 'fake_unused')
-    ] + [tmp_path / 'fake_project', tmp_path / 'fake_library']
+    ] + [
+        tmp_path / 'fake_project',
+        tmp_path / 'fake_library',
+        tmp_path / 'fake_config_init',
+        tmp_path / 'fake_config_package' / 'apps',
+    ]
     for root in packages:
         write_mo(root / 'locale' / 'ru' / 'LC_MESSAGES' / 'django.mo', {'Name': root.name})
         (root / '__init__.py').write_text('')
+    # apps whose AppConfig is declared in the package itself and in a subpackage `apps`
+    config = 'from django.apps import AppConfig\n\nclass {cls}(AppConfig):\n    name = {name!r}\n'
+    (tmp_path / 'fake_config_init' / '__init__.py').write_text(
+        config.format(cls='FakeConfig', name='fake_config_init')
+    )
+    (tmp_path / 'fake_config_package' / '__init__.py').write_text('')
+    (tmp_path / 'fake_config_package' / 'apps' / '__init__.py').write_text(
+        config.format(cls='FakeConfig', name='fake_config_package.apps')
+    )
     return {'PYTHONPATH': os.pathsep.join([str(tmp_path), os.environ.get('PYTHONPATH', '')])}
 
 
@@ -152,6 +166,27 @@ def test_project_app_wins_over_packages_that_are_not_installed(
     assert outputs['plain'].split()[0] == 'fake_project'
     assert outputs['preloaded'] == outputs['plain']
     assert 'fake_library' not in outputs['plain']
+    # the catalog of the Bazis package that is not installed is still loaded, under the app
+    assert outputs['plain'].index('fake_project') < outputs['plain'].index('fake_unused')
+
+
+@pytest.mark.parametrize(
+    'app, expected',
+    [
+        ('fake_config_init.FakeConfig', 'fake_config_init'),
+        ('fake_config_package.apps.FakeConfig', 'apps'),
+    ],
+)
+def test_app_config_paths(packages_translating_the_same_msgid, app, expected):
+    """
+    An entry of INSTALLED_APPS that is the path of an AppConfig declared in a package (not
+    in a module `apps.py`) gives the catalog of that package.
+    """
+    env = {**packages_translating_the_same_msgid, 'BS_INSTALLED_APPS': json.dumps([app])}
+
+    output = run_processes({'app': (TRANSLATE_NAME, '0', env)})['app']
+
+    assert output.split()[0] == expected
 
 
 def test_restrict_filters_do_not_depend_on_the_process():
