@@ -136,6 +136,10 @@ class OrderRouteSet(JsonapiRouteBase):
   `actions_exclude`.
 - Reverse relations and calculated fields are not in the schemas by default: add them with
   `SchemaFields(include=...)`. Writable relations are those of the UPDATE (CREATE) schema.
+  A relation read-only there (`SchemaField(read_only=True)`, the field permission
+  `readonly` of bazis-permit) is ignored by an update, and the relationships endpoints
+  refuse it as a relation that is not in the schema: 403 `ERR_RELATIONSHIP_READONLY` with
+  `source.parameter` `/related_field_name`.
 - Visibility of the objects of a model for the other routes: override the classmethod
   `restrict_queryset(qs, access_action, user=None, **kwargs)` of `RestrictedQsRouteMixin`
   (`bazis.core.routes_abstract.jsonapi`) in the default route of the model (the core
