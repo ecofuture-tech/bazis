@@ -283,7 +283,14 @@ class OrderRouteSet(JsonapiRouteBase):
 - `sort=-dt_created,number,customer__name`, `page[limit]` / `page[offset]`
   (`BAZIS_API_PAGINATION_PAGE_SIZE_MAX` caps the limit), `include=customer,items`,
   `fields[crm.order]=number,customer` (sparse fieldsets).
-- Errors are JSON:API error objects; validation errors are 422.
+- Errors are JSON:API error objects; validation errors are 422. The errors of the request
+  schemas (`ERR_VALIDATE`), of `validate_item` (`ERR_ITEM_INVALID`) and of the relation
+  access (`ERR_RELATION_ACCESS`) point into the request document the same way:
+  `/data/attributes/<f>`, `/data/relationships/<f>`, `/data/id`, and
+  `/included/<i>/attributes/<f>` for the included item at index `i`; `source.id` and
+  `source.type` name the item of an `ERR_VALIDATE` when the document gives its id (before
+  2.11.0 `ERR_VALIDATE` pointed to `/attributes/<f>` for the item and every included item
+  alike).
 
 ## Rules
 

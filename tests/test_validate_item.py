@@ -497,6 +497,69 @@ def test_request_errors_point_as_the_item_errors(sample_app, calls):
     assert error['source'] == {'pointer': '/included/0/attributes/start'}
     assert not calls
 
+    # an update: the source names the item at the pointer
+    room = Room.objects.create(name='Blue')
+    booking = make_booking(room)
+    response = client.patch(
+        f'/api/v1/validation/room/{room.pk}/?include=bookings',
+        json_data={
+            'data': {'id': str(room.pk), 'type': 'validation.room', 'attributes': {}},
+            'included': [
+                {
+                    'id': str(booking.pk),
+                    'type': 'validation.booking',
+                    'bs:action': 'change',
+                    'attributes': {'end': 'later'},
+                }
+            ],
+        },
+    )
+    assert response.status_code == 422, response.text
+    error = response.json()['errors'][0]
+    assert error['code'] == 'ERR_VALIDATE'
+    assert error['source'] == {
+        'pointer': '/included/0/attributes/end',
+        'id': str(booking.pk),
+        'type': 'validation.booking',
+    }
+    assert Booking.objects.get().end == 20
+
+
+@pytest.mark.django_db(transaction=True)
+def test_relation_access_errors_of_an_included_item_point_to_it(sample_app, monkeypatch):
+    """
+    A relationship of an included item to an object the user cannot see is 403
+    ERR_RELATION_ACCESS pointing to the included item, not to the item of `data`.
+    """
+    from bazis.core.routes_abstract.jsonapi import RestrictedQsRouteMixin
+
+    monkeypatch.setattr(Person, '_default_route', Person.get_default_route())
+
+    class HiddenPersonRouteSet(RestrictedQsRouteMixin):
+        model = Person
+
+        @classmethod
+        def restrict_queryset(cls, qs, access_action, user=None, **kwargs):
+            return qs.exclude(name='Hidden')
+
+    assert Person.get_default_route() is HiddenPersonRouteSet
+    hidden = Person.objects.create(name='Hidden')
+    included = booking_data(participants=[hidden])['data'] | {'bs:action': 'add'}
+
+    response = get_api_client(sample_app).post(
+        '/api/v1/validation/room/?include=bookings',
+        json_data={
+            'data': {'type': 'validation.room', 'attributes': {'name': 'Blue'}},
+            'included': [included],
+        },
+    )
+
+    assert response.status_code == 403, response.text
+    error = response.json()['errors'][0]
+    assert error['code'] == 'ERR_RELATION_ACCESS'
+    assert error['source'] == {'pointer': '/included/0/relationships/participants'}
+    assert not Room.objects.exists() and not Booking.objects.exists()
+
 
 @pytest.mark.django_db
 def test_writes_after_a_validation_are_validated_again(calls):

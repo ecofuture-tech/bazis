@@ -122,6 +122,9 @@ text = "an invariant of an item kept only in the hooks of a route (hook_before_c
 text = "QuerySet.update(), bulk_create(), bulk_update(), a reverse foreign key manager with bulk=True outside the routes, Through.objects.create(), loaddata and deserialization (raw), raw SQL and deletion do not call validate_item; a failed validation of a many-to-many add()/remove()/clear() inside a transaction requires rolling that transaction back (no savepoint)"
 
 [[pitfalls]]
+text = "a client that maps the errors to the fields reads source.pointer as a pointer into the request document: /data/attributes/<f>, /data/relationships/<f>, /included/<i>/attributes/<f> for ERR_VALIDATE, ERR_ITEM_INVALID and ERR_RELATION_ACCESS alike (ERR_VALIDATE pointed to /attributes/<f> before 2.11.0)"
+
+[[pitfalls]]
 text = "reverse relations are not in the schemas by default: add them to `fields` of the route"
 
 [[pitfalls]]

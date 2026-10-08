@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import traceback
+from contextlib import contextmanager
 from itertools import chain
 from typing import Any, List, TypeVar, get_type_hints  # noqa: UP035
 
@@ -86,6 +87,25 @@ from .services import RouteFilterFieldsService
 SchemaStructT = TypeVar('SchemaStructT')
 SchemaCreateT = TypeVar('SchemaCreateT')
 SchemaUpdateT = TypeVar('SchemaUpdateT')
+
+
+@contextmanager
+def errors_point_to_included(index: int):
+    """
+    The errors of the write of an included item that point to the item it writes (`/data`,
+    such as `ERR_RELATION_ACCESS` of its relationships) point to it in the request document:
+    `/included/<index>/...`.
+    """
+    try:
+        yield
+    except JsonApiBazisException as e:
+        for error in e.errors:
+            loc = tuple(error.loc or ())
+            if loc[:1] == ('body',):
+                loc = loc[1:]
+            if loc[:1] == ('data',):
+                error.loc = ('body', 'included', index, *loc[1:])
+        raise
 
 
 class JsonapiRouteBase(InitialRouteBase):
@@ -1165,14 +1185,16 @@ class JsonapiRouteBase(InitialRouteBase):
                             status_code=400,
                             detail=f'Object does`t exist. Type: {include_data.type}. ID: {include_data.id})',
                         ) from None
-                    self.item_update(include, include_data)
+                    with errors_point_to_included(index):
+                        self.item_update(include, include_data)
                     # the errors of its validation point to it
                     scope.mark(include, 'update', loc=('body', 'included', index))
 
                 # from the input included, take those that came for creation
                 for index, include_data in enumerate(item_data_included):
                     if include_data.action == CrudAccessAction.ADD.value:
-                        include = self.item_create(include_data)
+                        with errors_point_to_included(index):
+                            include = self.item_create(include_data)
                         scope.mark(include, 'create', loc=('body', 'included', index))
 
             return self.item
@@ -1195,7 +1217,8 @@ class JsonapiRouteBase(InitialRouteBase):
             # try to get input data for included
             if item_data_included := getattr(item_data, 'included', None):
                 for index, include_data in enumerate(item_data_included):
-                    include = self.item_create(include_data)
+                    with errors_point_to_included(index):
+                        include = self.item_create(include_data)
                     # the errors of its validation point to it
                     scope.mark(include, 'create', loc=('body', 'included', index))
             return self.item
