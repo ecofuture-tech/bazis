@@ -17,6 +17,7 @@ from itertools import chain
 from typing import Any, List, TypeVar, get_type_hints  # noqa: UP035
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import QuerySet
 from django.db.models.deletion import PROTECT, ProtectedError
@@ -690,8 +691,13 @@ class JsonapiRouteBase(InitialRouteBase):
     def get_queryset_for_item(self, item_id: str, with_lock: bool = False):
         """
         Assembles the QuerySet for a single item by its ID, optionally with a database
-        lock.
+        lock. An ID that cannot be a primary key of the model (a malformed UUID) is an item
+        that does not exist: 404, on every route of an item.
         """
+        try:
+            item_id = self.model._meta.pk.to_python(item_id)
+        except DjangoValidationError:
+            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail='Item not found') from None
         if with_lock:
             qs = self.get_queryset().select_for_update(no_key=True)
         else:

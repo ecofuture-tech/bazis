@@ -56,6 +56,14 @@ the first one wins, in every process: the list depends only on the settings. To 
 msgid in the project's `locale`, or give the field its own title (`verbose_name` of the
 model field, or `SchemaField(title=...)` in `fields` of the route).
 
+Files: the application redirects `MEDIA_URL` to `MEDIA_HOST_URL` (else `ADMIN_HOST_URL`)
+and `STATIC_URL` to `ADMIN_HOST_URL`. Without such a host (or when the host is the
+application itself), in DEBUG it serves the files from `MEDIA_ROOT` / `STATIC_ROOT`
+itself, the media with `X-Content-Type-Options: nosniff`, `Content-Security-Policy:
+sandbox` and, except raster images, `Content-Disposition: attachment`; without DEBUG it
+answers 404 naming the setting. In production serve them by the web server or a media
+host (`BS_MEDIA_HOST_URL`); do not mount `MEDIA_ROOT` in the project.
+
 ## Models
 
 ```python
@@ -117,6 +125,9 @@ class OrderRouteSet(JsonapiRouteBase):
 - The OpenAPI operations document the errors they fail with (`SchemaErrors`): 400 and 422
   on the CRUD operations, 404 on every route of an item (`{item_id}` in the path), 403 on
   the relationships routes. The core has no authentication, so no 401 and no `security`.
+  An id in the path that cannot be a primary key of the model (`not-a-uuid`) is 404, like
+  a missing item, on every route of an item (also the custom ones that take the item with
+  `set_item`/`get_item`).
   A route class or package that fails its routes with a status adds it by extending the
   classmethod `route_responses(route_ctx)` (call `super()`); `responses=` of a decorator
   wins. Other facts of the operation (`security`, extensions) are added the same way by
