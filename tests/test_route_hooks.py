@@ -19,6 +19,7 @@ answers with, and a read-only route: the statements of the guide (bazis/core/AGE
 
 from django.core.exceptions import ValidationError
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import pytest
@@ -27,7 +28,12 @@ from validation.models import Booking, Person, Room
 from validation.routes import BookingRouteSet
 from visibility.models import Note
 
-from bazis.core.errors import JsonApiBazisError, JsonApiBazisException
+from bazis.core.errors import (
+    JsonApi403Exception,
+    JsonApiBazisError,
+    JsonApiBazisException,
+    JsonApiHttpException,
+)
 from bazis.core.item_validation import defer_validate_item
 
 
@@ -260,9 +266,9 @@ def test_read_only_route(sample_app):
 
 def test_schema_fields_of_an_action():
     """
-    The fields of an action: `origin` replaces the default fields (the attributes and the
-    forward relations of the model), the most specific one wins; `include` and `exclude`
-    add up along the classes and the keys (the action and `None`), `exclude` wins;
+    The fields of an action, read along the MRO, the parents first, in each class its
+    `None` entry then its action entry: `include` and `exclude` add up, the last `origin`
+    wins (so a `None` entry of a child overrides an action entry of its parent);
     `is_inherit=False` on the action leaves out the `None` entry of the same class only.
     """
     from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
@@ -301,6 +307,14 @@ def test_schema_fields_of_an_action():
         {'b'},
     )
 
+    class ParentOfAction:
+        fields = {CrudApiAction.UPDATE: SchemaFields(origin={'a': None})}
+
+    class ChildOfAll(ParentOfAction):
+        fields = {None: SchemaFields(origin={'b': None})}
+
+    assert set(build(ChildOfAll, CrudApiAction.UPDATE, 'fields', SchemaFields).origin) == {'b'}
+
 
 @pytest.mark.django_db(transaction=True)
 def test_model_clean_is_not_called(sample_app, monkeypatch):
@@ -312,3 +326,29 @@ def test_model_clean_is_not_called(sample_app, monkeypatch):
     monkeypatch.setattr(Booking, 'clean', clean)
 
     assert get_api_client(sample_app).post(URL, json_data=booking()).status_code == 201
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    'exc, status, code',
+    [
+        (JsonApi403Exception(), 403, 'ERR_FORBIDDEN'),
+        (JsonApiHttpException(status_code=409, detail='Taken', code='ERR_TAKEN'), 409, 'ERR_TAKEN'),
+        (HTTPException(status_code=409, detail='Taken'), 409, 'ERR_REQUEST'),
+    ],
+)
+def test_http_error_of_a_hook_keeps_its_code(sample_app, monkeypatch, exc, status, code):
+    """
+    A JSON:API HTTP error raised in a route keeps its code (the route answered
+    ERR_REQUEST for a JsonApi403Exception); a plain HTTPException is ERR_REQUEST.
+    """
+
+    def hook_before_create(self, item):
+        raise exc
+
+    monkeypatch.setattr(BookingRouteSet, 'hook_before_create', hook_before_create)
+
+    response = get_api_client(sample_app).post(URL, json_data=booking())
+
+    assert response.status_code == status
+    assert response.json()['errors'][0]['code'] == code

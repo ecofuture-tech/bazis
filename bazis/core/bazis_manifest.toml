@@ -133,10 +133,10 @@ text = "hook_before_update sees the values in the database, not the data of the 
 text = "a Django ValidationError is 422 only from validate_item: raised in a hook or a route it is a 500, and the routes never call full_clean() (Model.clean() and the validators of the fields do not run); from a hook raise JsonApiBazisException([JsonApiBazisError(message, loc=('body', 'data', 'attributes', name))], status=422): without status= the response is 400, and loc=('attributes', name) points to /attributes/<name>"
 
 [[pitfalls]]
-text = "the errors of the request schemas (ERR_VALIDATE) point to /attributes/<field>, the errors of validate_item (ERR_ITEM_INVALID) and of the relation access to /data/attributes/<field> and /data/relationships/<field>: a client that maps errors to the fields reads both"
+text = "known defect fixed in 2.11.0: up to 2.10 the errors of the request schemas (ERR_VALIDATE) point to /attributes/<field> without /data (also for an included item), the other errors into the document (/data/attributes/<field>, /included/<index>/...); the contract is the pointer into the document, a client reads the old form too until 2.11.0"
 
 [[pitfalls]]
-text = "a second route set of a model needs its own get_url_prefix() (by default the resource path of the model, the URL of the first one); a projection route (fields with origin) that does not list its actions keeps action_dict_data (/{item_id}/dict_data/), which answers all the attributes of the model: list the actions of a read-only route"
+text = "a second route set of a model needs its own get_url_prefix() (by default the resource path of the model, the URL of the first one); a read-only route lists its actions; known defect being fixed: action_dict_data (/{item_id}/dict_data/) answers all the attributes of the model whatever the fields of the route, so a projection that does not list its actions exposes them"
 
 [[pitfalls]]
 text = "QuerySet.update(), bulk_create(), bulk_update(), a reverse foreign key manager with bulk=True outside the routes, Through.objects.create(), loaddata and deserialization (raw), raw SQL and deletion do not call validate_item; a failed validation of a many-to-many add()/remove()/clear() inside a transaction requires rolling that transaction back (no savepoint)"

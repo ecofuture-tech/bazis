@@ -412,6 +412,9 @@ class JsonapiRouteBase(InitialRouteBase):
                 traceback.print_exc()
                 # intercepts validation exception and generates its own exception
                 raise JsonApiRequestValidationError(e.errors()) from e
+            except JsonApiHttpException:
+                # already a JSON:API error: keep its code (JsonApi403Exception: ERR_FORBIDDEN)
+                raise
             except HTTPException as e:
                 # intercepts the general exception and generates its own exception
                 raise JsonApiHttpException(

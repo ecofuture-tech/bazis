@@ -244,9 +244,12 @@ class OrderRouteSet(JsonapiRouteBase):
 has the attributes and the forward relations of the model. `origin={...}` replaces them
 with the listed fields (a projection), `include={...}` adds fields (reverse relations,
 calculated fields, a `SchemaField` that overrides one), `exclude={...}` removes fields and
-wins over `include`. The entries add up along the classes of the route and the keys (the
-action and `None`); the `origin` of the most specific one wins. `is_inherit=False` on the
-entry of an action leaves out the `None` entry of the same class only.
+wins over `include`. The entries of an action are read along the MRO of the route, the
+parent classes first, and in each class its `None` entry, then its entry of the action:
+`include` and `exclude` add up, the last `origin` wins (the action entry of the route,
+else its `None` entry, else the entries of the parents; so a `None` entry of a child
+overrides an action entry of its parent). `is_inherit=False` on the entry of an action
+leaves out the `None` entry of the same class only.
 
 ### Writes of a route: hooks and their order
 
@@ -290,14 +293,20 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   the document).
 - What the application answers: `JsonApiBazisException` with its status and errors; the
   errors of the request schemas 422 `ERR_VALIDATE` (the title is the Pydantic error type,
-  the detail its English message; the pointer is `/attributes/<field>` or
-  `/relationships/<field>`, without `/data`); an `item_id` that
-  cannot be a key 404; `HTTPException` (also `JsonApi403Exception`, an unknown path 404, a
-  wrong method 405) its status, `code` and `detail`; a query error 400 `ERR_FILTER`; any
+  the detail its English message); an `item_id` that cannot be a key 404; a
+  `JsonApiHttpException` (`JsonApi403Exception` is `ERR_FORBIDDEN`) its status, `code`
+  and `detail`; another `HTTPException` (an unknown path 404, a wrong method 405) its
+  status and `detail`, with `ERR_REQUEST` when a route raised it; a query error 400
+  `ERR_FILTER`; any
   other exception 500 (the traceback in `detail` only with DEBUG), also an
   `IntegrityError` of a constraint checked at the commit (a foreign key to a missing
-  object). A client that maps errors to the fields reads both `/attributes/<field>` and
-  `/data/attributes/<field>` (and `relationships`).
+  object).
+- Known defect, fixed in 2.11.0: up to 2.10 the errors of the request schemas
+  (`ERR_VALIDATE`) point to `/attributes/<field>` and `/relationships/<field>`, without
+  `/data` and also for an included item, while the other errors of the core point into
+  the document (`/data/...`, `/included/<index>/...`). The contract is the pointer into
+  the document; until 2.11.0 a client that maps errors to the fields also reads the old
+  form.
 - The titles and the fixed details of the errors of the core follow the language of the
   request (`ru` is translated); the Pydantic messages and the diagnostics of `ERR_FILTER`
   are English.
@@ -315,9 +324,12 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   writes are `action_create`, `action_update`, `action_destroy`, `action_post_relationships`,
   `action_update_relationships`, `action_delete_relationships` and their schemas
   `action_schema_create`, `action_schema_update`; the other actions are `action_list_id`
-  (`/_id/`), `get_route_filter_fields` and `action_dict_data` (`/{item_id}/dict_data/`:
-  all the attributes of the model, whatever the `fields` of the route; never on a
-  projection). `actions_exclude` removes only the actions it names.
+  (`/_id/`), `get_route_filter_fields` and `action_dict_data` (`/{item_id}/dict_data/`).
+- Known defects, being fixed: `action_dict_data` answers all the attributes of the model,
+  whatever the `fields` of the route (keep it out of a projection by listing the actions);
+  on a proxy model the core adds `action_create` and `action_update` to the
+  `actions_exclude` list the route class inherits, which can change the routes of the
+  parent and sibling classes (give such a route its own `actions_exclude` list).
 
 ## API conventions
 
