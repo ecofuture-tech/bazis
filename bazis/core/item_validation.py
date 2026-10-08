@@ -158,7 +158,8 @@ def changed_fields(item, is_new: bool, update_fields: Iterable[str] | None) -> s
     }
 
 
-#: how many times an item can be validated in one block: more means that the
+#: how many times an item can be validated in one pass of `ValidationScope.validate()`
+#: (the items `validate_item` writes are validated in the same pass): more means that the
 #: validate_item of the items save each other without end
 VALIDATIONS_LIMIT = 10
 
@@ -188,8 +189,6 @@ class ValidationScope:
         self._entries: dict[tuple, _Entry] = {}
         # the item whose validate_item runs: its own writes there are not validated again
         self._validating: tuple | None = None
-        # the validations of each item in the block, to stop items that save each other
-        self._validations: dict[tuple, int] = {}
         # the snapshots of the saved items before the block, restored if it fails
         self._snapshots: dict[int, tuple] = {}
 
@@ -258,6 +257,8 @@ class ValidationScope:
         item written again after it is validated again. The items `validate_item` writes
         are validated in turn, except the item itself.
         """
+        # the validations of each item in this pass, to stop items that save each other
+        validations: dict[tuple, int] = {}
         while self._entries:
             key = next(iter(self._entries))
             entry = self._entries.pop(key)
@@ -269,11 +270,11 @@ class ValidationScope:
                 source=source,
                 user=entry.user if entry.user is not None else self.user,
             )
-            self._validations[key] = count = self._validations.get(key, 0) + 1
+            validations[key] = count = validations.get(key, 0) + 1
             if count > VALIDATIONS_LIMIT:
                 raise ImproperlyConfigured(
                     f'validate_item of {key[0]._meta.label} {key[1]} ran {count} times in '
-                    'one block: the validate_item of the items save each other'
+                    'one validation: the validate_item of the items save each other'
                 )
             previous, self._validating = self._validating, key
             try:

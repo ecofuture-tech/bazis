@@ -661,3 +661,17 @@ def test_items_saving_each_other_are_stopped(calls, monkeypatch):
     with pytest.raises(ImproperlyConfigured, match='save each other'):
         first.save()
     assert {pk for pk, _ in calls} == {first.pk, second.pk}
+
+
+@pytest.mark.django_db
+def test_many_validations_of_an_item_in_a_block(calls):
+    """A script that validates after each write of an item is not two items saving each other."""
+    booking = make_booking(start=10, end=20)
+
+    with defer_validate_item() as scope:
+        for title in range(12):
+            booking.title = str(title)
+            booking.save()
+            scope.validate()
+
+    assert len(calls) == 12
