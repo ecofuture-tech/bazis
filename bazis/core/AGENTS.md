@@ -180,7 +180,10 @@ class OrderRouteSet(JsonapiRouteBase):
 
 - A route class gives list, retrieve, create, update, destroy and the relationships
   endpoints for its model. Restrict them with `as_router(actions=[...])` or
-  `actions_exclude`.
+  `actions_exclude`. A route class of a proxy model has no create and update (its own
+  `actions_exclude`, the inherited list is not changed). There is no route that shows an
+  item past its schema (`/{item_id}/dict_data/` was removed in 2.11.0); a project that
+  needs one defines it in its route class and restricts it itself.
 - Reverse relations and calculated fields are not in the schemas by default: add them with
   `SchemaFields(include=...)`. Writable relations are those of the UPDATE (CREATE) schema.
   A relation read-only there (`SchemaField(read_only=True)`, the field permission

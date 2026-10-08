@@ -247,10 +247,12 @@ class JsonapiRouteBase(InitialRouteBase):
             cls.model._default_route = cls
 
         # for proxy models, create/update actions are not available, as they can change the state
-        # of the visibility of proxy model objects
+        # of the visibility of proxy model objects; a list of its own: the inherited one
+        # belongs to the parent class
         if cls.model._meta.proxy:
-            cls.actions_exclude = cls.actions_exclude or []
-            cls.actions_exclude.extend(['action_create', 'action_update'])
+            cls.actions_exclude = list(
+                dict.fromkeys([*(cls.actions_exclude or []), 'action_create', 'action_update'])
+            )
 
     @classmethod
     def route_responses(cls, route_ctx: RouteContext) -> dict[int | str, dict[str, Any]]:
