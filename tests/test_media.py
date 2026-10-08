@@ -109,6 +109,8 @@ def test_media_redirects_to_its_host(files, client, media_host, admin_host, loca
         'http://testserver',
         # behind a proxy that terminates TLS the request of the application is http
         'https://testserver/',
+        # the default port of the scheme
+        'https://testserver:443',
     ],
 )
 def test_a_host_that_is_the_application_is_not_redirected_to(files, client, host):
@@ -116,6 +118,24 @@ def test_a_host_that_is_the_application_is_not_redirected_to(files, client, host
 
     assert client.get('/media/files/photo.png').status_code == 200
     assert client.get('/static/schemas_en.json').status_code == 200
+
+
+@pytest.mark.parametrize(
+    'host, location',
+    [
+        # the same domain, another path: the storage of another server
+        ('https://testserver/storage', 'https://testserver/storage/media/files/photo.png'),
+        # the same host on another port
+        ('http://testserver:8001', 'http://testserver:8001/media/files/photo.png'),
+    ],
+)
+def test_another_url_of_the_same_host_is_redirected_to(files, client, host, location):
+    files.MEDIA_HOST_URL = host
+
+    response = client.get('/media/files/photo.png')
+
+    assert response.status_code == 307
+    assert response.headers['location'] == location
 
 
 @pytest.mark.parametrize(
