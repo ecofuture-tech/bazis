@@ -408,7 +408,7 @@ if SETTINGS_MODULE:
                 MIDDLEWARE.append(midl)
 
         # Auto-discover locale paths for i18n
-        SETTINGS_MODULE.__dict__['LOCALE_PATHS'] = discover_locale_paths(BASE_DIR)
+        SETTINGS_MODULE.__dict__['LOCALE_PATHS'] = discover_locale_paths(BASE_DIR, INSTALLED_APPS)
 
         if not getattr(LazySettings, '_bazis_dynamic_patch_applied', False):
             _original_getattr = LazySettings.__getattr__

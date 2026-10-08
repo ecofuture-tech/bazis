@@ -36,18 +36,19 @@ DUMP_OPENAPI = (
 def test_openapi_is_identical_across_processes():
     """
     The generated OpenAPI is the contract frontend clients are generated from, so it must
-    not depend on the time or the randomness of the process that built it.
+    not depend on the time or the randomness of the process that built it (two different
+    hash seeds: the order of the sets of strings differs between them).
     """
     env = {**os.environ, 'DJANGO_SETTINGS_MODULE': 'sample.settings'}
     processes = [
         subprocess.Popen(
             [sys.executable, '-c', DUMP_OPENAPI],
-            env=env,
+            env={**env, 'PYTHONHASHSEED': seed},
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
-        for _ in range(2)
+        for seed in ('1', '2')
     ]
     outputs = []
     for process in processes:

@@ -376,8 +376,10 @@ class SchemaFactory:
             if FieldBlank.notblank.name in restricts:
                 field.blank = False
 
+            # sorted: the restrictions are a set, and the filters are part of the identity of
+            # the field (the name of the schema), which must not depend on the process
             field.restrict_filters = []
-            for restrict in restricts:
+            for restrict in sorted(restricts):
                 if restrict.startswith('filter:'):
                     field.restrict_filters.append(restrict.removeprefix('filter:'))
 
