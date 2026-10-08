@@ -142,12 +142,20 @@ class QueryScope:
         self.user = user
 
     @classmethod
-    def for_route(cls, route_cls, user=None) -> 'QueryScope':
+    def for_route(cls, route_cls, user=None, *, schema: bool = False) -> 'QueryScope':
         """
         The scope of a route class for the user: the fields its `query_fields` gives and its
-        search fields.
+        search fields. With `schema`, the LIST schema of the route class itself (the
+        `query_fields` of the core, not the override of a package per user): no queries,
+        for the system checks.
         """
-        fields = route_cls.query_fields(user=user)
+        if schema:
+            # the route modules import this one
+            from bazis.core.routes_abstract.jsonapi.route_base import JsonapiRouteBase
+
+            fields = JsonapiRouteBase.query_fields.__func__(route_cls)
+        else:
+            fields = route_cls.query_fields(user=user)
         return cls(
             (f.source for f in fields if f.can_filter and isinstance(f.source, str)),
             order_fields=(f.source for f in fields if f.can_order and isinstance(f.source, str)),
@@ -156,15 +164,17 @@ class QueryScope:
         )
 
     @classmethod
-    def for_model(cls, model: type[models.Model], user=None) -> 'QueryScope':
+    def for_model(
+        cls, model: type[models.Model], user=None, *, schema: bool = False
+    ) -> 'QueryScope':
         """
-        The scope of the objects of a related model: of its default route, or only the
-        primary key if the model has none.
+        The scope of the objects of a related model: of its default route (`for_route`), or
+        only the primary key if the model has none.
         """
         get_default_route = getattr(model, 'get_default_route', None)
         if (route_cls := get_default_route() if get_default_route else None) is None:
             return cls(user=user)
-        return cls.for_route(route_cls, user)
+        return cls.for_route(route_cls, user, schema=schema)
 
     def allows(self, name: str, model: type[models.Model], *, order: bool = False) -> bool:
         """
@@ -205,8 +215,10 @@ class QueryScope:
 
     def reaches(self, model: type[models.Model], lookup: str) -> bool:
         """
-        Whether the scope reaches a lookup of the model (a search field): every name of it
-        up to a field that is not a relation, through the related scopes. It does not query.
+        Whether the scope reaches a lookup of the model (a search field), for the system
+        checks: every name of it up to a field that is not a relation, a relation into the
+        LIST schema of the default route of the related model itself (`for_model` with
+        `schema`: not the fields a package gives per user, and no queries).
         """
         name, _, rest = lookup.partition(LOOKUP_SEP)
         if not self.allows(name, model):
@@ -214,7 +226,7 @@ class QueryScope:
         relation = FieldsInfo.get_fields_info(model).relations.get(name)
         if relation is None or not rest:
             return True
-        scope = QueryScope.for_model(relation.related_model, self.user)
+        scope = QueryScope.for_model(relation.related_model, schema=True)
         return scope.reaches(relation.related_model, rest)
 
     def order_expression(self, model: type[models.Model], path: str):
@@ -233,13 +245,15 @@ class QueryScope:
             or (rest and relation is None)
         ):
             raise ValueError(f"Unknown sort field '{path}' of {model._meta.label}")
+        # the columns of the keys, never a relation: Django would sort by the Meta.ordering
+        # of the related model through a join that no restriction applies to (also the
+        # primary key of a child model of a multi-table inheritance, a link to its parent)
         if relation is None:
-            return F(name)
+            return F(model._meta.pk.attname if name in ('pk', model._meta.pk.name) else name)
         if not rest:
-            # the key, not the relation: Django would sort by the Meta.ordering of the
-            # related model through a join that no restriction applies to
             if relation.reverse:
-                return F(f'{name}{LOOKUP_SEP}pk')
+                pk_column = relation.related_model._meta.pk.attname
+                return F(f'{name}{LOOKUP_SEP}{pk_column}')
             return F(relation.model_field.attname)
         scope = QueryScope.for_model(relation.related_model, self.user)
         inner = scope.order_expression(relation.related_model, rest)

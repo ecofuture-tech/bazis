@@ -21,13 +21,15 @@ the objects the default route of the related model shows, with the fields of its
 """
 
 from django.conf import settings
+from django.db import models
 from django.db.models import F, Subquery
+from django.test.utils import isolate_apps
 
 import pytest
 from bazis_test_utils.utils import get_api_client
 from entity.models import ExtendedEntity, ParentEntity
 from visibility.models import Folder, Label, Note, Tag
-from visibility.routes import NoteBriefRouteSet, NoteRouteSet
+from visibility.routes import NoteBriefRouteSet, NoteRouteSet, TagRouteSet
 
 from bazis.core.checks import check_filters_strict, check_search_fields
 from bazis.core.utils.query_complex import QueryScope, QueryToOrm
@@ -238,6 +240,45 @@ def test_sort_through_an_unrestricted_relation_is_a_join(sample_app, data):
     assert ids(sample_app, NOTES, sort='-folder__name')[0] == str(data['secret'].pk)
 
 
+@isolate_apps('visibility')
+def test_sort_by_a_key_of_a_child_model_is_a_column():
+    """
+    The primary key of a child model of a multi-table inheritance links to its parent:
+    sorting by it would apply the Meta.ordering of the parent (its secret) through a join.
+    """
+
+    class Secret(models.Model):
+        secret = models.CharField(max_length=10)
+
+        class Meta:
+            app_label = 'visibility'
+            ordering = ['secret']
+
+    class Holder(models.Model):
+        class Meta:
+            app_label = 'visibility'
+
+    class SecretChild(Secret):
+        holder = models.OneToOneField(Holder, models.CASCADE, related_name='secret_child')
+
+        class Meta:
+            app_label = 'visibility'
+
+    def order_sql(model, scope, path):
+        expr = scope.order_expression(model, path)
+        sql = str(model.objects.order_by(expr.name).query)
+        return sql[sql.index('ORDER BY') :]
+
+    for path in ('pk', 'secret_ptr'):
+        assert order_sql(SecretChild, QueryScope(), path) == (
+            'ORDER BY "visibility_secretchild"."secret_ptr_id" ASC'
+        )
+    # a reverse one-to-one into the child model
+    assert order_sql(Holder, QueryScope(order_fields={'secret_child'}), 'secret_child') == (
+        'ORDER BY "visibility_secretchild"."secret_ptr_id" ASC'
+    )
+
+
 @pytest.mark.django_db(transaction=True)
 def test_reverse_relation_out_of_the_schema(sample_app, data):
     """A reverse relation is not in the schema by default: no way to the notes of a folder."""
@@ -260,6 +301,25 @@ def test_search_field_through_a_relation_is_checked_to_the_end(sample_app, monke
     warnings = [it for it in check_search_fields(None) if it.id == 'bazis.W007']
     assert [it.obj for it in warnings] == ['visibility.routes.NoteRouteSet']
     assert "'tag__nonexistent'" in warnings[0].msg
+
+
+@pytest.mark.django_db(transaction=True)
+def test_search_fields_check_uses_the_schemas_of_the_routes(
+    sample_app, monkeypatch, django_assert_num_queries
+):
+    """
+    Not the fields a package gives per user (bazis-permit: by the roles of the anonymous
+    user, from the database): the check runs no queries and does not depend on them.
+    """
+
+    def no_fields(cls, user=None, **kwargs):
+        return []
+
+    monkeypatch.setattr(TagRouteSet, 'query_fields', classmethod(no_fields))
+    monkeypatch.setattr(NoteRouteSet, 'query_fields', classmethod(no_fields))
+    # the search fields of the notes: name, tag__name
+    with django_assert_num_queries(0):
+        assert [it for it in check_search_fields(None) if it.id == 'bazis.W007'] == []
 
 
 @pytest.mark.django_db(transaction=True)

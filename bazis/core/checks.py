@@ -173,9 +173,7 @@ def check_search_fields(app_configs, **kwargs):
         if not issubclass(route_cls, JsonapiRouteBase) or not route_cls.search_fields:
             continue
         # the LIST schema of the route itself, not the one a package makes per user
-        scope = QueryScope(
-            f.source for f in JsonapiRouteBase.query_fields.__func__(route_cls) if f.can_filter
-        )
+        scope = QueryScope.for_route(route_cls, schema=True)
         for field in route_cls.search_fields:
             name = str(field)
             if not scope.reaches(route_cls.model, name[1:] if name[:1] in LOOKUP_PREFIXES else name):
