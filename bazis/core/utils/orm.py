@@ -62,6 +62,7 @@ from pydantic import BaseModel, create_model
 
 from translated_fields import TranslatedField, to_attribute
 
+from bazis.core.item_validation import reverse_items_link, validates_items
 from bazis.core.utils.imp import import_class
 from bazis.core.utils.model_meta import RelationInfo
 
@@ -247,6 +248,9 @@ def set_related_with_delete(rel, objs, *, bulk=True, clear=False):
         if 'ManyRelatedManager' in manager_class_name:
             # For many-to-many relations bulk is not supported
             rel.set(objs, clear=clear)
+        elif validates_items(rel.model):
+            # the linked items are saved one by one (their foreign key), to validate them
+            reverse_items_link(rel, 'set', objs, clear=clear)
         else:
             # For one-to-many relations (ForeignKey) bulk is supported
             rel.set(objs, bulk=bulk, clear=clear)

@@ -30,7 +30,7 @@ from validation.models import Booking, Person, Room
 from visibility.models import Note
 
 from bazis.core.errors import JsonApiItemInvalidException
-from bazis.core.item_validation import defer_validate_item
+from bazis.core.item_validation import defer_validate_item, reverse_items_link
 
 
 # all the fields of a new booking, without the primary key and `dt_updated` (auto_now)
@@ -438,3 +438,111 @@ def test_models_without_validate_item_pay_nothing():
     # Django checks the targets of add() with a query when the relation has a receiver
     assert not m2m_changed.has_listeners(Note.tags.through)
     assert m2m_changed.has_listeners(Booking.participants.through)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_included_item_errors_point_to_it(sample_app, calls):
+    response = get_api_client(sample_app).post(
+        '/api/v1/validation/room/?include=bookings',
+        json_data={
+            'data': {'type': 'validation.room', 'attributes': {'name': 'Blue'}},
+            'included': [
+                {
+                    'type': 'validation.booking',
+                    'bs:action': 'add',
+                    'attributes': {'title': 'Standup', 'start': 20, 'end': 10},
+                }
+            ],
+        },
+    )
+
+    assert_invalid(response, pointer='/included/0/attributes/end')
+    assert not Room.objects.exists() and not Booking.objects.exists()
+
+
+@pytest.mark.django_db
+def test_writes_after_a_validation_are_validated_again(calls):
+    """The admin validates in the middle of its block (after save_related)."""
+    room = Room.objects.create(name='Blue')
+    make_booking(room, 10, 20)
+
+    with pytest.raises(JsonApiItemInvalidException):
+        with defer_validate_item() as scope:
+            booking = Booking.objects.create(title='Retro', start=30, end=40, room=room)
+            scope.validate()
+            booking.start = 15
+            booking.save()
+
+    assert [changes.fields for _, changes in calls] == [BOOKING_FIELDS, {'start'}]
+    assert Booking.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_set_validates_once_on_the_final_state(calls, monkeypatch):
+    """Django sets a relation with remove() and add(): validated once, after both."""
+    booking, other = make_booking(start=10, end=20), make_booking(start=30, end=40)
+    ann, bob, eve = (Person.objects.create(name=name) for name in ('Ann', 'Bob', 'Eve'))
+    booking.participants.set([ann, bob])
+    calls.clear()
+
+    validate_item = Booking.validate_item
+    states = []
+
+    def validate_and_record(self, changes):
+        states.append((self.title, set(self.participants.values_list('name', flat=True))))
+        validate_item(self, changes)
+
+    monkeypatch.setattr(Booking, 'validate_item', validate_and_record)
+
+    booking.participants.set([bob, eve])
+    assert states == [('Standup', {'Bob', 'Eve'})]
+    assert only_call(calls, booking.pk).relations == {'participants'}
+
+    # the other side: each booking whose participants change, once
+    states.clear()
+    eve.bookings.set([other])
+    assert sorted(states) == [('Standup', {'Bob'}), ('Standup', {'Eve'})]
+
+    # add(), remove() and clear() validate each change
+    states.clear()
+    booking.participants.add(ann)
+    booking.participants.remove(ann)
+    booking.participants.clear()
+    assert states == [('Standup', {'Ann', 'Bob'}), ('Standup', {'Bob'}), ('Standup', set())]
+
+
+@pytest.mark.django_db
+def test_failed_save_keeps_the_values_of_the_database(calls):
+    booking = make_booking(start=10, end=20)
+
+    booking.end = 5
+    with pytest.raises(JsonApiItemInvalidException):
+        booking.save()
+
+    # end is still not saved: the next save writes it as a change
+    calls.clear()
+    booking.start = 1
+    booking.save()
+    assert only_call(calls).fields == {'start', 'end'}
+    assert Booking.objects.get(pk=booking.pk).end == 5
+
+
+@pytest.mark.django_db
+def test_reverse_items_are_linked_by_their_foreign_key(calls):
+    room = Room.objects.create(name='Blue')
+    booking = make_booking(start=10, end=20)
+    stale = Booking.objects.get(pk=booking.pk)
+    Booking.objects.filter(pk=booking.pk).update(title='Renamed')
+
+    with CaptureQueriesContext(connection) as queries:
+        reverse_items_link(room.bookings, 'add', [stale])
+
+    updates = [q['sql'] for q in queries.captured_queries if q['sql'].startswith('UPDATE')]
+    assert len(updates) == 1 and '"title"' not in updates[0]
+    assert Booking.objects.get(pk=booking.pk).title == 'Renamed'
+    assert only_call(calls, booking.pk).fields == {'room'}
+
+    calls.clear()
+    reverse_items_link(room.bookings, 'set', [])
+    assert Booking.objects.get(pk=booking.pk).room_id is None
+    assert only_call(calls).fields == {'room'}

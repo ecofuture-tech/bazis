@@ -31,6 +31,6 @@ class BazisCoreConfig(BaseConfig):
     def ready(self):
         super().ready()
         from bazis.core import checks  # noqa: F401  registers the system checks
-        from bazis.core.item_validation import connect_m2m_signals
+        from bazis.core.item_validation import connect_m2m
 
-        connect_m2m_signals(apps.get_models())
+        connect_m2m(apps.get_models())

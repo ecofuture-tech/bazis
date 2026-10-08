@@ -125,22 +125,29 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   create, update and relationships endpoints (once at the end of the request, with the
   included items), the transits of bazis-statusy, and any other `save()` or change of a
   many-to-many relation through a manager (the admin, scripts, commands, background
-  tasks). `changes` (`bazis.core.item_validation.ItemChanges`): `fields` (the attributes
-  and foreign keys whose values changed, all of them for a new item, without the
-  `auto_now` timestamps), `relations` (the to-many and reverse relations set), `is_new`,
-  `source` (`create`, `update`, `relationships`, `transit`, `save`) and `user` (of the
-  route, the transit or the admin request; None in a script). A failure answers 422
+  tasks; `set()` and a form's `save_m2m()` once, on the final state). `changes`
+  (`bazis.core.item_validation.ItemChanges`): `fields` (the attributes and foreign keys
+  whose values changed, all of them for a new item, without the `auto_now` timestamps),
+  `relations` (the to-many and reverse relations set), `is_new`, `source` (`create`,
+  `update`, `relationships`, `transit`, `save`) and `user` (of the route, the transit or
+  the admin request; None in a script); in a block the outermost declaration wins (a
+  transit in `hook_after_create` reports `create`). A failure answers 422
   `ERR_ITEM_INVALID` with the pointer `/data/attributes/<f>` or `/data/relationships/<f>`
-  (on the relationships endpoints the parameter `/related_field_name`) and rolls the write
-  back; outside the API the save raises `bazis.core.errors.JsonApiItemInvalidException`
-  (in a savepoint of its own: the transaction goes on). Several writes of a script are
-  validated once at the end in `with defer_validate_item(user=...):`
-  (`bazis.core.item_validation`); `ValidateItemAdminMixin` (`bazis.core.admin_abstract`)
-  does it for the change form of the admin and shows the errors in the form.
-  Not validated: `QuerySet.update()`, `bulk_create()`, `bulk_update()`, a reverse
-  foreign key manager with `bulk=True` outside the routes, raw SQL and deletion. Do not
-  write the item in `validate_item` (its own writes are not validated again). A model that
-  does not override it pays nothing.
+  (`/included/<i>/...` for an included item; on the relationships endpoints the parameter
+  `/related_field_name`) and rolls the write back; outside the API the save raises
+  `bazis.core.errors.JsonApiItemInvalidException` (in a savepoint of its own: the
+  transaction goes on). A many-to-many `add()`/`remove()`/`clear()` has no savepoint:
+  when its validation fails inside a transaction, roll that transaction (or `atomic()`
+  block) back. Several writes of a script are validated once at the end in
+  `with defer_validate_item(user=...):` (`bazis.core.item_validation`; an item written
+  again after `scope.validate()` is validated again); `ValidateItemAdminMixin`
+  (`bazis.core.admin_abstract`) does it for the change form of the admin and shows the
+  errors in the form. The routes link the items of a reverse foreign key of a model that
+  validates one by one, with `save(update_fields=[<fk>])`. Not validated:
+  `QuerySet.update()`, `bulk_create()`, `bulk_update()`, a reverse foreign key manager with
+  `bulk=True` outside the routes, `Through.objects.create()`, `loaddata`, raw SQL and
+  deletion. Do not write the item in `validate_item` (its own writes there are not
+  validated again). A model that does not override it pays nothing.
 - Calculated fields: `@calc_property([...])` from `bazis.core.utils.orm`, declared with the
   fields they need (`FieldRelated`, `FieldJson`, ...) so that the query fetches them in one
   pass; then add them to the route with `SchemaField(source=..., required=False)`.

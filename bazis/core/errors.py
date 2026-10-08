@@ -189,8 +189,9 @@ class JsonApiItemInvalidException(JsonApiBazisException):
     An item failed its invariants (`JsonApiMixin.validate_item` raised a Django
     `ValidationError`): 422 with an error `ERR_ITEM_INVALID` for each message. The pointer
     is the field of the message, `/data/attributes/<name>` or `/data/relationships/<name>`
-    (`/data` for a message without a field); on the relationships endpoints, which take
-    only the relation of the path, it is the path parameter `/related_field_name`.
+    (`/data` for a message without a field), under `/included/<index>` for an included item
+    (`loc`); on the relationships endpoints, which take only the relation of the path, it
+    is the path parameter `/related_field_name`.
     The same exception leaves a save outside the API; `error` is the Django
     `ValidationError` (the admin shows it in the form), `item` the invalid item.
 
@@ -199,10 +200,13 @@ class JsonApiItemInvalidException(JsonApiBazisException):
 
     status = HTTP_422_UNPROCESSABLE_CONTENT
 
-    def __init__(self, error: DjangoValidationError, *, item, source: str = 'save') -> None:
+    def __init__(
+        self, error: DjangoValidationError, *, item, source: str = 'save', loc: tuple = None
+    ) -> None:
         self.error = error
         self.item = item
         self.source = source
+        self.loc = loc or ('body', 'data')
         relations = item.get_fields_info().relations
         if hasattr(error, 'error_dict'):
             messages_by_field = error.message_dict
@@ -211,13 +215,19 @@ class JsonApiItemInvalidException(JsonApiBazisException):
         errors = []
         for name, messages in messages_by_field.items():
             if source == 'relationships':
-                loc = ('path', 'related_field_name')
+                error_loc = ('path', 'related_field_name')
             elif name == NON_FIELD_ERRORS:
-                loc = ('body', 'data')
+                error_loc = self.loc
             else:
-                loc = ('body', 'data', 'relationships' if name in relations else 'attributes', name)
+                error_loc = (
+                    *self.loc,
+                    'relationships' if name in relations else 'attributes',
+                    name,
+                )
             errors.extend(
-                JsonApiBazisError(message, loc=loc, code='ERR_ITEM_INVALID', status=self.status)
+                JsonApiBazisError(
+                    message, loc=error_loc, code='ERR_ITEM_INVALID', status=self.status
+                )
                 for message in messages
             )
         super().__init__(errors, status=self.status)

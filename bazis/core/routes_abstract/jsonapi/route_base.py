@@ -1099,7 +1099,7 @@ class JsonapiRouteBase(InitialRouteBase):
         Updates an existing item by its ID based on the provided data. The item and the
         included items are validated at the end, once each.
         """
-        with defer_validate_item(user=self._write_user(), savepoint=False):
+        with defer_validate_item(user=self._write_user(), savepoint=False) as scope:
             self.set_api_action(CrudApiAction.UPDATE)
             self.set_item(item_id)
 
@@ -1121,9 +1121,9 @@ class JsonapiRouteBase(InitialRouteBase):
                         includes_cached[(include.get_resource_label(), str(include.id))] = include
 
                 # from the input included, take those that came for updating
-                for include_data in [
-                    it for it in item_data_included if it.action == CrudAccessAction.CHANGE.value
-                ]:
+                for index, include_data in enumerate(item_data_included):
+                    if include_data.action != CrudAccessAction.CHANGE.value:
+                        continue
                     try:
                         include = includes_cached[(include_data.type, str(include_data.id))]
                     except KeyError:
@@ -1132,12 +1132,14 @@ class JsonapiRouteBase(InitialRouteBase):
                             detail=f'Object does`t exist. Type: {include_data.type}. ID: {include_data.id})',
                         ) from None
                     self.item_update(include, include_data)
+                    # the errors of its validation point to it
+                    scope.mark(include, 'update', loc=('body', 'included', index))
 
                 # from the input included, take those that came for creation
-                for include_data in [
-                    it for it in item_data_included if it.action == CrudAccessAction.ADD.value
-                ]:
-                    self.item_create(include_data)
+                for index, include_data in enumerate(item_data_included):
+                    if include_data.action == CrudAccessAction.ADD.value:
+                        include = self.item_create(include_data)
+                        scope.mark(include, 'create', loc=('body', 'included', index))
 
             return self.item
 
@@ -1146,7 +1148,7 @@ class JsonapiRouteBase(InitialRouteBase):
         Creates a new item based on the provided data. The item and the included items are
         validated at the end, once each.
         """
-        with defer_validate_item(user=self._write_user(), savepoint=False):
+        with defer_validate_item(user=self._write_user(), savepoint=False) as scope:
             if schema_data := self.schemas.get(CrudApiAction.CREATE):
                 try:
                     item_data = schema_data.model_validate(item_raw)
@@ -1158,8 +1160,10 @@ class JsonapiRouteBase(InitialRouteBase):
 
             # try to get input data for included
             if item_data_included := getattr(item_data, 'included', None):
-                for include in item_data_included:
-                    self.item_create(include)
+                for index, include_data in enumerate(item_data_included):
+                    include = self.item_create(include_data)
+                    # the errors of its validation point to it
+                    scope.mark(include, 'create', loc=('body', 'included', index))
             return self.item
 
     def destroy(self, item_id: str):

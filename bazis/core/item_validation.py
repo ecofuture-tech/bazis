@@ -28,7 +28,13 @@ values, no savepoint, no signal receiver.
 
 Not validated (they do not call `save()` or send `m2m_changed`): `QuerySet.update()`,
 `bulk_create()`, `bulk_update()`, the reverse foreign key managers with `bulk=True` (their
-default), raw SQL, and deletion.
+default) outside the routes, the rows of a `through` model written directly
+(`Through.objects.create()`), `loaddata` (raw saves), raw SQL, and deletion.
+
+A many-to-many manager writes in its own block without a savepoint: when the validation
+of its `add()`, `remove()` or `clear()` fails inside a transaction, the transaction (or the
+enclosing `atomic()` block) must be rolled back. `set()` validates once, on the final
+state, in a savepoint of its own.
 
 Tags: RAG, EXPORT
 """
@@ -63,6 +69,10 @@ class ItemChanges:
       commands, background tasks, the side effects of the hooks);
     - `user`: the user of the route (`inject.user`), of the transit or of the admin
       request; None without one (a script, a task).
+
+    In a block `defer_validate_item()` the first declaration of the source and the user of
+    the item wins, which is the outermost one (a transit in `hook_after_create` of a route
+    reports `create` and the user of the route).
 
     Tags: RAG, EXPORT
     """
@@ -147,7 +157,7 @@ def changed_fields(item, is_new: bool, update_fields: Iterable[str] | None) -> s
 
 
 class _Entry:
-    __slots__ = ('item', 'fields', 'relations', 'is_new', 'source', 'user')
+    __slots__ = ('item', 'fields', 'relations', 'is_new', 'source', 'user', 'loc')
 
     def __init__(self, item):
         self.item = item
@@ -156,11 +166,12 @@ class _Entry:
         self.is_new = False
         self.source = None
         self.user = None
+        self.loc = None
 
 
 class ValidationScope:
     """
-    The items written inside a block `defer_validate_item()`, validated once each.
+    The items written inside a block `defer_validate_item()`, validated once per write.
 
     Tags: RAG, EXPORT
     """
@@ -168,14 +179,16 @@ class ValidationScope:
     def __init__(self, user=None):
         self.user = user
         self._entries: dict[tuple, _Entry] = {}
-        self._validated: set[tuple] = set()
+        # the item whose validate_item runs: its own writes there are not validated again
+        self._validating: tuple | None = None
+        # the snapshots of the saved items before the block, restored if it fails
+        self._snapshots: dict[int, tuple] = {}
 
     def _entry(self, item) -> _Entry | None:
         if not validates_items(type(item)) or item.pk is None:
             return None
         key = (item._meta.concrete_model, item.pk)
-        if key in self._validated:
-            # a write of a validated item (validate_item saving it) is not validated again
+        if key == self._validating:
             return None
         if (entry := self._entries.get(key)) is None:
             entry = self._entries[key] = _Entry(item)
@@ -183,14 +196,25 @@ class ValidationScope:
         entry.item = item
         return entry
 
-    def mark(self, item, source: str, *, relations: Iterable[str] = (), user=None):
+    def mark(
+        self,
+        item,
+        source: str,
+        *,
+        relations: Iterable[str] = (),
+        user=None,
+        loc: tuple | None = None,
+    ):
         """
         Declares how the item is written (`ItemChanges.source`, the first declaration
-        wins), the relations it sets and the user who writes it.
+        wins), the relations it sets, the user who writes it and where the request has it
+        (`loc`, the location of its errors, `('body', 'data')` by default; an included
+        item is `('body', 'included', <index>)`).
         """
         if entry := self._entry(item):
             entry.source = entry.source or source
             entry.user = entry.user or user
+            entry.loc = entry.loc or loc
             entry.relations.update(relations)
 
     def changed(
@@ -204,15 +228,30 @@ class ValidationScope:
             entry.fields.update(fields)
             entry.relations.update(relations)
 
+    def snapshot_keep(self, item):
+        """
+        Keeps the snapshot of the item as it was before its first save in the block, to
+        restore it if the block fails (the database keeps the values of the snapshot).
+        """
+        if id(item) not in self._snapshots:
+            self._snapshots[id(item)] = (item, item.__dict__.get(_SNAPSHOT))
+
+    def snapshots_restore(self):
+        for item, snapshot in self._snapshots.values():
+            if snapshot is None:
+                item.__dict__.pop(_SNAPSHOT, None)
+            else:
+                item.__dict__[_SNAPSHOT] = snapshot
+
     def validate(self):
         """
-        Validates the items written so far (the block validates the rest at its end). The
-        items `validate_item` writes are validated in turn; an item is validated once.
+        Validates the items written so far (the block validates the rest at its end): an
+        item written again after it is validated again. The items `validate_item` writes
+        are validated in turn, except the item itself.
         """
         while self._entries:
             key = next(iter(self._entries))
             entry = self._entries.pop(key)
-            self._validated.add(key)
             source = entry.source or 'save'
             changes = ItemChanges(
                 fields=frozenset(entry.fields),
@@ -221,10 +260,15 @@ class ValidationScope:
                 source=source,
                 user=entry.user if entry.user is not None else self.user,
             )
+            self._validating = key
             try:
                 entry.item.validate_item(changes)
             except ValidationError as e:
-                raise JsonApiItemInvalidException(e, item=entry.item, source=source) from e
+                raise JsonApiItemInvalidException(
+                    e, item=entry.item, source=source, loc=entry.loc
+                ) from e
+            finally:
+                self._validating = None
 
 
 _CTX_SCOPE: ContextVar[ValidationScope | None] = ContextVar(
@@ -276,6 +320,10 @@ def defer_validate_item(
                 scope.mark(item, source, relations=relations)
             yield scope
             scope.validate()
+    except BaseException:
+        # the writes are rolled back: the saved items compare with the database again
+        scope.snapshots_restore()
+        raise
     finally:
         _CTX_SCOPE.reset(token)
 
@@ -290,6 +338,7 @@ def item_save(item, save, *, update_fields=None, using=None):
     def write(scope):
         save()
         scope.changed(item, fields=changed_fields(item, is_new, update_fields), is_new=is_new)
+        scope.snapshot_keep(item)
         snapshot_take(item, update_fields)
 
     if (scope := _CTX_SCOPE.get()) is not None:
@@ -335,11 +384,36 @@ def _m2m_changed(sender, instance, action, reverse, model, pk_set, **kwargs):
                 scope.changed(other, relations=[other_name])
 
 
-def connect_m2m_signals(models: Iterable):
+def _validated_set_manager(descriptor):
     """
-    Connects the receiver of the many-to-many changes to the relations of the models that
-    validate their items (and only to them: a receiver makes Django check the targets of
-    every `add()` of the relation with a query).
+    Makes `set()` of the managers of a many-to-many descriptor validate once: Django
+    changes the relation with `remove()` (or `clear()`) and `add()`, each of which would
+    validate the items alone, on the state between them.
+    """
+    manager_cls = descriptor.related_manager_cls
+    if getattr(manager_cls, 'bazis_validated_set', False):
+        return
+
+    class ValidatedSetManager(manager_cls):
+        bazis_validated_set = True
+
+        def set(self, objs, *, clear=False, through_defaults=None):
+            with defer_validate_item():
+                super().set(objs, clear=clear, through_defaults=through_defaults)
+
+    # the name of the manager of Django (code tells the managers by it)
+    ValidatedSetManager.__name__ = manager_cls.__name__
+    ValidatedSetManager.__qualname__ = manager_cls.__qualname__
+    # `related_manager_cls` is a cached property of the descriptor
+    descriptor.related_manager_cls = ValidatedSetManager
+
+
+def connect_m2m(models: Iterable):
+    """
+    For the many-to-many relations of the models that validate their items (and only for
+    them: a receiver makes Django check the targets of every `add()` of the relation with
+    a query) connects the receiver of the changes and makes `set()` of both sides
+    validate once, on the final state.
     """
     for model in models:
         if not validates_items(model):
@@ -357,3 +431,42 @@ def connect_m2m_signals(models: Iterable):
                 sender=through,
                 dispatch_uid=f'bazis_validate_item:{through._meta.label}',
             )
+            _validated_set_manager(getattr(m2m_field.model, m2m_field.name))
+            accessor = m2m_field.remote_field.get_accessor_name()
+            if accessor and not m2m_field.remote_field.symmetrical:
+                _validated_set_manager(getattr(m2m_field.related_model, accessor))
+
+
+def reverse_items_link(rel, action: str, objs: Iterable, *, clear: bool = False):
+    """
+    Changes a reverse foreign key (`rel`, the manager of the reverse relation) item by
+    item, as `add()`, `remove()` or `set()` (`action`) with `bulk=False`, but each linked
+    or unlinked item is saved with `save(update_fields=[<foreign key>])`: only its foreign
+    key is written, and the save is validated (`validate_item`). An item to unlink whose
+    foreign key cannot be null is left as it is (as `set()` of Django does).
+    """
+    field = rel.field
+    objs = list(objs)
+    target = getattr(rel.instance, field.target_field.attname)
+    if action == 'add':
+        unlink, link = [], objs
+    elif action == 'remove':
+        unlink, link = objs, []
+    else:
+        current = list(rel.all())
+        if clear:
+            unlink, link = current, objs
+        else:
+            unlink = [obj for obj in current if obj not in objs]
+            link = [obj for obj in objs if obj not in current]
+    if field.null:
+        for obj in unlink:
+            if getattr(obj, field.attname) == target:
+                setattr(obj, field.name, None)
+                obj.save(update_fields=[field.name])
+    elif action == 'remove':
+        # Django has no remove() for a foreign key that cannot be null
+        rel.remove(*unlink)
+    for obj in link:
+        setattr(obj, field.name, rel.instance)
+        obj.save(update_fields=[field.name])

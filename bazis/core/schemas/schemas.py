@@ -27,7 +27,7 @@ from pydantic import (
 
 from pydantic_core import PydanticUndefined
 
-from bazis.core.item_validation import validates_items
+from bazis.core.item_validation import reverse_items_link, validates_items
 from bazis.core.models_abstract import InitialBase, JsonApiMixin
 from bazis.core.utils.functools import get_attr
 from bazis.core.utils.orm import set_related_with_delete
@@ -107,11 +107,8 @@ class JsonApiDataSchema(BaseModel):
                     rel_obj = getattr(item, f_name)
                     rel_instances = self.check_restrict_m2m(f_name, val, rel_obj.model, rel_obj)
                     if field_info.reverse:
-                        # installation with possible deletion; the linked items that are
-                        # validated are saved one by one
-                        set_related_with_delete(
-                            rel_obj, rel_instances, bulk=not validates_items(rel_obj.model)
-                        )
+                        # installation with possible deletion
+                        set_related_with_delete(rel_obj, rel_instances)
                     else:
                         rel_obj.set(rel_instances)
                 else:
@@ -165,12 +162,12 @@ class JsonApiDataSchema(BaseModel):
         # add m2m
         for f_name, objs in m2m.items():
             rel_obj = getattr(item, f_name)
-            if factory.fields[f_name].field_db_rel.is_m2m:
-                rel_obj.set(objs)
+            rel_info = factory.fields[f_name].field_db_rel
+            if rel_info.reverse and not rel_info.is_m2m and validates_items(rel_obj.model):
+                # the linked items are saved one by one (their foreign key), to validate them
+                reverse_items_link(rel_obj, 'set', objs)
             else:
-                # a reverse foreign key: the linked items that are validated are saved one
-                # by one
-                rel_obj.set(objs, bulk=not validates_items(rel_obj.model))
+                rel_obj.set(objs)
         return item
 
 

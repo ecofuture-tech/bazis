@@ -20,7 +20,7 @@ from django.db import models, transaction
 
 from fastapi import HTTPException
 
-from bazis.core.item_validation import validates_items
+from bazis.core.item_validation import reverse_items_link, validates_items
 from bazis.core.models_abstract import JsonApiMixin
 from bazis.core.routes_abstract.jsonapi.schemas import ResourceIdentifier
 
@@ -204,16 +204,15 @@ class RelationshipsService:
             targets = RelationshipsService.parse_targets(
                 rel_field, relationships_data, to_many=True
             )
-            kwargs = {}
             if relation_type is RelationType.O2M and validates_items(rel_field.related_model):
-                # the linked items are saved one by one, so that they are validated
-                kwargs['bulk'] = False
-            if action == 'add':
-                manager.add(*targets, **kwargs)
+                # the linked items are saved one by one (their foreign key), to validate them
+                reverse_items_link(manager, action, targets)
+            elif action == 'add':
+                manager.add(*targets)
             elif action == 'remove':
-                manager.remove(*targets, **kwargs)
+                manager.remove(*targets)
             elif action == 'set':
-                manager.set(targets, **kwargs)
+                manager.set(targets)
 
         elif relation_type in (RelationType.O2O, RelationType.M2O):
             target = (
