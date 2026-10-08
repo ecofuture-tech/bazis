@@ -74,7 +74,7 @@ text = "the default cache must be Redis (django-redis): other backends do not su
 check = "bazis.E001"
 
 [[pitfalls]]
-text = "gettext catalogs are global: when two packages translate the same msgid differently, the first in LOCALE_PATHS wins (the project's locale, then INSTALLED_APPS in order, then the other Bazis packages); override the translation in the project's locale or give the field its own verbose_name/title"
+text = "gettext catalogs are global: when two packages translate the same msgid differently, the first in LOCALE_PATHS wins (the project's locale, then INSTALLED_APPS in order, the project's apps included, then the Bazis packages that are not installed); override the translation in the project's locale or give the field its own verbose_name/title"
 
 [[pitfalls]]
 text = "reverse relations are not in the schemas by default: add them to `fields` of the route"

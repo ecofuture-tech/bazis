@@ -31,21 +31,32 @@ import pytest
 SEEDS = ('0', '1', '2', '3', '4', '5')
 
 
-def run_with_seed(code: str, seed: str, **env) -> str:
-    result = subprocess.run(
-        [sys.executable, '-c', code],
-        env={
-            **os.environ,
-            'DJANGO_SETTINGS_MODULE': 'sample.settings',
-            'PYTHONHASHSEED': seed,
-            **env,
-        },
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    assert result.returncode == 0, result.stderr
-    return result.stdout.splitlines()[-1]
+def run_processes(runs: dict[str, tuple[str, str, dict]]) -> dict[str, str]:
+    """
+    Runs `{key: (code, hash seed, environment)}` in parallel subprocesses with the settings
+    of the sample, and returns the last line each one printed.
+    """
+    processes = {
+        key: subprocess.Popen(
+            [sys.executable, '-c', code],
+            env={
+                **os.environ,
+                'DJANGO_SETTINGS_MODULE': 'sample.settings',
+                'PYTHONHASHSEED': seed,
+                **env,
+            },
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for key, (code, seed, env) in runs.items()
+    }
+    outputs = {}
+    for key, process in processes.items():
+        stdout, stderr = process.communicate(timeout=300)
+        assert process.returncode == 0, stderr
+        outputs[key] = stdout.splitlines()[-1]
+    return outputs
 
 
 def write_mo(path, messages: dict[str, str]) -> None:
@@ -76,17 +87,30 @@ def write_mo(path, messages: dict[str, str]) -> None:
     )
 
 
+TRANSLATE_NAME = (
+    'import django; django.setup(); '
+    'from django.conf import settings; '
+    'from django.utils import translation; '
+    "translation.activate('ru'); "
+    "print(translation.gettext('Name'), settings.LOCALE_PATHS)"
+)
+
+
 @pytest.fixture
 def packages_translating_the_same_msgid(tmp_path):
     """
-    Three Bazis packages (portions of the namespace `bazis.contrib`) translate "Name"
-    differently into Russian, as bazis-permit, bazis-statusy and bazis-uploadable do.
+    Packages that translate "Name" differently into Russian (as bazis-permit, bazis-statusy
+    and bazis-uploadable do), each into its own name: three Bazis packages (portions of the
+    namespace `bazis.contrib`), an app of the project and a library that is not an app.
+    Returns the environment that makes them importable.
     """
-    for package in ('fake_first', 'fake_second', 'fake_unused'):
-        root = tmp_path / 'bazis' / 'contrib' / package
-        write_mo(root / 'locale' / 'ru' / 'LC_MESSAGES' / 'django.mo', {'Name': package})
+    packages = [
+        tmp_path / 'bazis' / 'contrib' / name for name in ('fake_first', 'fake_second', 'fake_unused')
+    ] + [tmp_path / 'fake_project', tmp_path / 'fake_library']
+    for root in packages:
+        write_mo(root / 'locale' / 'ru' / 'LC_MESSAGES' / 'django.mo', {'Name': root.name})
         (root / '__init__.py').write_text('')
-    return str(tmp_path)
+    return {'PYTHONPATH': os.pathsep.join([str(tmp_path), os.environ.get('PYTHONPATH', '')])}
 
 
 def test_translations_follow_installed_apps_in_every_process(
@@ -96,22 +120,38 @@ def test_translations_follow_installed_apps_in_every_process(
     Like Django orders the catalogs of the apps, the first installed app wins, whatever the
     hash seed; a package that is not installed never wins over an installed one.
     """
-    code = (
-        'import django; django.setup(); '
-        'from django.utils import translation; '
-        "translation.activate('ru'); "
-        "print(translation.gettext('Name'))"
-    )
     env = {
-        'PYTHONPATH': os.pathsep.join(
-            [packages_translating_the_same_msgid, os.environ.get('PYTHONPATH', '')]
-        ),
+        **packages_translating_the_same_msgid,
         'BS_INSTALLED_APPS': json.dumps(['bazis.contrib.fake_second', 'bazis.contrib.fake_first']),
     }
 
-    assert {seed: run_with_seed(code, seed, **env) for seed in SEEDS} == {
+    outputs = run_processes({seed: (TRANSLATE_NAME, seed, env) for seed in SEEDS})
+
+    assert {seed: output.split()[0] for seed, output in outputs.items()} == {
         seed: 'fake_second' for seed in SEEDS
     }
+    assert len(set(outputs.values())) == 1
+
+
+def test_project_app_wins_over_packages_that_are_not_installed(
+    packages_translating_the_same_msgid,
+):
+    """
+    An app of the project (not a Bazis package, not imported when the settings are built)
+    wins over a Bazis package that is not installed, and the catalogs do not depend on the
+    modules the process imported before the settings (manage.py, uvicorn and pytest import
+    different ones).
+    """
+    env = {**packages_translating_the_same_msgid, 'BS_INSTALLED_APPS': '["fake_project"]'}
+    preloaded = 'import bazis.contrib.fake_unused, fake_library; ' + TRANSLATE_NAME
+
+    outputs = run_processes(
+        {'plain': (TRANSLATE_NAME, '0', env), 'preloaded': (preloaded, '0', env)}
+    )
+
+    assert outputs['plain'].split()[0] == 'fake_project'
+    assert outputs['preloaded'] == outputs['plain']
+    assert 'fake_library' not in outputs['plain']
 
 
 def test_restrict_filters_do_not_depend_on_the_process():
@@ -129,6 +169,6 @@ def test_restrict_filters_do_not_depend_on_the_process():
     )
     expected = ','.join(f'name={c}' for c in 'abcdefgh')
 
-    assert {seed: run_with_seed(code, seed) for seed in SEEDS} == {
-        seed: expected for seed in SEEDS
-    }
+    outputs = run_processes({seed: (code, seed, {}) for seed in SEEDS})
+
+    assert outputs == {seed: expected for seed in SEEDS}

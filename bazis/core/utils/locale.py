@@ -13,103 +13,69 @@
 # limitations under the License.
 
 import os
-import sys
-from importlib import import_module
-from pathlib import Path
-
-from bazis.core.utils.imp import walk_packages_excluding
+from importlib.util import find_spec
+from pkgutil import iter_modules
 
 
-def get_apps_with_locals(package_name) -> set[str]:
-    registered_packages = set()
-
+def _bazis_packages() -> list[str]:
+    """
+    The Bazis packages present in the environment (`bazis.contrib.*`), installed as apps
+    or not, by name, without importing them.
+    """
     try:
-        # Import the main package
-        package = import_module(package_name)
-
-        # If the package has no __path__ attribute, it is not a package
-        if not hasattr(package, '__path__'):
-            return registered_packages
-
-        # Check whether the current package has a locale folder
-        if package.__file__:
-            package_path = os.path.dirname(package.__file__)
-            locale_path = os.path.join(package_path, 'locale')
-
-            if os.path.isdir(locale_path):
-                # Add the package to the list of found ones
-                registered_packages.add(package_name)
-        # Recursively traverse all subpackages
-        for _, name, is_pkg in walk_packages_excluding(
-            package.__path__, package.__name__ + '.', exclude={'schemas', 'jsonapi'}
-        ):
-            if is_pkg:  # Process only packages, not modules
-                # Recursive call for the subpackage
-                subpackage_results = get_apps_with_locals(name)
-                registered_packages.update(subpackage_results)
-
-    except (ImportError, AttributeError) as e:
-        print(f'Error while processing package {package_name}: {e}')
-
-    return registered_packages
+        import bazis.contrib
+    except ImportError:
+        return []
+    return sorted(
+        info.name
+        for info in iter_modules(bazis.contrib.__path__, 'bazis.contrib.')
+        if info.ispkg
+    )
 
 
-def _app_rank(package: str, installed_apps: list[str]) -> int:
+def _app_dirs(app: str) -> list[str]:
     """
-    The position of the package among the installed apps: the app itself, an AppConfig
-    path inside it (`sequences.apps.SequencesConfig`) or a subpackage of an app. A package
-    that is not an installed app comes after all of them.
+    The directories of an entry of INSTALLED_APPS, found without importing the app: a
+    package (`django.contrib.admin`) or the package of an AppConfig path
+    (`sequences.apps.SequencesConfig`, `users.apps.UsersConfig`). Only the parent packages
+    are imported, as by any import of the app.
     """
-    for i, app in enumerate(installed_apps):
-        if app == package or app.startswith(f'{package}.') or package.startswith(f'{app}.'):
-            return i
-    return len(installed_apps)
+    try:
+        parent = app.rpartition('.')[0]
+        if parent and (parent_spec := find_spec(parent)) and not parent_spec.submodule_search_locations:
+            # `<module>.<AppConfig>`: the app is the package of the module
+            return [os.path.dirname(parent_spec.origin)]
+        spec = find_spec(app)
+    except (ImportError, ValueError):
+        return []
+    if spec is None:
+        return []
+    if spec.submodule_search_locations:
+        return list(spec.submodule_search_locations)
+    return [os.path.dirname(spec.origin)] if spec.origin else []
 
 
 def discover_locale_paths(base_dir: str, installed_apps: list[str]) -> list[str]:
     """
-    Discovers the 'locale' directories of the project (`<base_dir>/locale`), of the
-    imported packages and of all Bazis packages (also the ones whose code a project uses
-    without installing them as apps, such as the abstract models of bazis-users).
+    The 'locale' directories, in the priority of their catalogs (the first path wins when
+    two catalogs translate the same msgid), as Django orders the catalogs of the apps: the
+    project (`<base_dir>/locale`), the installed apps in the order of INSTALLED_APPS, then
+    the Bazis packages that are not installed (a project uses the abstract models of
+    bazis-users without installing it) by name, under every installed app.
 
-    The order is the priority of the catalogs (the first path wins when two catalogs
-    translate the same msgid), as Django orders the catalogs of the apps: the project, then
-    the installed apps in the order of INSTALLED_APPS, then the other packages by name.
-    It never depends on the process (the hash seed), or the translated titles in the
-    OpenAPI would change between processes. The global catalog of Django is not included:
-    Django loads it itself, under all the others.
+    The result depends only on the settings: not on the hash seed or on the modules the
+    process imported before the settings, or the translated titles in the OpenAPI would
+    change between processes. The global catalog of Django is not included: Django loads
+    it itself, under all the others.
     """
-    import django
-
-    django_locale_path = str(Path(django.__file__).parent / 'conf' / 'locale')
+    candidates = [os.path.join(base_dir, 'locale')]
+    for app in installed_apps:
+        candidates += [os.path.join(path, 'locale') for path in _app_dirs(app)]
+    for package in _bazis_packages():
+        candidates += [os.path.join(path, 'locale') for path in _app_dirs(package)]
 
     locale_paths = []
-
-    project_locale_path = os.path.join(base_dir, 'locale')
-    if os.path.isdir(project_locale_path):
-        locale_paths.append(project_locale_path)
-
-    # the locale directory of a package, by its path: the package that owns it
-    package_paths: dict[str, str] = {}
-    for name in sorted(set(sys.modules) | get_apps_with_locals('bazis')):
-        try:
-            module = import_module(name)
-            package = module.__package__ or name
-            locale_path = str(Path(module.__file__).parent / 'locale')
-        except (ModuleNotFoundError, AttributeError, TypeError):
-            continue
-        if (
-            locale_path not in package_paths
-            and locale_path not in locale_paths
-            and locale_path != django_locale_path
-            and os.path.isdir(locale_path)
-        ):
-            package_paths[locale_path] = package
-
-    locale_paths.extend(
-        sorted(
-            package_paths,
-            key=lambda path: (_app_rank(package_paths[path], installed_apps), package_paths[path]),
-        )
-    )
+    for path in candidates:
+        if path not in locale_paths and os.path.isdir(path):
+            locale_paths.append(path)
     return locale_paths
