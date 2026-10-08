@@ -36,6 +36,7 @@ def files(settings, tmp_path):
     (tmp_path / 'static').mkdir()
     (tmp_path / 'static' / 'schemas_en.json').write_text('{}')
     (tmp_path / 'secret.txt').write_text('secret')
+    (tmp_path / 'media' / 'files' / 'link.txt').symlink_to(tmp_path / 'secret.txt')
     return settings
 
 
@@ -62,7 +63,15 @@ def test_media_that_is_not_a_raster_image_is_downloaded(files, client):
     assert response.headers['Content-Security-Policy'] == 'sandbox'
 
 
-@pytest.mark.parametrize('path', ['/media/files/missing.png', '/media/..%2Fsecret.txt'])
+@pytest.mark.parametrize(
+    'path',
+    [
+        '/media/files/missing.png',
+        '/media/..%2Fsecret.txt',
+        # a symbolic link out of MEDIA_ROOT
+        '/media/files/link.txt',
+    ],
+)
 def test_missing_media_is_not_found(files, client, path):
     response = client.get(path)
 
@@ -94,8 +103,16 @@ def test_media_redirects_to_its_host(files, client, media_host, admin_host, loca
     assert response.headers['location'] == location
 
 
-def test_a_host_that_is_the_application_is_not_redirected_to(files, client):
-    files.ADMIN_HOST_URL = 'http://testserver'
+@pytest.mark.parametrize(
+    'host',
+    [
+        'http://testserver',
+        # behind a proxy that terminates TLS the request of the application is http
+        'https://testserver/',
+    ],
+)
+def test_a_host_that_is_the_application_is_not_redirected_to(files, client, host):
+    files.ADMIN_HOST_URL = host
 
     assert client.get('/media/files/photo.png').status_code == 200
     assert client.get('/static/schemas_en.json').status_code == 200

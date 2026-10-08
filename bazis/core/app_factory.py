@@ -99,6 +99,7 @@ def _initialize_app(app): # noqa: C901
     import os
     import re
     import traceback
+    from urllib.parse import urlsplit
 
     from django.conf import settings
     from django.utils.translation import get_language, to_locale
@@ -132,10 +133,12 @@ def _initialize_app(app): # noqa: C901
         The files under `url` (MEDIA_URL, STATIC_URL): a redirect to the first configured
         host that is not the application itself (a redirect to itself would loop); without
         one, in DEBUG, the file from `root`; otherwise 404 that names the missing setting.
+        The application is recognized by host[:port] whatever the scheme: behind a proxy
+        that terminates TLS the request is http while the configured host is https.
         """
-        origin = str(request.base_url).rstrip('/')
+        own_netloc = request.base_url.netloc.lower()
         for host in hosts:
-            if host and host.rstrip('/') != origin:
+            if host and urlsplit(host).netloc.lower() != own_netloc:
                 return RedirectResponse(url=f'{host.rstrip("/")}{url}{path}')
         if not settings.DEBUG:
             raise HTTPException(

@@ -32,7 +32,7 @@ sample/router.py         # root router, BS_BAZIS_ROUTER_MODULE=sample.router
 
 Files: the application redirects `MEDIA_URL` to `MEDIA_HOST_URL` (else `ADMIN_HOST_URL`)
 and `STATIC_URL` to `ADMIN_HOST_URL`. Without such a host (or when the host is the
-application itself), in DEBUG it serves the files from `MEDIA_ROOT` / `STATIC_ROOT`
+application itself: the same host and port, whatever the scheme), in DEBUG it serves the files from `MEDIA_ROOT` / `STATIC_ROOT`
 itself, the media with `X-Content-Type-Options: nosniff`, `Content-Security-Policy:
 sandbox` and, except raster images, `Content-Disposition: attachment`; without DEBUG it
 answers 404 naming the setting. In production serve them by the web server or a media
