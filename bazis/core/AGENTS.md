@@ -37,7 +37,9 @@ it serves the files from `MEDIA_ROOT` / `STATIC_ROOT` itself, the media with `X-
 Type-Options: nosniff`, `Content-Security-Policy: sandbox` and, except raster images,
 `Content-Disposition: attachment`; without DEBUG it answers 404 naming the setting. In
 production serve them by the web server or a media host (`BS_MEDIA_HOST_URL`); do not
-mount `MEDIA_ROOT` in the project.
+mount `MEDIA_ROOT` in the project. The loop is detected against the Host of the request: a
+proxy in front of the application must preserve the Host header (not rewrite it to an
+internal address), or a host setting that names the public address redirects to itself.
 
 Settings are environment variables with the `BS_` prefix (`BS_DEBUG`, `BS_SECRET_KEY`,
 `BS_DATABASES__DEFAULT__HOST`, lists and dicts as JSON). Apps, including Bazis packages,

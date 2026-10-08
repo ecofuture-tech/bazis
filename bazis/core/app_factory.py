@@ -138,16 +138,22 @@ def _initialize_app(app): # noqa: C901
         (behind a proxy that terminates TLS the request is http while the host is https).
         """
 
-        def place(parts) -> tuple:
-            port = None if parts.port in (80, 443) else parts.port
-            return (parts.hostname or '').lower(), port, unquote(parts.path)
+        def place(parts) -> tuple | None:
+            try:
+                port = parts.port
+            except ValueError:
+                # a malformed port (`Host: example.com:abc`): matches nothing
+                return None
+            return (parts.hostname or '').lower(), None if port in (80, 443) else port, unquote(
+                parts.path
+            )
 
         own_place = place(request.url)
         for host in hosts:
             if not host:
                 continue
             target = f'{host.rstrip("/")}{url}{path}'
-            if place(urlsplit(target)) != own_place:
+            if own_place is None or place(urlsplit(target)) != own_place:
                 return RedirectResponse(url=target)
         if not settings.DEBUG:
             raise HTTPException(

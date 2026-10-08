@@ -18,6 +18,8 @@ application serves them itself in DEBUG and answers 404 otherwise, never a redir
 itself (a loop).
 """
 
+from starlette.datastructures import URL
+from starlette.requests import HTTPConnection
 from starlette.testclient import TestClient
 
 import pytest
@@ -118,6 +120,26 @@ def test_a_host_that_is_the_application_is_not_redirected_to(files, client, host
 
     assert client.get('/media/files/photo.png').status_code == 200
     assert client.get('/static/schemas_en.json').status_code == 200
+
+
+@pytest.mark.parametrize('url', ['/media/files/photo.png', '/static/schemas_en.json'])
+def test_a_malformed_port_of_the_request_is_not_the_application(
+    files, client, monkeypatch, url
+):
+    """
+    A port that is not a number in the Host header (Starlette before 1.0 keeps it in the
+    URL of the request; later versions replace it with the address of the server) matches
+    no address: a redirect to the host, never 500.
+    """
+    files.ADMIN_HOST_URL = 'http://testserver'
+    monkeypatch.setattr(
+        HTTPConnection, 'url', property(lambda request: URL(f'http://testserver:abc{request.scope["path"]}'))
+    )
+
+    response = client.get(url, headers={'Host': 'testserver:abc'})
+
+    assert response.status_code == 307
+    assert response.headers['location'] == f'http://testserver{url}'
 
 
 @pytest.mark.parametrize(
