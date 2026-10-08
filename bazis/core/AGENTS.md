@@ -30,6 +30,14 @@ sample/router.py         # root router, BS_BAZIS_ROUTER_MODULE=sample.router
 <app>/conf.py            # optional `Settings(BazisSettings)` of the app
 ```
 
+Files: the application redirects `MEDIA_URL` to `MEDIA_HOST_URL` (else `ADMIN_HOST_URL`)
+and `STATIC_URL` to `ADMIN_HOST_URL`. Without such a host (or when the host is the
+application itself), in DEBUG it serves the files from `MEDIA_ROOT` / `STATIC_ROOT`
+itself, the media with `X-Content-Type-Options: nosniff`, `Content-Security-Policy:
+sandbox` and, except raster images, `Content-Disposition: attachment`; without DEBUG it
+answers 404 naming the setting. In production serve them by the web server or a media
+host (`BS_MEDIA_HOST_URL`); do not mount `MEDIA_ROOT` in the project.
+
 Settings are environment variables with the `BS_` prefix (`BS_DEBUG`, `BS_SECRET_KEY`,
 `BS_DATABASES__DEFAULT__HOST`, lists and dicts as JSON). Apps, including Bazis packages,
 are listed in `BS_INSTALLED_APPS` (`'["myapp", "bazis.contrib.permit"]'`). The settings
@@ -55,14 +63,6 @@ libraries that are not apps are not included. When two catalogs translate the sa
 the first one wins, in every process: the list depends only on the settings. To change a translation of a package, translate the
 msgid in the project's `locale`, or give the field its own title (`verbose_name` of the
 model field, or `SchemaField(title=...)` in `fields` of the route).
-
-Files: the application redirects `MEDIA_URL` to `MEDIA_HOST_URL` (else `ADMIN_HOST_URL`)
-and `STATIC_URL` to `ADMIN_HOST_URL`. Without such a host (or when the host is the
-application itself), in DEBUG it serves the files from `MEDIA_ROOT` / `STATIC_ROOT`
-itself, the media with `X-Content-Type-Options: nosniff`, `Content-Security-Policy:
-sandbox` and, except raster images, `Content-Disposition: attachment`; without DEBUG it
-answers 404 naming the setting. In production serve them by the web server or a media
-host (`BS_MEDIA_HOST_URL`); do not mount `MEDIA_ROOT` in the project.
 
 ## Models
 

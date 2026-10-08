@@ -70,14 +70,14 @@ text = "ALLOWED_HOSTS is ['*'] by default: set BS_ALLOWED_HOSTS in production"
 check = "bazis.W001"
 
 [[pitfalls]]
+text = "MEDIA_URL is redirected to MEDIA_HOST_URL (else ADMIN_HOST_URL); without a host the application serves MEDIA_ROOT only in DEBUG (raster images inline, other files as attachments) and answers 404 otherwise: in production set BS_MEDIA_HOST_URL or serve MEDIA_URL by the web server, do not mount MEDIA_ROOT in the project"
+
+[[pitfalls]]
 text = "the default cache must be Redis (django-redis): other backends do not support delete_pattern"
 check = "bazis.E001"
 
 [[pitfalls]]
 text = "gettext catalogs are global: when two packages translate the same msgid differently, the first in LOCALE_PATHS wins (the project's locale, then INSTALLED_APPS in order, the project's apps included, then the Bazis packages that are not installed); override the translation in the project's locale or give the field its own verbose_name/title"
-
-[[pitfalls]]
-text = "MEDIA_URL is redirected to MEDIA_HOST_URL (else ADMIN_HOST_URL); without a host the application serves MEDIA_ROOT only in DEBUG (raster images inline, other files as attachments) and answers 404 otherwise: in production set BS_MEDIA_HOST_URL or serve MEDIA_URL by the web server, do not mount MEDIA_ROOT in the project"
 
 [[pitfalls]]
 text = "reverse relations are not in the schemas by default: add them to `fields` of the route"
