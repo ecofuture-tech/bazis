@@ -77,7 +77,8 @@ schemas are built once per process for all the languages: the titles, descriptio
 choice labels (`enumDict`) are translated when a JSON schema is generated, so the
 `schema_*` routes answer in the language of the request and `/openapi.json` too (built
 once per language; `app.openapi()` is in the active language, export it under
-`translation.override(settings.LANGUAGE_CODE)`). Keep titles lazy (`gettext_lazy`,
+`translation.override(settings.LANGUAGE_CODE)`, or fetch it with `?lang=` or without
+`Accept-Language`). Every HTTP response has `Vary: Accept-Language`. Keep titles lazy (`gettext_lazy`,
 `verbose_name`): a `str` is fixed in the language of the code that made it. In tests set
 `LANGUAGES` with `monkeypatch.setattr(settings, ...)`, not with the `settings` fixture or
 `override_settings`: their signal makes Django replace the per-request translations of the

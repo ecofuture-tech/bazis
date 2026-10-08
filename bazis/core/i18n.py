@@ -20,7 +20,7 @@ from django.conf import settings
 from django.utils import translation
 from django.utils.translation import trans_real
 
-from starlette.datastructures import Headers, QueryParams
+from starlette.datastructures import Headers, MutableHeaders, QueryParams
 
 
 CTX_TRANS = ContextVar('CTX_LANG', default=None)
@@ -61,7 +61,9 @@ class LanguageMiddleware:
     """
     Activates the language of the request (`request_language`): the query parameter
     `lang`, then the header `Accept-Language`, matched against LANGUAGES by code or base
-    code, otherwise LANGUAGE_CODE.
+    code, otherwise LANGUAGE_CODE. Every HTTP response varies with `Accept-Language` (its
+    texts, the titles of the schemas, translated fields), as with the LocaleMiddleware of
+    Django, so that a cache does not serve one language to another.
 
     Tags: RAG, EXPORT
     """
@@ -85,7 +87,16 @@ class LanguageMiddleware:
 
         translation.activate(request_language(query_lang, accept_language))
 
-        await self.app(scope, receive, send)
+        if scope['type'] != 'http':
+            await self.app(scope, receive, send)
+            return
+
+        async def send_varying(message) -> None:
+            if message['type'] == 'http.response.start':
+                MutableHeaders(scope=message).add_vary_header('Accept-Language')
+            await send(message)
+
+        await self.app(scope, receive, send_varying)
 
 
 class TransActive:

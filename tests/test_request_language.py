@@ -106,6 +106,7 @@ def test_schemas_follow_the_language_of_each_request(sample_app, two_languages):
     def titles(language):
         response = client.get(SCHEMA_LIST, headers={'Accept-Language': language})
         assert response.status_code == 200, response.text
+        assert 'accept-language' in response.headers['vary'].lower()
         return property_titles(response.json(), 'dt_created')
 
     assert titles('ru-RU,ru;q=0.9') == {'Время добавления'}
@@ -121,12 +122,7 @@ def test_openapi_in_the_active_language(sample_app, two_languages):
     """
     from django.utils import translation
 
-    def titles(openapi):
-        schemas = openapi['components']['schemas']
-        return property_titles(
-            {'$defs': {k: v for k, v in schemas.items() if 'entity__vehicle_model__' in k}},
-            'dt_created',
-        )
+    titles = vehicle_model_titles
 
     with translation.override('ru'):
         russian = sample_app.openapi()
@@ -143,3 +139,57 @@ def test_openapi_in_the_active_language(sample_app, two_languages):
         rebuilt = sample_app.openapi()
     assert rebuilt is not russian
     assert rebuilt == russian
+
+
+@pytest.fixture
+def openapi_url(sample_app, monkeypatch):
+    """
+    The route /openapi.json of FastAPI. The sample application has it only with DEBUG, which
+    pytest-django turns off before the application is created: the route is added for the
+    test as FastAPI adds it (`setup`), and removed after it.
+    """
+    routes = list(sample_app.router.routes)
+    monkeypatch.setattr(sample_app, 'openapi_url', '/api/openapi.json')
+    sample_app.setup()
+    yield sample_app.openapi_url
+    sample_app.router.routes[:] = routes
+
+
+def vehicle_model_titles(openapi: dict) -> set[str]:
+    schemas = openapi['components']['schemas']
+    return property_titles(
+        {'$defs': {k: v for k, v in schemas.items() if 'entity__vehicle_model__' in k}},
+        'dt_created',
+    )
+
+
+@pytest.mark.django_db
+def test_openapi_json_in_the_language_of_the_request(sample_app, two_languages, openapi_url):
+    """
+    /openapi.json answers in the language of the request: `Accept-Language`, `?lang`, and
+    LANGUAGE_CODE without them (a code generator gets it deterministically by sending
+    neither, or `?lang`). The response varies with `Accept-Language`.
+    """
+    client = TestClient(sample_app)
+
+    def get(**kwargs):
+        response = client.get(openapi_url, **kwargs)
+        assert response.status_code == 200
+        assert 'accept-language' in response.headers['vary'].lower()
+        return vehicle_model_titles(response.json())
+
+    assert get(headers={'Accept-Language': 'ru-RU,ru;q=0.9'}) == {'Время добавления'}
+    assert get(headers={'Accept-Language': 'en-US'}) == {'Creation time'}
+    assert get() == {'Creation time'}
+    assert get(params={'lang': 'ru'}, headers={'Accept-Language': 'en'}) == {'Время добавления'}
+
+
+@pytest.mark.django_db
+def test_every_response_varies_with_the_language(sample_app):
+    """
+    The data and the errors are translated too (translated fields, error titles).
+    """
+    response = TestClient(sample_app).get('/api/v1/entity/vehicle_model/')
+
+    assert response.status_code == 200
+    assert 'accept-language' in response.headers['vary'].lower()
