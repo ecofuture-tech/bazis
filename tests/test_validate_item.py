@@ -20,13 +20,17 @@ answers 422 `ERR_ITEM_INVALID` on the API and rolls the write back. The models t
 override it pay nothing.
 """
 
+import json
+
+from django.core.exceptions import ImproperlyConfigured
+from django.core.management import call_command
 from django.db import connection, transaction
 from django.db.models.signals import m2m_changed
 from django.test.utils import CaptureQueriesContext
 
 import pytest
 from bazis_test_utils.utils import get_api_client
-from validation.models import Booking, Person, Room
+from validation.models import Booking, Equipment, Person, Room
 from visibility.models import Note
 
 from bazis.core.errors import JsonApiItemInvalidException
@@ -546,3 +550,114 @@ def test_reverse_items_are_linked_by_their_foreign_key(calls):
     reverse_items_link(room.bookings, 'set', [])
     assert Booking.objects.get(pk=booking.pk).room_id is None
     assert only_call(calls).fields == {'room'}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_included_item_errors_point_to_it_on_update(sample_app, calls):
+    room = Room.objects.create(name='Blue')
+    booking = make_booking(room, 10, 20)
+
+    response = get_api_client(sample_app).patch(
+        f'/api/v1/validation/room/{room.pk}/?include=bookings',
+        json_data={
+            'data': {
+                'id': str(room.pk),
+                'type': 'validation.room',
+                'bs:action': 'change',
+                'attributes': {'name': 'Green'},
+            },
+            'included': [
+                {
+                    'id': str(booking.pk),
+                    'type': 'validation.booking',
+                    'bs:action': 'change',
+                    'attributes': {'end': 5},
+                }
+            ],
+        },
+    )
+
+    assert_invalid(response, pointer='/included/0/attributes/end')
+    assert Room.objects.get().name == 'Blue'
+    assert Booking.objects.get().end == 20
+
+
+@pytest.fixture
+def equipment_calls():
+    Equipment.calls.clear()
+    yield Equipment.calls
+    Equipment.calls.clear()
+
+
+@pytest.mark.django_db
+def test_hidden_many_to_many(equipment_calls):
+    """A relation without a reverse one (`related_name='+'`) has one side to validate."""
+    ann, bob = Person.objects.create(name='Ann'), Person.objects.create(name='Bob')
+    equipment = Equipment.objects.create(name='Projector', room=Room.objects.create(name='Blue'))
+    equipment_calls.clear()
+
+    equipment.keepers.add(ann)
+    equipment.keepers.set([bob])
+    assert [changes.relations for _, changes in equipment_calls] == [{'keepers'}, {'keepers'}]
+
+
+@pytest.mark.django_db
+def test_reverse_non_null_foreign_key(equipment_calls):
+    blue, green = Room.objects.create(name='Blue'), Room.objects.create(name='Green')
+    equipment = Equipment.objects.create(name='Projector', room=blue)
+    equipment_calls.clear()
+
+    reverse_items_link(green.equipment, 'add', [equipment])
+    assert Equipment.objects.get().room_id == green.pk
+    assert [changes.fields for _, changes in equipment_calls] == [{'room'}]
+
+    # an item whose foreign key cannot be null is not unlinked (as Django's set())
+    equipment_calls.clear()
+    reverse_items_link(green.equipment, 'set', [])
+    assert Equipment.objects.get().room_id == green.pk
+    assert equipment_calls == []
+
+
+@pytest.mark.django_db
+def test_raw_changes_are_not_validated(calls, tmp_path):
+    room, ann = Room.objects.create(name='Blue'), Person.objects.create(name='Ann')
+    fixture = tmp_path / 'bookings.json'
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    'model': 'validation.booking',
+                    'pk': '7d4f3c1e-0d3a-4b55-9d4e-0f8b6d0c2a11',
+                    'fields': {
+                        'title': 'Loaded',
+                        'start': 20,
+                        'end': 10,
+                        'room': str(room.pk),
+                        'participants': [str(ann.pk)],
+                    },
+                }
+            ]
+        )
+    )
+    calls.clear()
+
+    call_command('loaddata', str(fixture), verbosity=0)
+
+    assert calls == []
+    assert list(Booking.objects.get().participants.all()) == [ann]
+
+
+@pytest.mark.django_db
+def test_items_saving_each_other_are_stopped(calls, monkeypatch):
+    first, second = make_booking(start=10, end=20), make_booking(start=30, end=40)
+    validate_item = Booking.validate_item
+
+    def validate_and_save_the_other(self, changes):
+        validate_item(self, changes)
+        Booking.objects.exclude(pk=self.pk).get().save()
+
+    monkeypatch.setattr(Booking, 'validate_item', validate_and_save_the_other)
+
+    with pytest.raises(ImproperlyConfigured, match='save each other'):
+        first.save()
+    assert {pk for pk, _ in calls} == {first.pk, second.pk}

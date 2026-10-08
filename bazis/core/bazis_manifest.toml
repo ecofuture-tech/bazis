@@ -114,7 +114,7 @@ text = "a verbose_name of a model or field composed with an f-string at import i
 text = "an invariant of an item kept only in the hooks of a route (hook_before_create, hook_after_update) is bypassed by the relationships endpoints, the transits, the admin and save(): put it in JsonApiMixin.validate_item"
 
 [[pitfalls]]
-text = "QuerySet.update(), bulk_create(), bulk_update(), a reverse foreign key manager with bulk=True outside the routes, Through.objects.create(), loaddata, raw SQL and deletion do not call validate_item; a failed validation of a many-to-many add()/remove()/clear() inside a transaction requires rolling that transaction back (no savepoint)"
+text = "QuerySet.update(), bulk_create(), bulk_update(), a reverse foreign key manager with bulk=True outside the routes, Through.objects.create(), loaddata and deserialization (raw), raw SQL and deletion do not call validate_item; a failed validation of a many-to-many add()/remove()/clear() inside a transaction requires rolling that transaction back (no savepoint)"
 
 [[pitfalls]]
 text = "reverse relations are not in the schemas by default: add them to `fields` of the route"

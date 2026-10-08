@@ -242,10 +242,8 @@ def set_related_with_delete(rel, objs, *, bulk=True, clear=False):
 
     db = router.db_for_write(rel.model, instance=rel.instance)
     with transaction.atomic(using=db, savepoint=False):
-        # Determine the manager type by the class name
-        manager_class_name = rel.__class__.__name__
-
-        if 'ManyRelatedManager' in manager_class_name:
+        # a many-to-many manager has its through model, a reverse foreign key one has not
+        if hasattr(rel, 'through'):
             # For many-to-many relations bulk is not supported
             rel.set(objs, clear=clear)
         elif validates_items(rel.model):

@@ -62,3 +62,20 @@ class Booking(DtMixin, UuidMixin, JsonApiMixin):
             errors['participants'] = 'The room has fewer seats'
         if errors:
             raise ValidationError(errors)
+
+
+class Equipment(DtMixin, UuidMixin, JsonApiMixin):
+    """
+    Validates its items without a rule: a foreign key that cannot be null and a
+    many-to-many relation without a reverse one (`related_name='+'`).
+    """
+
+    name = models.CharField('Name', max_length=255)
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='equipment')
+    keepers = models.ManyToManyField(Person, blank=True, related_name='+')
+
+    #: the calls of validate_item, for the tests: (pk, changes)
+    calls = []
+
+    def validate_item(self, changes):
+        self.calls.append((self.pk, changes))

@@ -29,7 +29,9 @@ values, no savepoint, no signal receiver.
 Not validated (they do not call `save()` or send `m2m_changed`): `QuerySet.update()`,
 `bulk_create()`, `bulk_update()`, the reverse foreign key managers with `bulk=True` (their
 default) outside the routes, the rows of a `through` model written directly
-(`Through.objects.create()`), `loaddata` (raw saves), raw SQL, and deletion.
+(`Through.objects.create()`), `loaddata` and the deserialization (raw saves and raw
+many-to-many changes), raw SQL, and deletion. `set()` of a manager made for another manager
+of the model (`item.tags(manager='...')`) validates its removal and its addition each.
 
 A many-to-many manager writes in its own block without a savepoint: when the validation
 of its `add()`, `remove()` or `clear()` fails inside a transaction, the transaction (or the
@@ -46,7 +48,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import transaction
 from django.db.models.signals import m2m_changed
 
@@ -156,6 +158,11 @@ def changed_fields(item, is_new: bool, update_fields: Iterable[str] | None) -> s
     }
 
 
+#: how many times an item can be validated in one block: more means that the
+#: validate_item of the items save each other without end
+VALIDATIONS_LIMIT = 10
+
+
 class _Entry:
     __slots__ = ('item', 'fields', 'relations', 'is_new', 'source', 'user', 'loc')
 
@@ -181,6 +188,8 @@ class ValidationScope:
         self._entries: dict[tuple, _Entry] = {}
         # the item whose validate_item runs: its own writes there are not validated again
         self._validating: tuple | None = None
+        # the validations of each item in the block, to stop items that save each other
+        self._validations: dict[tuple, int] = {}
         # the snapshots of the saved items before the block, restored if it fails
         self._snapshots: dict[int, tuple] = {}
 
@@ -260,7 +269,13 @@ class ValidationScope:
                 source=source,
                 user=entry.user if entry.user is not None else self.user,
             )
-            self._validating = key
+            self._validations[key] = count = self._validations.get(key, 0) + 1
+            if count > VALIDATIONS_LIMIT:
+                raise ImproperlyConfigured(
+                    f'validate_item of {key[0]._meta.label} {key[1]} ran {count} times in '
+                    'one block: the validate_item of the items save each other'
+                )
+            previous, self._validating = self._validating, key
             try:
                 entry.item.validate_item(changes)
             except ValidationError as e:
@@ -268,7 +283,7 @@ class ValidationScope:
                     e, item=entry.item, source=source, loc=entry.loc
                 ) from e
             finally:
-                self._validating = None
+                self._validating = previous
 
 
 _CTX_SCOPE: ContextVar[ValidationScope | None] = ContextVar(
@@ -352,18 +367,28 @@ def item_save(item, save, *, update_fields=None, using=None):
 _M2M_FIELDS = {}
 
 
-def _m2m_changed(sender, instance, action, reverse, model, pk_set, **kwargs):
+def _reverse_name(field) -> str | None:
+    """
+    The name of the relation of a many-to-many field on the side of its targets: None for
+    a hidden one (`related_name='+'`), the field itself for a symmetrical one.
+    """
+    if field.remote_field.symmetrical:
+        return field.name
+    if field.remote_field.hidden:
+        return None
+    return field.remote_field.get_accessor_name()
+
+
+def _m2m_changed(sender, instance, action, reverse, model, pk_set, raw=False, **kwargs):
     """
     Validates the items whose many-to-many relation a manager changed: the item of the
-    manager and the items it links or unlinks.
+    manager and the items it links or unlinks. The raw changes (`loaddata`, the
+    deserialization) are not validated, as the raw saves.
     """
-    if action not in ('pre_clear', 'post_add', 'post_remove', 'post_clear'):
+    if raw or action not in ('pre_clear', 'post_add', 'post_remove', 'post_clear'):
         return
     field = _M2M_FIELDS[sender]
-    if field.remote_field.symmetrical:
-        accessor = field.name
-    else:
-        accessor = field.remote_field.get_accessor_name()
+    accessor = _reverse_name(field)
     own_name, other_name = (accessor, field.name) if reverse else (field.name, accessor)
 
     if action == 'pre_clear':
@@ -388,7 +413,9 @@ def _validated_set_manager(descriptor):
     """
     Makes `set()` of the managers of a many-to-many descriptor validate once: Django
     changes the relation with `remove()` (or `clear()`) and `add()`, each of which would
-    validate the items alone, on the state between them.
+    validate the items alone, on the state between them. A manager made for another
+    manager of the model (`item.tags(manager='...')`) is not changed: its `set()`
+    validates the removal and the addition each.
     """
     manager_cls = descriptor.related_manager_cls
     if getattr(manager_cls, 'bazis_validated_set', False):
@@ -401,9 +428,6 @@ def _validated_set_manager(descriptor):
             with defer_validate_item():
                 super().set(objs, clear=clear, through_defaults=through_defaults)
 
-    # the name of the manager of Django (code tells the managers by it)
-    ValidatedSetManager.__name__ = manager_cls.__name__
-    ValidatedSetManager.__qualname__ = manager_cls.__qualname__
     # `related_manager_cls` is a cached property of the descriptor
     descriptor.related_manager_cls = ValidatedSetManager
 
@@ -432,8 +456,7 @@ def connect_m2m(models: Iterable):
                 dispatch_uid=f'bazis_validate_item:{through._meta.label}',
             )
             _validated_set_manager(getattr(m2m_field.model, m2m_field.name))
-            accessor = m2m_field.remote_field.get_accessor_name()
-            if accessor and not m2m_field.remote_field.symmetrical:
+            if not m2m_field.remote_field.symmetrical and (accessor := _reverse_name(m2m_field)):
                 _validated_set_manager(getattr(m2m_field.related_model, accessor))
 
 

@@ -145,9 +145,12 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   errors in the form. The routes link the items of a reverse foreign key of a model that
   validates one by one, with `save(update_fields=[<fk>])`. Not validated:
   `QuerySet.update()`, `bulk_create()`, `bulk_update()`, a reverse foreign key manager with
-  `bulk=True` outside the routes, `Through.objects.create()`, `loaddata`, raw SQL and
-  deletion. Do not write the item in `validate_item` (its own writes there are not
-  validated again). A model that does not override it pays nothing.
+  `bulk=True` outside the routes, `Through.objects.create()`, `loaddata` and the
+  deserialization (raw saves and raw many-to-many changes), raw SQL and deletion;
+  `item.tags(manager='...').set()` validates its removal and its addition each. Do not
+  write the item in `validate_item` (its own writes there are not validated again); items
+  whose `validate_item` save each other are stopped after 10 validations of one item in a
+  block (`ImproperlyConfigured`). A model that does not override it pays nothing.
 - Calculated fields: `@calc_property([...])` from `bazis.core.utils.orm`, declared with the
   fields they need (`FieldRelated`, `FieldJson`, ...) so that the query fetches them in one
   pass; then add them to the route with `SchemaField(source=..., required=False)`.
