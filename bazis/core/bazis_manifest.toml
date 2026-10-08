@@ -54,6 +54,11 @@ import = "bazis.core.routes_abstract.jsonapi.JsonapiRouteBase"
 use_when = "a package changes the LIST schema of a route per user: override the classmethod query_fields(user=None, **kwargs) so that the filter, sort and search of a request reach only the fields that user sees (QueryScope)"
 
 [[extension_points]]
+name = "route_search_fields"
+import = "bazis.core.utils.query_complex.route_search_fields"
+use_when = "a tool (a client generator, the contract of bazis-front) needs the search fields a route searches: its search_fields, as declared, that its LIST schema reaches (no queries)"
+
+[[extension_points]]
 name = "calc_property"
 import = "bazis.core.utils.orm.calc_property"
 use_when = "a calculated field fetched in the same query"

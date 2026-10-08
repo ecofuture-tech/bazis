@@ -163,7 +163,7 @@ def check_search_fields(app_configs, **kwargs):
     """
     from bazis.core import introspect
     from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
-    from bazis.core.utils.query_complex import LOOKUP_PREFIXES, QueryScope
+    from bazis.core.utils.query_complex import route_search_fields
 
     if (app := introspect.loaded_app()) is None:
         return []
@@ -172,11 +172,9 @@ def check_search_fields(app_configs, **kwargs):
     for route_cls in introspect.route_sets(app):
         if not issubclass(route_cls, JsonapiRouteBase) or not route_cls.search_fields:
             continue
-        # the LIST schema of the route itself, not the one a package makes per user
-        scope = QueryScope.for_route(route_cls, schema=True)
+        searched = route_search_fields(route_cls)
         for field in route_cls.search_fields:
-            name = str(field)
-            if not scope.reaches(route_cls.model, name[1:] if name[:1] in LOOKUP_PREFIXES else name):
+            if str(field) not in searched:
                 messages.append(
                     Warning(
                         f'The search field {field!r} of the route set is not a field of its '
