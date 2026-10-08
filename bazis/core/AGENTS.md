@@ -104,6 +104,43 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   makes the model a JSON:API resource; its type is `<app_label>.<class name in snake_case>`
   (`CarrierTask` in the app `crm` is `crm.carrier_task`).
 - A missing `Meta` is inherited from all parents (unlike plain Django).
+- Invariants: override `validate_item(self, changes)` and raise a Django
+  `ValidationError` (a dict by field) to refuse a write:
+
+  ```python
+  from django.core.exceptions import ValidationError
+  from django.utils.translation import gettext_lazy as _
+
+  class Booking(DtMixin, UuidMixin, JsonApiMixin):
+      def validate_item(self, changes):
+          if changes.is_new or changes.fields & {'room', 'dt_start', 'dt_end'}:
+              Room.objects.select_for_update().get(pk=self.room_id)  # serializes the rooms
+              if Booking.objects.filter(room=self.room_id, dt_start__lt=self.dt_end,
+                                        dt_end__gt=self.dt_start).exclude(pk=self.pk).exists():
+                  raise ValidationError({'room': _('The room is booked at this time')})
+  ```
+
+  The core calls it once per write of the item, after the values (and the many-to-many
+  relations) are in the database and before the commit, in the same transaction: the
+  create, update and relationships endpoints (once at the end of the request, with the
+  included items), the transits of bazis-statusy, and any other `save()` or change of a
+  many-to-many relation through a manager (the admin, scripts, commands, background
+  tasks). `changes` (`bazis.core.item_validation.ItemChanges`): `fields` (the attributes
+  and foreign keys whose values changed, all of them for a new item, without the
+  `auto_now` timestamps), `relations` (the to-many and reverse relations set), `is_new`,
+  `source` (`create`, `update`, `relationships`, `transit`, `save`) and `user` (of the
+  route, the transit or the admin request; None in a script). A failure answers 422
+  `ERR_ITEM_INVALID` with the pointer `/data/attributes/<f>` or `/data/relationships/<f>`
+  (on the relationships endpoints the parameter `/related_field_name`) and rolls the write
+  back; outside the API the save raises `bazis.core.errors.JsonApiItemInvalidException`
+  (in a savepoint of its own: the transaction goes on). Several writes of a script are
+  validated once at the end in `with defer_validate_item(user=...):`
+  (`bazis.core.item_validation`); `ValidateItemAdminMixin` (`bazis.core.admin_abstract`)
+  does it for the change form of the admin and shows the errors in the form.
+  Not validated: `QuerySet.update()`, `bulk_create()`, `bulk_update()`, a reverse
+  foreign key manager with `bulk=True` outside the routes, raw SQL and deletion. Do not
+  write the item in `validate_item` (its own writes are not validated again). A model that
+  does not override it pays nothing.
 - Calculated fields: `@calc_property([...])` from `bazis.core.utils.orm`, declared with the
   fields they need (`FieldRelated`, `FieldJson`, ...) so that the query fetches them in one
   pass; then add them to the route with `SchemaField(source=..., required=False)`.
@@ -163,7 +200,9 @@ class OrderRouteSet(JsonapiRouteBase):
   objects differently, declare it (`bazis_doctor` warns, `bazis.W003`).
 - Logic around writes: override `hook_before_create`, `hook_after_create`,
   `hook_before_update`, `hook_after_update` (and `hook_before/after_relationships_change`
-  for the relationships endpoints). They run inside the transaction.
+  for the relationships endpoints). They run inside the transaction. They are for the side
+  effects of the writes of the route; a rule about the item (an invariant) belongs in
+  `validate_item` of the model (see Models), which no way of writing bypasses.
 - Custom routes: `@http_get('/{item_id}/card/', kind=RouteKind.ITEM)` (decorators from
   `bazis.core.routes_abstract.initial`, `RouteKind` from `bazis.core.schemas.enums`). Every
   operation of a route class has the OpenAPI extension
@@ -221,6 +260,9 @@ class OrderRouteSet(JsonapiRouteBase):
   relations in custom endpoints without the route (use `relationships_change`, which
   applies the update schema, the visibility of the targets, the `filter:` restrictions
   and the hooks).
+- Keep an invariant of an item (no overlap, a limit, a consistency of fields) in
+  `validate_item` of the model, not in the hooks of a route: the hooks of create and
+  update do not run for the relationships endpoints, the transits, the admin or `save()`.
 - Restrict the objects of a model that a user must not see in `restrict_queryset` of its
   default route, not only in `get_queryset`: `get_queryset` restricts the route's own
   list and item, the relationships and `included` of the other routes use

@@ -12,25 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from django.apps import apps
+from bazis.core.routing import BazisRouter
 
-from bazis.core.utils.apps import BaseConfig
+from . import routes
 
 
-class BazisCoreConfig(BaseConfig):
-    """
-    Configuration class for the 'bazis.core' application, providing application-
-    specific settings and metadata.
+router = BazisRouter(tags=['Validation'])
 
-    Tags: RAG, EXPORT
-    """
-
-    name = 'bazis.core'
-    verbose_name = 'Bazis core'
-
-    def ready(self):
-        super().ready()
-        from bazis.core import checks  # noqa: F401  registers the system checks
-        from bazis.core.item_validation import connect_m2m_signals
-
-        connect_m2m_signals(apps.get_models())
+router.register(routes.RoomRouteSet.as_router())
+router.register(routes.PersonRouteSet.as_router())
+router.register(routes.BookingRouteSet.as_router())

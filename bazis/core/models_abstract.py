@@ -37,6 +37,7 @@ from pydantic import BaseModel, create_model
 import sequences
 from model_clone import CloneMixin
 
+from bazis.core.item_validation import ItemChanges, item_save, snapshot_take
 from bazis.core.triggers import TriggerSetDtCreate, TriggerSetDtUpdate
 from bazis.core.utils import triggers
 from bazis.core.utils.django_types import TYPES_DJANGO_TO_SCHEMA_LOOKUP
@@ -338,6 +339,66 @@ class JsonApiMixin(InitialBase):
         """
 
         abstract = True
+
+    def validate_item(self, changes: ItemChanges) -> None:
+        """
+        Checks the invariants of the item after a write; override it to keep a rule that
+        holds whichever way the item is changed. It is called once per write: after the
+        values are in the database and before the commit, inside the same transaction (a
+        query or `select_for_update` sees the write; a failure rolls it back), for the
+        create, the update and the relationships endpoints of the routes, the transits of
+        bazis-statusy and any other `save()` (the admin, scripts, commands, background
+        tasks) or change of a many-to-many relation through a manager. `changes`
+        (`bazis.core.item_validation.ItemChanges`) tells what the write changed, how and
+        by whom. Raise a Django `ValidationError` (with a dict for the fields) to refuse
+        the write: the API answers 422 `ERR_ITEM_INVALID` with the pointer of the field,
+        elsewhere the save raises `bazis.core.errors.JsonApiItemInvalidException`.
+
+        The hooks of the routes (`hook_before/after_*`) are for the side effects of the
+        writes of a route; the invariants belong here. `QuerySet.update()`, the bulk
+        operations and the deletion do not call it. Do not write the item here: its writes
+        are not validated again (the writes of other items are). The default does nothing,
+        and a model that does not override it pays nothing.
+        """
+
+    @classmethod
+    def has_validate_item(cls) -> bool:
+        """
+        Whether the model overrides `validate_item`.
+        """
+        return cls.validate_item is not JsonApiMixin.validate_item
+
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        """
+        Remembers the loaded values of an item that is validated, to tell the changed
+        fields of its next save.
+        """
+        instance = super().from_db(db, field_names, values)
+        if cls.has_validate_item():
+            snapshot_take(instance)
+        return instance
+
+    def refresh_from_db(self, using=None, fields=None, from_queryset=None):
+        """
+        Remembers the reloaded values of an item that is validated.
+        """
+        super().refresh_from_db(using=using, fields=fields, from_queryset=from_queryset)
+        if self.has_validate_item():
+            snapshot_take(self, fields)
+
+    def save(self, *args, **kwargs):
+        """
+        Saves the item and validates it (`validate_item`), if the model overrides it.
+        """
+        if not self.has_validate_item():
+            return super().save(*args, **kwargs)
+        item_save(
+            self,
+            lambda: super(JsonApiMixin, self).save(*args, **kwargs),
+            update_fields=kwargs.get('update_fields'),
+            using=kwargs.get('using'),
+        )
 
     @classmethod
     def get_resource_path(cls) -> str:

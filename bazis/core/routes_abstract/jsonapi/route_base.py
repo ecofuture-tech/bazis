@@ -39,9 +39,11 @@ from bazis.core.errors import (
     JsonApiBazisError,
     JsonApiBazisException,
     JsonApiHttpException,
+    JsonApiItemInvalidException,
     JsonApiRequestValidationError,
     SchemaErrors,
 )
+from bazis.core.item_validation import defer_validate_item
 from bazis.core.models_abstract import JsonApiMixin
 from bazis.core.routes_abstract.context import RouteContext
 from bazis.core.routes_abstract.initial import (
@@ -761,26 +763,39 @@ class JsonapiRouteBase(InitialRouteBase):
         relationship must be writable in the update schema of the route (for this user),
         the `filter:` restrictions of the field apply, and the hooks
         `hook_before_relationships_change` / `hook_after_relationships_change` run inside
-        the transaction.
+        the transaction. The item is validated (`validate_item`, source `relationships`)
+        at the end; the errors of the validation of the items the change writes point to
+        the path parameter `/related_field_name`.
         """
-        with transaction.atomic(savepoint=False):
-            self.set_api_action(CrudApiAction.UPDATE)
-            item = self.set_item(str(item_id).strip())
+        try:
+            with defer_validate_item(user=self._write_user(), savepoint=False) as scope:
+                self.set_api_action(CrudApiAction.UPDATE)
+                item = self.set_item(str(item_id).strip())
 
-            data = self.relationships_validate(item, related_field_name, relationships_data)
-            self.relations_access_check(data, item, action)
-            self.relationships_restricts_check(item, data, related_field_name, action)
+                data = self.relationships_validate(item, related_field_name, relationships_data)
+                self.relations_access_check(data, item, action)
+                self.relationships_restricts_check(item, data, related_field_name, action)
 
-            self.hook_before_relationships_change(item, data, related_field_name, action)
-            self.relationships_service.apply_relationship_action(
-                action=action,
-                model=self.model,
-                item_id=str(item.pk),
-                related_field_name=related_field_name,
-                relationships_data=relationships_data,
-            )
-            item.refresh_from_db()
-            self.hook_after_relationships_change(item, data, related_field_name, action)
+                self.hook_before_relationships_change(item, data, related_field_name, action)
+                self.relationships_service.apply_relationship_action(
+                    action=action,
+                    model=self.model,
+                    item_id=str(item.pk),
+                    related_field_name=related_field_name,
+                    relationships_data=relationships_data,
+                )
+                item.refresh_from_db()
+                info = item.get_fields_info().relations[related_field_name]
+                scope.mark(
+                    item,
+                    'relationships',
+                    relations=[related_field_name] if info.to_many or info.reverse else [],
+                    user=self._write_user(),
+                )
+                self.hook_after_relationships_change(item, data, related_field_name, action)
+        except JsonApiItemInvalidException as e:
+            # the request names only the relation of the path: the errors point to it
+            raise JsonApiItemInvalidException(e.error, item=e.item, source='relationships') from e
 
     def relationships_validate(
         self, item: JsonApiMixin, related_field_name: str, relationships_data: RelationshipData
@@ -982,20 +997,49 @@ class JsonapiRouteBase(InitialRouteBase):
         """
         pass
 
+    def _write_user(self):
+        """
+        The user the writes of the route are validated with (`ItemChanges.user`).
+        """
+        return getattr(self.inject, 'user', None)
+
+    @staticmethod
+    def _write_relations(model: type[JsonApiMixin], data: JsonApiDataSchema) -> list[str]:
+        """
+        The to-many and reverse relations the item data sets (`ItemChanges.relations`).
+        """
+        if not getattr(data, 'relationships', None):
+            return []
+        relations = model.get_fields_info().relations
+        return [
+            name
+            for name in data.relationships.model_dump(exclude_unset=True)
+            if (info := relations.get(name)) and (info.to_many or info.reverse)
+        ]
+
     def item_update(self, item: JsonApiMixin, data: JsonApiDataSchema):
         """
         Simple attributes are assigned immediately. updates the attributes and
-        relationships of an item.
+        relationships of an item. The item is validated (`validate_item`, source
+        `update`) at the end of the write.
         """
-        self.relations_access_check(data, item)
-        self.hook_before_update(item)
-        data.update_for(item)
-        self.hook_after_update(item)
+        with defer_validate_item(
+            item,
+            source='update',
+            user=self._write_user(),
+            relations=self._write_relations(type(item), data),
+            savepoint=False,
+        ):
+            self.relations_access_check(data, item)
+            self.hook_before_update(item)
+            data.update_for(item)
+            self.hook_after_update(item)
         return item
 
     def item_create(self, data: JsonApiDataSchema) -> JsonApiMixin:
         """
-        Get model by type. creates a new item based on the provided data.
+        Get model by type. creates a new item based on the provided data. The item is
+        validated (`validate_item`, source `create`) at the end of the write.
         """
         self.relations_access_check(data)
         try:
@@ -1003,14 +1047,19 @@ class JsonapiRouteBase(InitialRouteBase):
         except ValueError:
             raise HTTPException(status_code=400, detail='Data type is invalid') from None
 
-        self.hook_before_create(item)
-        try:
-            data.create_for(item)
-        except IntegrityError:
-            # import traceback
-            # traceback.print_exc()
-            raise HTTPException(status_code=409, detail='Data conflict') from None
-        self.hook_after_create(item)
+        with defer_validate_item(user=self._write_user(), savepoint=False) as scope:
+            self.hook_before_create(item)
+            try:
+                data.create_for(item)
+            except IntegrityError:
+                raise HTTPException(status_code=409, detail='Data conflict') from None
+            scope.mark(
+                item,
+                'create',
+                relations=self._write_relations(type(item), data),
+                user=self._write_user(),
+            )
+            self.hook_after_create(item)
         return item
 
     def list(self):
@@ -1047,9 +1096,10 @@ class JsonapiRouteBase(InitialRouteBase):
 
     def update(self, item_id: str, item_raw: dict, item_data: BaseModel) -> JsonApiMixin:
         """
-        Updates an existing item by its ID based on the provided data.
+        Updates an existing item by its ID based on the provided data. The item and the
+        included items are validated at the end, once each.
         """
-        with transaction.atomic(savepoint=False):
+        with defer_validate_item(user=self._write_user(), savepoint=False):
             self.set_api_action(CrudApiAction.UPDATE)
             self.set_item(item_id)
 
@@ -1093,9 +1143,10 @@ class JsonapiRouteBase(InitialRouteBase):
 
     def create(self, item_raw: dict, item_data: BaseModel) -> JsonApiMixin:
         """
-        Creates a new item based on the provided data.
+        Creates a new item based on the provided data. The item and the included items are
+        validated at the end, once each.
         """
-        with transaction.atomic(savepoint=False):
+        with defer_validate_item(user=self._write_user(), savepoint=False):
             if schema_data := self.schemas.get(CrudApiAction.CREATE):
                 try:
                     item_data = schema_data.model_validate(item_raw)

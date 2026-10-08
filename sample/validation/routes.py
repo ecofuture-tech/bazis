@@ -14,23 +14,25 @@
 
 from django.apps import apps
 
-from bazis.core.utils.apps import BaseConfig
+from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
+from bazis.core.schemas.fields import SchemaFields
 
 
-class BazisCoreConfig(BaseConfig):
-    """
-    Configuration class for the 'bazis.core' application, providing application-
-    specific settings and metadata.
+class RoomRouteSet(JsonapiRouteBase):
+    model = apps.get_model('validation.Room')
 
-    Tags: RAG, EXPORT
-    """
+    fields = {
+        None: SchemaFields(include={'bookings': None}),
+    }
 
-    name = 'bazis.core'
-    verbose_name = 'Bazis core'
 
-    def ready(self):
-        super().ready()
-        from bazis.core import checks  # noqa: F401  registers the system checks
-        from bazis.core.item_validation import connect_m2m_signals
+class PersonRouteSet(JsonapiRouteBase):
+    model = apps.get_model('validation.Person')
 
-        connect_m2m_signals(apps.get_models())
+    fields = {
+        None: SchemaFields(include={'bookings': None}),
+    }
+
+
+class BookingRouteSet(JsonapiRouteBase):
+    model = apps.get_model('validation.Booking')

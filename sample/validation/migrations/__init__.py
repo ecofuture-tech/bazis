@@ -11,26 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from django.apps import apps
-
-from bazis.core.utils.apps import BaseConfig
-
-
-class BazisCoreConfig(BaseConfig):
-    """
-    Configuration class for the 'bazis.core' application, providing application-
-    specific settings and metadata.
-
-    Tags: RAG, EXPORT
-    """
-
-    name = 'bazis.core'
-    verbose_name = 'Bazis core'
-
-    def ready(self):
-        super().ready()
-        from bazis.core import checks  # noqa: F401  registers the system checks
-        from bazis.core.item_validation import connect_m2m_signals
-
-        connect_m2m_signals(apps.get_models())

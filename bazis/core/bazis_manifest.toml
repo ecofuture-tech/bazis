@@ -19,6 +19,21 @@ import = "bazis.core.models_abstract.JsonApiMixin"
 use_when = "a model is a JSON:API resource (with DtMixin, UuidMixin)"
 
 [[extension_points]]
+name = "JsonApiMixin.validate_item"
+import = "bazis.core.models_abstract.JsonApiMixin"
+use_when = "an invariant of an item (no overlap, a limit, a consistency of fields) that every write must keep: override validate_item(self, changes) and raise a Django ValidationError; it runs once per write after the values are in the database and before the commit, for the routes (create, update, relationships), the transits of bazis-statusy and any save() or many-to-many manager change (admin, scripts, tasks); changes is bazis.core.item_validation.ItemChanges (fields, relations, is_new, source, user); the API answers 422 ERR_ITEM_INVALID"
+
+[[extension_points]]
+name = "defer_validate_item"
+import = "bazis.core.item_validation.defer_validate_item"
+use_when = "several writes of an item in a script, a command or a task validated once at the end, with the user who makes them"
+
+[[extension_points]]
+name = "ValidateItemAdminMixin"
+import = "bazis.core.admin_abstract.ValidateItemAdminMixin"
+use_when = "the admin change form validates the item once after the item, its many-to-many relations and the inlines are saved, and shows the errors of validate_item in the form"
+
+[[extension_points]]
 name = "JsonapiRouteBase"
 import = "bazis.core.routes_abstract.jsonapi.JsonapiRouteBase"
 use_when = "CRUD and relationships endpoints of a model"
@@ -94,6 +109,12 @@ text = "the language of a request is ?lang, then Accept-Language (by weight, bas
 
 [[pitfalls]]
 text = "a verbose_name of a model or field composed with an f-string at import is in the language active then and gets into the migrations: compose it with format_lazy"
+
+[[pitfalls]]
+text = "an invariant of an item kept only in the hooks of a route (hook_before_create, hook_after_update) is bypassed by the relationships endpoints, the transits, the admin and save(): put it in JsonApiMixin.validate_item"
+
+[[pitfalls]]
+text = "QuerySet.update(), bulk_create(), bulk_update(), a reverse foreign key manager with bulk=True outside the routes, raw SQL and deletion do not call validate_item"
 
 [[pitfalls]]
 text = "reverse relations are not in the schemas by default: add them to `fields` of the route"
