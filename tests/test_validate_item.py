@@ -464,6 +464,40 @@ def test_included_item_errors_point_to_it(sample_app, calls):
     assert not Room.objects.exists() and not Booking.objects.exists()
 
 
+@pytest.mark.django_db(transaction=True)
+def test_request_errors_point_as_the_item_errors(sample_app, calls):
+    """
+    The errors of the request schemas (ERR_VALIDATE) point to the fields as the errors of
+    validate_item do, `/data/...` and `/included/<index>/...`: they pointed to
+    `/attributes/<f>` for the item and for an included item alike.
+    """
+    client = get_api_client(sample_app)
+    response = client.post(URL, json_data=booking_data(start='soon'))
+    assert response.status_code == 422, response.text
+    error = response.json()['errors'][0]
+    assert error['code'] == 'ERR_VALIDATE'
+    assert error['source'] == {'pointer': '/data/attributes/start'}
+
+    response = client.post(
+        '/api/v1/validation/room/?include=bookings',
+        json_data={
+            'data': {'type': 'validation.room', 'attributes': {'name': 'Blue'}},
+            'included': [
+                {
+                    'type': 'validation.booking',
+                    'bs:action': 'add',
+                    'attributes': {'title': 'Standup', 'start': 'soon', 'end': 10},
+                }
+            ],
+        },
+    )
+    assert response.status_code == 422, response.text
+    error = response.json()['errors'][0]
+    assert error['code'] == 'ERR_VALIDATE'
+    assert error['source'] == {'pointer': '/included/0/attributes/start'}
+    assert not calls
+
+
 @pytest.mark.django_db
 def test_writes_after_a_validation_are_validated_again(calls):
     """The admin validates in the middle of its block (after save_related)."""

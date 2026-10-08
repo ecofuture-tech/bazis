@@ -347,14 +347,14 @@ def test_routes_add_error(sample_app):
                 'title': 'missing',
                 'code': 'ERR_VALIDATE',
                 'detail': 'Field required',
-                'source': {'pointer': '/attributes/name'},
+                'source': {'pointer': '/data/attributes/name'},
             },
             {
                 'status': 422,
                 'title': 'decimal_parsing',
                 'code': 'ERR_VALIDATE',
                 'detail': 'Input should be a valid decimal',
-                'source': {'pointer': '/attributes/price'},
+                'source': {'pointer': '/data/attributes/price'},
             },
         ]
     }
@@ -384,7 +384,7 @@ def test_routes_add_error(sample_app):
                 'title': 'missing',
                 'code': 'ERR_VALIDATE',
                 'detail': 'Field required',
-                'source': {'pointer': '/attributes/child_name'},
+                'source': {'pointer': '/data/attributes/child_name'},
             },
         ]
     }
@@ -417,14 +417,14 @@ def test_routes_add_error(sample_app):
                 'title': 'missing',
                 'code': 'ERR_VALIDATE',
                 'detail': 'Field required',
-                'source': {'pointer': '/attributes/dependent_name'},
+                'source': {'pointer': '/data/attributes/dependent_name'},
             },
             {
                 'status': 422,
                 'title': 'missing',
                 'code': 'ERR_VALIDATE',
                 'detail': 'Field required',
-                'source': {'pointer': '/relationships/parent_entity'},
+                'source': {'pointer': '/data/relationships/parent_entity'},
             },
         ]
     }
@@ -451,14 +451,14 @@ def test_routes_add_error(sample_app):
                 'title': 'missing',
                 'code': 'ERR_VALIDATE',
                 'detail': 'Field required',
-                'source': {'pointer': '/attributes/extended_name'},
+                'source': {'pointer': '/data/attributes/extended_name'},
             },
             {
                 'status': 422,
                 'title': 'missing',
                 'code': 'ERR_VALIDATE',
                 'detail': 'Field required',
-                'source': {'pointer': '/relationships/parent_entity'},
+                'source': {'pointer': '/data/relationships/parent_entity'},
             },
         ]
     }
