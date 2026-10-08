@@ -146,7 +146,7 @@ default since 2.9). A key starts with a field of the LIST schema of the route (`
 ``id``. A relation of the schema leads into the related objects the default route of the related model shows (its
 ``restrict_queryset`` for ``view``), and the key goes on with the fields of the LIST schema of that route; a model
 without a route gives only ``id`` (``pk``), ``__exists`` and ``__isnull``. ``sort`` follows to-one relations only, an object
-the user cannot see sorts as null. Any other key is 400 ``ERR_FILTER`` with the pointer ``/query/filter``,
+the user cannot see sorts as null, and a relation itself sorts by the key of the related object. Any other key is 400 ``ERR_FILTER`` with the pointer ``/query/filter``,
 ``/query/sort`` or ``/query/search``, the same answer as for a field that does not exist.
 
 Working with Related Entities

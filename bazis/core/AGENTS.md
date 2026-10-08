@@ -203,7 +203,7 @@ class OrderRouteSet(JsonapiRouteBase):
   `restrict_queryset` for `view` with the user of the route), where the key goes on with
   the fields of the LIST schema of that route (a model without a route: only `id`/`pk`,
   `exists`, `isnull`). `sort` goes through to-one relations only (an invisible object sorts
-  as null); the search uses only the `search_fields` of the route that are fields of its
+  as null; a relation itself sorts by the key of the related object); the search uses only the `search_fields` of the route that are fields of its
   LIST schema (`bazis.W007` warns), a route without them has no search. Anything else is
   400 `ERR_FILTER` (pointer `/query/filter`, `/query/sort` or `/query/search`), the same
   answer as for a field that does not exist: to filter, sort or search by a field, show it

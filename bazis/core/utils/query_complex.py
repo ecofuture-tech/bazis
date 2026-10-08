@@ -175,15 +175,21 @@ class QueryScope:
             name in ('pk', model._meta.pk.name)
         )
 
+    @staticmethod
+    def _route_restrict(model: type[models.Model]):
+        """The `restrict_queryset` of the default route of the model, or None."""
+        # the route modules import this one
+        from bazis.core.routes_abstract.jsonapi.mixins import route_restrict_queryset
+
+        return route_restrict_queryset(model)
+
     def restrict(self, qs: QuerySet) -> QuerySet:
         """
         The objects of the queryset the default route of its model shows to the user.
         """
-        # the route modules import this one
-        from bazis.core.routes_abstract.jsonapi.mixins import route_restrict_queryset
         from bazis.core.schemas.enums import CrudAccessAction
 
-        if restrict := route_restrict_queryset(qs.model):
+        if restrict := self._route_restrict(qs.model):
             return restrict(qs, CrudAccessAction.VIEW, user=self.user)
         return qs
 
@@ -197,11 +203,27 @@ class QueryScope:
             QueryScope.for_model(relation.related_model, self.user),
         )
 
+    def reaches(self, model: type[models.Model], lookup: str) -> bool:
+        """
+        Whether the scope reaches a lookup of the model (a search field): every name of it
+        up to a field that is not a relation, through the related scopes. It does not query.
+        """
+        name, _, rest = lookup.partition(LOOKUP_SEP)
+        if not self.allows(name, model):
+            return False
+        relation = FieldsInfo.get_fields_info(model).relations.get(name)
+        if relation is None or not rest:
+            return True
+        scope = QueryScope.for_model(relation.related_model, self.user)
+        return scope.reaches(relation.related_model, rest)
+
     def order_expression(self, model: type[models.Model], path: str):
         """
-        The expression to sort the objects of the model by a key of the scope: a field, or
-        a field of an object a to-one relation leads to (null if the user cannot see it).
-        Raises ValueError for any other key (a to-many relation does not order).
+        The expression to sort the objects of the model by a key of the scope: a field, a
+        to-one relation (by the key of the related object, never by the ordering of its
+        model), or a field of an object a to-one relation leads to: a join if the related
+        model is not restricted, else a subquery of the objects the user can see (null for
+        the others). Raises ValueError for any other key (a to-many relation does not order).
         """
         name, _, rest = path.partition(LOOKUP_SEP)
         relation = FieldsInfo.get_fields_info(model).relations.get(name)
@@ -211,10 +233,19 @@ class QueryScope:
             or (rest and relation is None)
         ):
             raise ValueError(f"Unknown sort field '{path}' of {model._meta.label}")
-        if not rest:
+        if relation is None:
             return F(name)
-        qs, scope = self.related(relation)
+        if not rest:
+            # the key, not the relation: Django would sort by the Meta.ordering of the
+            # related model through a join that no restriction applies to
+            if relation.reverse:
+                return F(f'{name}{LOOKUP_SEP}pk')
+            return F(relation.model_field.attname)
+        scope = QueryScope.for_model(relation.related_model, self.user)
         inner = scope.order_expression(relation.related_model, rest)
+        if isinstance(inner, F) and self._route_restrict(relation.related_model) is None:
+            return F(f'{name}{LOOKUP_SEP}{inner.name}')
+        qs = self.restrict(relation.get_subqueryset())
         return Subquery(qs.annotate(_order=inner).values('_order')[:1])
 
 

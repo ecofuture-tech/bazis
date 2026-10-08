@@ -178,12 +178,12 @@ def check_search_fields(app_configs, **kwargs):
         )
         for field in route_cls.search_fields:
             name = str(field)
-            name = (name[1:] if name[:1] in LOOKUP_PREFIXES else name).split('__')[0]
-            if not scope.allows(name, route_cls.model):
+            if not scope.reaches(route_cls.model, name[1:] if name[:1] in LOOKUP_PREFIXES else name):
                 messages.append(
                     Warning(
                         f'The search field {field!r} of the route set is not a field of its '
-                        'LIST schema: the search leaves it out.',
+                        'LIST schema (or, through a relation, of the LIST schema of the '
+                        'default route of the related model): the search leaves it out.',
                         hint='Add the field to `fields` of the route or remove it from '
                         '`search_fields`.',
                         obj=_qualname(route_cls),

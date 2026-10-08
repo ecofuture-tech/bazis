@@ -21,15 +21,18 @@ the objects the default route of the related model shows, with the fields of its
 """
 
 from django.conf import settings
+from django.db.models import F, Subquery
 
 import pytest
 from bazis_test_utils.utils import get_api_client
-from entity.models import ParentEntity
+from entity.models import ExtendedEntity, ParentEntity
 from visibility.models import Folder, Label, Note, Tag
 from visibility.routes import NoteBriefRouteSet, NoteRouteSet
 
 from bazis.core.checks import check_filters_strict, check_search_fields
 from bazis.core.utils.query_complex import QueryScope, QueryToOrm
+
+from tests import factories
 
 
 NOTES = '/api/v1/visibility/note/'
@@ -192,6 +195,49 @@ def test_sort_through_a_relation_hides_invisible_objects(sample_app, data):
     assert order[:2] == [str(visible.pk), str(data['plain'].pk)]
 
 
+def ordered_ids(qs, key: str, descending: bool) -> list[str]:
+    order = F(key).desc(nulls_last=True) if descending else F(key).asc(nulls_last=True)
+    return [str(pk) for pk in qs.order_by(order, 'pk').values_list('pk', flat=True)]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('sort', ['tag', '-tag'])
+def test_sort_by_a_relation_uses_its_key(sample_app, data, monkeypatch, sort):
+    """
+    Not by the Meta.ordering of the related model, through a join no restriction applies
+    to: it would sort by the names of the hidden tags.
+    """
+    monkeypatch.setattr(Tag._meta, 'ordering', ['name'])
+    Note.objects.create(name='fourth', tag=data['tags']['other'])
+    # the names in the reverse order of the keys
+    for tag, name in zip(Tag.objects.order_by('pk'), ['c', 'b', 'a'], strict=True):
+        Tag.objects.filter(pk=tag.pk).update(name=name)
+    expected = ordered_ids(Note.objects.all(), 'tag_id', sort.startswith('-'))
+    assert ids(sample_app, NOTES, sort=sort) == expected
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('sort', ['extended_entity', '-extended_entity'])
+def test_sort_by_a_reverse_one_to_one_uses_its_key(sample_app, monkeypatch, sort):
+    monkeypatch.setattr(ExtendedEntity._meta, 'ordering', ['extended_name'])
+    factories.ParentEntityFactory.create_batch(3, child_entities=False)
+    for ext, name in zip(ExtendedEntity.objects.order_by('pk'), 'cba', strict=True):
+        ExtendedEntity.objects.filter(pk=ext.pk).update(extended_name=name)
+    expected = ordered_ids(ParentEntity.objects.all(), 'extended_entity__pk', sort.startswith('-'))
+    assert ids(sample_app, '/api/v1/entity/parent_entity/', sort=sort) == expected
+
+
+@pytest.mark.django_db(transaction=True)
+def test_sort_through_an_unrestricted_relation_is_a_join(sample_app, data):
+    """A subquery per row only when the related model is restricted."""
+    scope = QueryScope.for_route(NoteRouteSet)
+    assert scope.order_expression(Note, 'folder__name') == F('folder__name')
+    assert isinstance(scope.order_expression(Note, 'tag__name'), Subquery)
+    assert ids(sample_app, NOTES, sort='folder__name')[0] == str(data['secret'].pk)
+    # the notes without a folder are last in both orders
+    assert ids(sample_app, NOTES, sort='-folder__name')[0] == str(data['secret'].pk)
+
+
 @pytest.mark.django_db(transaction=True)
 def test_reverse_relation_out_of_the_schema(sample_app, data):
     """A reverse relation is not in the schema by default: no way to the notes of a folder."""
@@ -205,6 +251,15 @@ def test_search_field_out_of_the_schema_is_left_out(sample_app, data, monkeypatc
     assert_bad_request(get(sample_app, BRIEF, search='Secret'), 'search')
     warnings = [it for it in check_search_fields(None) if it.id == 'bazis.W007']
     assert [it.obj for it in warnings] == ['visibility.routes.NoteBriefRouteSet']
+
+
+@pytest.mark.django_db(transaction=True)
+def test_search_field_through_a_relation_is_checked_to_the_end(sample_app, monkeypatch):
+    assert [it for it in check_search_fields(None) if it.id == 'bazis.W007'] == []
+    monkeypatch.setattr(NoteRouteSet, 'search_fields', ['name', 'tag__nonexistent'])
+    warnings = [it for it in check_search_fields(None) if it.id == 'bazis.W007']
+    assert [it.obj for it in warnings] == ['visibility.routes.NoteRouteSet']
+    assert "'tag__nonexistent'" in warnings[0].msg
 
 
 @pytest.mark.django_db(transaction=True)
