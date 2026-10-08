@@ -24,9 +24,9 @@ Access to the related objects
 
 The default route of a model (``Model.get_default_route()``) defines which of its objects
 the other routes can link and include: the classmethod ``restrict_queryset`` of
-``RestrictedQsRouteMixin``. The core calls it with ``user`` (the user of the request,
-``None`` without bazis-users) and ``route`` (the route of the request); an override accepts
-``**kwargs``.
+``RestrictedQsRouteMixin``. The core calls it on the class with ``user`` (the user of the
+request, ``None`` without bazis-users); the route of the request is
+``JsonApiMixin.CTX_ROUTE.get()``. An override should accept ``**kwargs``.
 
 .. code-block:: python
 
@@ -55,11 +55,11 @@ the other routes can link and include: the classmethod ``restrict_queryset`` of
   relationship keeps the identifiers of all linked objects.
 * The objects of a model whose default route does not override ``restrict_queryset``, or
   that has no route, are not checked (no extra query).
-* ``relations_view_check = False`` on a route turns the check of its relationships off.
+* ``relation_targets_check = False`` on a route turns the check of its relationships off.
 * The default route of a model is the last defined route class of the model (abstract ones
   never), unless a route class declares ``default_route = True`` in its body (the flag is
   not inherited). ``bazis_doctor`` warns (``bazis.W003``) about a model with several route
-  sets and not one explicit default route.
+  sets that restrict its objects differently and not one explicit default route.
 
 M2M (Many-to-Many)
 ------------------

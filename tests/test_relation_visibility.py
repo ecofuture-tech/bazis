@@ -225,6 +225,12 @@ def test_reverse_relation_requires_change(sample_app, tags):
     tags['locked'].refresh_from_db()
     assert tags['locked'].note == note
 
+    # replacing the linked tags unlinks the locked one
+    for payload in (rels('tag', tags['visible2']), {'data': []}):
+        response = relationships_request(client, 'PATCH', note, 'attached_tags', payload)
+        assert_relation_denied(response, 'attached_tags')
+    assert set(note.attached_tags.all()) == {tags['visible'], tags['locked']}
+
     # linking a changeable tag
     response = relationships_request(
         client, 'POST', note, 'attached_tags', rels('tag', tags['visible2'])
@@ -265,8 +271,21 @@ def test_unrestricted_targets_are_not_queried(sample_app, tags):
 
 
 @pytest.mark.django_db(transaction=True)
+def test_check_ignores_permit_flag(sample_app, tags, monkeypatch):
+    """
+    bazis-permit (2.4.1) declares `relations_view_check = None` on its route base: it does
+    not turn off the check of the core.
+    """
+    monkeypatch.setattr(NoteRouteSet, 'relations_view_check', None, raising=False)
+    response = get_api_client(sample_app).post(
+        NOTES, json_data=note_payload(tag=rel('tag', tags['hidden']))
+    )
+    assert_relation_denied(response, 'tag')
+
+
+@pytest.mark.django_db(transaction=True)
 def test_check_can_be_turned_off_per_route(sample_app, tags, monkeypatch):
-    monkeypatch.setattr(NoteRouteSet, 'relations_view_check', False)
+    monkeypatch.setattr(NoteRouteSet, 'relation_targets_check', False)
     response = get_api_client(sample_app).post(
         NOTES, json_data=note_payload(tag=rel('tag', tags['hidden']))
     )
@@ -307,3 +326,19 @@ def test_included_of_unrestricted_models(sample_app):
         ('visibility.folder', str(folder.id)),
         ('visibility.label', str(label.id)),
     }
+
+
+@pytest.mark.django_db(transaction=True)
+def test_included_of_update_response_omits_invisible_objects(sample_app, tags):
+    """The responses of create and update include the same way (a list has no `included`)."""
+    note = Note.objects.create(name='note')
+    note.tags.add(tags['hidden'])
+
+    response = get_api_client(sample_app).patch(
+        f'{NOTES}{note.id}/?include=tags',
+        json_data=note_payload(note, tags=rels('tag', tags['hidden'], tags['visible'])),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert len(data['data']['relationships']['tags']['data']) == 2
+    assert [it['id'] for it in data['included']] == [str(tags['visible'].id)]

@@ -118,21 +118,21 @@ class OrderRouteSet(JsonapiRouteBase):
 - Visibility of the objects of a model for the other routes: override the classmethod
   `restrict_queryset(qs, access_action, user=None, **kwargs)` of `RestrictedQsRouteMixin`
   (`bazis.core.routes_abstract.jsonapi`) in the default route of the model (the core
-  calls it with `user`, None without bazis-users, and `route`, the route of the request;
-  accept `**kwargs`). A relationship of a created or changed item (create, update, the
+  calls it on the class with `user`, None without bazis-users; the route of the request
+  is `JsonApiMixin.CTX_ROUTE.get()`; accept `**kwargs`). A relationship of a created or changed item (create, update, the
   relationships endpoints) links only the objects it returns for `view`, a reverse
   relationship only the objects it returns for `change` (their foreign key changes), both
   for the objects whose link changes; otherwise 403 `ERR_RELATION_ACCESS` with the pointer
   `/data/relationships/<field>`. `included` shows only the visible objects (the
   relationship keeps the identifiers). The objects of a model whose default route does not
   override `restrict_queryset` (or that has no route) are not checked and not queried.
-  `relations_view_check = False` turns the check off for the relationships of a route.
+  `relation_targets_check = False` turns the check off for the relationships of a route.
   The route's own list and item do not use `restrict_queryset` by themselves: apply it in
   `get_queryset` too.
 - The default route of a model (`Model.get_default_route()`) is the last defined route
   class of the model (abstract ones never), unless one declares `default_route = True` in
-  its class body (not inherited). With several route sets of a model, declare it
-  (`bazis_doctor` warns, `bazis.W003`).
+  its class body (not inherited). With several route sets of a model that restrict its
+  objects differently, declare it (`bazis_doctor` warns, `bazis.W003`).
 - Logic around writes: override `hook_before_create`, `hook_after_create`,
   `hook_before_update`, `hook_after_update` (and `hook_before/after_relationships_change`
   for the relationships endpoints). They run inside the transaction.

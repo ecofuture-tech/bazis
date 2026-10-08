@@ -101,10 +101,27 @@ class RestrictedQsRouteMixin(JsonapiRouteBase):
         """
         Restricts the provided queryset based on the specified access action and user.
         This method can be overridden to apply custom restrictions. The core calls it on
-        the class with `user` (the user of the request, None without bazis-users) and
-        `route` (the route of the request); an override accepts `**kwargs`.
+        the class with `user` (the user of the request, None without bazis-users); the
+        route of the request is `JsonApiMixin.CTX_ROUTE.get()`. An override should accept
+        `**kwargs`.
         """
         return qs
+
+
+def restrict_queryset_override(route_cls: type | None):
+    """
+    The `restrict_queryset` the route class overrides (the attribute of the class of its
+    MRO that defines it), or None if it does not override the identity of
+    `RestrictedQsRouteMixin` (or has none).
+
+    Tags: RAG, INTERNAL
+    """
+    for klass in getattr(route_cls, '__mro__', ()):
+        if 'restrict_queryset' in vars(klass):
+            if klass is RestrictedQsRouteMixin:
+                return None
+            return vars(klass)['restrict_queryset']
+    return None
 
 
 def route_restrict_queryset(model: type[Model]) -> Callable[..., QuerySet] | None:
@@ -117,9 +134,6 @@ def route_restrict_queryset(model: type[Model]) -> Callable[..., QuerySet] | Non
     """
     get_default_route = getattr(model, 'get_default_route', None)
     route_cls = get_default_route() if get_default_route else None
-    restrict = getattr(route_cls, 'restrict_queryset', None)
-    if restrict is None or (
-        getattr(restrict, '__func__', None) is RestrictedQsRouteMixin.restrict_queryset.__func__
-    ):
+    if restrict_queryset_override(route_cls) is None:
         return None
-    return restrict
+    return route_cls.restrict_queryset

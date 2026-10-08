@@ -26,7 +26,7 @@ use_when = "CRUD and relationships endpoints of a model"
 [[extension_points]]
 name = "RestrictedQsRouteMixin.restrict_queryset"
 import = "bazis.core.routes_abstract.jsonapi.RestrictedQsRouteMixin"
-use_when = "the objects of a model a user can see (view) and change: the relationships and `included` of the other routes respect it; override the classmethod in the default route of the model, accept **kwargs"
+use_when = "the objects of a model a user can see (view) and change: the relationships and `included` of the other routes respect it; override the classmethod in the default route of the model; the core calls it on the class with `user`, the route of the request is JsonApiMixin.CTX_ROUTE; accept **kwargs"
 
 [[extension_points]]
 name = "SchemaFields"
@@ -97,5 +97,5 @@ text = "an unknown `filter` field (also after a relation, such as `author__in`) 
 text = "restricting the objects of a model only in get_queryset of its route: the relationships and `included` of the other routes see them; restrict them in restrict_queryset of the default route of the model"
 
 [[pitfalls]]
-text = "several route sets of a model without `default_route = True` in one of them: the last defined one (the import order) is the default route, whose restrict_queryset restricts the objects in the other routes"
+text = "several route sets of a model that restrict its objects differently, without `default_route = True` in one of them: the last defined one (the import order) is the default route, whose restrict_queryset restricts the objects in the other routes"
 check = "bazis.W003"

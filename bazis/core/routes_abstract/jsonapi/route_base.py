@@ -117,8 +117,8 @@ class JsonapiRouteBase(InitialRouteBase):
     default_route: bool = False
 
     #: the relationships of a created or changed item link only the objects the default
-    #: route of the related model shows (`relations_access_check`)
-    relations_view_check: bool = True
+    #: route of the related model shows (`relations_access_check`); False turns it off
+    relation_targets_check: bool = True
 
     @inject_make()
     class InjectJsonApi:
@@ -833,9 +833,9 @@ class JsonapiRouteBase(InitialRouteBase):
         For a changed item only the objects whose link changes are checked; `action` is the
         action of the relationships endpoints (`add`, `remove`, `set`; an update sets the
         value). The models whose route does not restrict them are not queried. Fails with
-        403 `ERR_RELATION_ACCESS`; `relations_view_check = False` turns the check off.
+        403 `ERR_RELATION_ACCESS`; `relation_targets_check = False` turns the check off.
         """
-        if not self.relations_view_check or not getattr(data, 'relationships', None):
+        if self.relation_targets_check is False or not getattr(data, 'relationships', None):
             return
 
         # the mixin module imports this one
@@ -888,9 +888,7 @@ class JsonapiRouteBase(InitialRouteBase):
             if not ids:
                 continue
 
-            allowed = restrict(
-                rel_model.objects.filter(pk__in=ids), access_action, user=user, route=self
-            )
+            allowed = restrict(rel_model.objects.filter(pk__in=ids), access_action, user=user)
             if ids - {str(pk) for pk in allowed.values_list('pk', flat=True)}:
                 raise JsonApiBazisException(
                     JsonApiBazisError(

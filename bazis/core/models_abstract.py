@@ -415,7 +415,6 @@ class JsonApiMixin(InitialBase):
                                 queryset,
                                 CrudAccessAction.VIEW,
                                 user=getattr(route.inject, 'user', None),
-                                route=route,
                             )
                         k = f'fields_{relation.related_model.get_resource_label().replace(".", "_")}'
                         v = getattr(route.inject, k, None)

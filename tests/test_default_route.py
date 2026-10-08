@@ -76,27 +76,38 @@ def test_explicit_default_route(keep_default_routes):
 def test_check_default_routes_of_the_sample():
     from bazis.core.app import app  # noqa: F401
 
-    warned = {it.obj for it in check_default_routes(None)}
-    # the sample serves entity.Driver with several route sets for the tests of the features
-    assert 'entity.Driver' in warned
-    assert 'visibility.Tag' not in warned
+    # several route sets of a model that do not restrict its objects (entity.Driver) are
+    # not reported
+    assert check_default_routes(None) == []
 
 
 def test_check_several_route_sets_without_default(keep_default_routes, monkeypatch):
     class FolderOtherRouteSet(JsonapiRouteBase):
         model = Folder
 
+    served = {FolderRouteSet: [], FolderOtherRouteSet: []}
+    monkeypatch.setattr(introspect, 'loaded_app', lambda: object())
+    monkeypatch.setattr(introspect, 'route_sets', lambda app: served)
+
+    # neither restricts the folders
+    assert check_default_routes(None) == []
+
+    class FolderRestrictedRouteSet(RestrictedQsRouteMixin):
+        model = Folder
+
+        @classmethod
+        def restrict_queryset(cls, qs, access_action, user=None, **kwargs):
+            return qs.none()
+
     class TagOtherRouteSet(JsonapiRouteBase):
         model = Tag
 
-    served = {FolderRouteSet: [], FolderOtherRouteSet: [], TagRouteSet: [], TagOtherRouteSet: []}
-    monkeypatch.setattr(introspect, 'loaded_app', lambda: object())
-    monkeypatch.setattr(introspect, 'route_sets', lambda app: served)
+    served.update({FolderRestrictedRouteSet: [], TagRouteSet: [], TagOtherRouteSet: []})
 
     # Tag has an explicit default route
     messages = check_default_routes(None)
     assert [(it.id, it.obj) for it in messages] == [('bazis.W003', 'visibility.Folder')]
-    assert 'FolderOtherRouteSet' in messages[0].msg
+    assert 'FolderRestrictedRouteSet' in messages[0].msg
     assert 'default_route = True' in messages[0].hint
 
 
