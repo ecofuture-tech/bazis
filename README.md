@@ -161,6 +161,8 @@ Required environment variables:
 - `BS_ADMIN_PORT` - admin service port
 - `BS_MEDIA_URL` - absolute URL for media files folder
 - `BS_STATIC_URL` - absolute URL for static files folder
+- `BS_MEDIA_HOST_URL` - the host that serves `MEDIA_URL` in production (the application
+  redirects to it; without it the application serves `MEDIA_ROOT` itself only in DEBUG)
 - `BS_ADMIN_NAME` - admin username for admin service
 - `BS_ADMIN_PASSWORD` - admin password for admin service
 

@@ -97,7 +97,9 @@ def _create_app_base():
 def _initialize_app(app): # noqa: C901
     # ruff: noqa: E402
     import os
+    import re
     import traceback
+    from urllib.parse import unquote, urlsplit
 
     from django.conf import settings
     from django.utils.translation import get_language, to_locale
@@ -112,6 +114,7 @@ def _initialize_app(app): # noqa: C901
     from starlette.exceptions import HTTPException
     from starlette.middleware.sessions import SessionMiddleware
     from starlette.responses import JSONResponse
+    from starlette.staticfiles import StaticFiles
     from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
 
     from bazis.core.i18n import LanguageMiddleware, expand_lang
@@ -120,15 +123,80 @@ def _initialize_app(app): # noqa: C901
 
     from .errors import JsonApiBazisException, SchemaError, SchemaErrors, SchemaErrorSource
 
+    #: the media files shown inline when the application serves them (DEBUG)
+    MEDIA_INLINE = re.compile(r'\.(png|jpe?g|gif|webp|avif|bmp)$', re.IGNORECASE)  # noqa: N806
+
+    async def files_response(
+        request: Request, path: str, url: str, root: str, hosts: tuple[str, ...], setting: str
+    ) -> Response:
+        """
+        The files under `url` (MEDIA_URL, STATIC_URL): a redirect to the first configured
+        host that is not the application itself (a redirect to itself would loop); without
+        one, in DEBUG, the file from `root`; otherwise 404 that names the missing setting.
+        A redirect loops only to the URL of the request itself: the target is compared
+        with it by host, port (80 and 443 are the defaults) and path, whatever the scheme
+        (behind a proxy that terminates TLS the request is http while the host is https).
+        """
+
+        def place(parts) -> tuple | None:
+            try:
+                port = parts.port
+            except ValueError:
+                # a malformed port (`Host: example.com:abc`): matches nothing
+                return None
+            return (parts.hostname or '').lower(), None if port in (80, 443) else port, unquote(
+                parts.path
+            )
+
+        own_place = place(request.url)
+        for host in hosts:
+            if not host:
+                continue
+            target = f'{host.rstrip("/")}{url}{path}'
+            if own_place is None or place(urlsplit(target)) != own_place:
+                return RedirectResponse(url=target)
+        if not settings.DEBUG:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f'{url} is not served by the application without DEBUG: set {setting} '
+                    f'or serve {url} by the web server'
+                ),
+            )
+        # development only: StaticFiles keeps the path inside `root` and answers 404 for a
+        # missing file
+        return await StaticFiles(directory=root, check_dir=False).get_response(path, request.scope)
+
     @app.get(f'{settings.MEDIA_URL}{{path:path}}')
-    async def redirect_media(path: str):
-        if settings.MEDIA_HOST_URL:
-            return RedirectResponse(url=f'{settings.MEDIA_HOST_URL}{settings.MEDIA_URL}{path}')
-        return RedirectResponse(url=f'{settings.ADMIN_HOST_URL}{settings.MEDIA_URL}{path}')
+    async def redirect_media(request: Request, path: str):
+        response = await files_response(
+            request,
+            path,
+            settings.MEDIA_URL,
+            settings.MEDIA_ROOT,
+            (settings.MEDIA_HOST_URL, settings.ADMIN_HOST_URL),
+            'BS_MEDIA_HOST_URL',
+        )
+        if not isinstance(response, RedirectResponse):
+            # the media are the files the clients upload: an HTML page or an SVG image would
+            # run its scripts on the origin of the application, so only raster images are
+            # shown inline (the headers bazis-uploadable asks the media host for)
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            response.headers['Content-Security-Policy'] = 'sandbox'
+            if not MEDIA_INLINE.search(path):
+                response.headers['Content-Disposition'] = 'attachment'
+        return response
 
     @app.get(f'{settings.STATIC_URL}{{path:path}}')
-    async def redirect_static(path: str):
-        return RedirectResponse(url=f'{settings.ADMIN_HOST_URL}{settings.STATIC_URL}{path}')
+    async def redirect_static(request: Request, path: str):
+        return await files_response(
+            request,
+            path,
+            settings.STATIC_URL,
+            settings.STATIC_ROOT,
+            (settings.ADMIN_HOST_URL,),
+            'BS_ADMIN_HOST_URL',
+        )
 
     class CloseOldConnectionsMiddleware:
         """
@@ -295,6 +363,13 @@ def _initialize_app(app): # noqa: C901
         :param exc: The exception object.
         :return: JSONResponse.
         """
+        if any(tuple(err.get('loc') or ()) == ('path', 'item_id') for err in exc.errors()):
+            # an id in the path that cannot be a primary key (the routes of an item type it
+            # with the primary key) is an item that does not exist, as on the routes that
+            # do not type it (`get_queryset_for_item`)
+            return await json_api_http_exception_handler(
+                request, HTTPException(status_code=404, detail='Item not found')
+            )
         return exc_encoder(
             [
                 SchemaError(

@@ -70,6 +70,9 @@ text = "ALLOWED_HOSTS is ['*'] by default: set BS_ALLOWED_HOSTS in production"
 check = "bazis.W001"
 
 [[pitfalls]]
+text = "MEDIA_URL is redirected to MEDIA_HOST_URL (else ADMIN_HOST_URL); without a host the application serves MEDIA_ROOT only in DEBUG (raster images inline, other files as attachments) and answers 404 otherwise: in production set BS_MEDIA_HOST_URL or serve MEDIA_URL by the web server, do not mount MEDIA_ROOT in the project"
+
+[[pitfalls]]
 text = "the default cache must be Redis (django-redis): other backends do not support delete_pattern"
 check = "bazis.E001"
 
