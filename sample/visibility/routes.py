@@ -15,8 +15,8 @@
 from django.apps import apps
 
 from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase, RestrictedQsRouteMixin
-from bazis.core.schemas.enums import CrudAccessAction
-from bazis.core.schemas.fields import SchemaFields
+from bazis.core.schemas.enums import CrudAccessAction, CrudApiAction
+from bazis.core.schemas.fields import SchemaField, SchemaFields
 
 
 class FolderRouteSet(JsonapiRouteBase):
@@ -54,6 +54,28 @@ class NoteRouteSet(JsonapiRouteBase):
     fields = {
         None: SchemaFields(include={'attached_tags': None}),
     }
+
+
+class NoteFrozenRouteSet(JsonapiRouteBase):
+    """
+    Another route of notes on which the folder and the tags are read-only in the update
+    schema, as the field permissions of bazis-permit (`readonly`) make them.
+    """
+
+    model = apps.get_model('visibility.Note')
+
+    fields = {
+        CrudApiAction.UPDATE: SchemaFields(
+            include={
+                'folder': SchemaField(source='folder', read_only=True),
+                'tags': SchemaField(source='tags', read_only=True),
+            },
+        ),
+    }
+
+    @classmethod
+    def get_url_prefix(cls) -> str:
+        return '/visibility/note_frozen'
 
 
 class NoteBriefRouteSet(JsonapiRouteBase):

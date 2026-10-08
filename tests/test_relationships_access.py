@@ -70,3 +70,67 @@ def test_relationship_of_invalid_type_is_rejected(sample_app):
         data=json.dumps({'data': {'type': 'entity.parent_entity', 'id': 'not-a-list'}}),
     )
     assert response.status_code == 422
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('to_many', [False, True], ids=['to-one', 'to-many'])
+def test_read_only_relationship_is_rejected(sample_app, to_many):
+    """
+    A relationship the route marks read-only (as the field permissions of bazis-permit do)
+    stays in the update schema with `readOnly`, and its value is dropped when the data is
+    validated: the relationships endpoints failed with 500 (KeyError) instead of 403.
+    """
+    from visibility.models import Folder, Note, Tag
+
+    folder, other_folder = Folder.objects.create(name='a'), Folder.objects.create(name='b')
+    tag, other_tag = Tag.objects.create(name='a'), Tag.objects.create(name='b')
+    note = Note.objects.create(name='note', folder=folder)
+    note.tags.add(tag)
+    if to_many:
+        field, payload = 'tags', {'data': [{'type': 'visibility.tag', 'id': str(other_tag.id)}]}
+    else:
+        field, payload = (
+            'folder',
+            {'data': {'type': 'visibility.folder', 'id': str(other_folder.id)}},
+        )
+
+    client = get_api_client(sample_app)
+    url = f'/api/v1/visibility/note_frozen/{note.id}/relationships/{field}'
+    methods = ('POST', 'PATCH', 'DELETE') if to_many else ('PATCH',)
+    for method in methods:
+        response = client.client.request(method, url, headers=client.headers, json=payload)
+        assert response.status_code == 403, method
+        error = response.json()['errors'][0]
+        assert error['code'] == 'ERR_RELATIONSHIP_READONLY'
+        assert error['source'] == {'parameter': '/related_field_name'}
+
+    # an update of the item ignores the read-only relationship, as a read-only attribute
+    response = client.client.request(
+        'PATCH',
+        f'/api/v1/visibility/note_frozen/{note.id}/',
+        headers=client.headers,
+        json={
+            'data': {
+                'id': str(note.id),
+                'type': 'visibility.note',
+                'bs:action': 'change',
+                'relationships': {field: payload},
+            }
+        },
+    )
+    assert response.status_code == 200
+
+    note.refresh_from_db()
+    assert note.folder == folder
+    assert list(note.tags.all()) == [tag]
+
+    # the default route of notes, where the relationship is writable, changes it
+    response = client.client.request(
+        'PATCH',
+        f'/api/v1/visibility/note/{note.id}/relationships/{field}',
+        headers=client.headers,
+        json=payload,
+    )
+    assert response.status_code == 204
+    note.refresh_from_db()
+    assert (list(note.tags.all()) == [other_tag]) if to_many else (note.folder == other_folder)

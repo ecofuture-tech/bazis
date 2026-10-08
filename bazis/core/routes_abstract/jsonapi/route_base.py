@@ -821,7 +821,8 @@ class JsonapiRouteBase(InitialRouteBase):
     ) -> JsonApiDataSchema:
         """
         Validates the relationship data with the update schema of the route and returns
-        the validated item data. Fails with 403 if the relationship is not writable.
+        the validated item data. Fails with 403 `ERR_RELATIONSHIP_READONLY` if the
+        relationship is not writable: absent from the update schema or read-only in it.
         """
         schema = self.schemas.get(CrudApiAction.UPDATE)
         if schema is None:
@@ -842,8 +843,10 @@ class JsonapiRouteBase(InitialRouteBase):
         except ValidationError as e:
             raise RequestValidationError(e.errors(), body=item_raw) from e
 
+        # a relationship missing from the schema, or read-only in it (the schema keeps a
+        # read-only field and `readonly_validator` drops its value), is not set
         relationships = item_data.data.relationships
-        if relationships is None or related_field_name not in type(relationships).model_fields:
+        if relationships is None or related_field_name not in relationships.model_fields_set:
             raise JsonApiBazisException(
                 JsonApiBazisError(
                     detail=f'The relationship {related_field_name} cannot be changed',

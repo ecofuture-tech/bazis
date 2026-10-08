@@ -98,6 +98,9 @@ check = "bazis.W005"
 text = "the language of a request is ?lang, then Accept-Language (by weight, base code), then LANGUAGE_CODE; titles must stay lazy (gettext_lazy, verbose_name) so that the cached schemas, schema_* routes and /openapi.json follow it; app.openapi() is in the active language"
 
 [[pitfalls]]
+text = "a verbose_name of a model or field composed with an f-string at import is in the language active then and gets into the migrations: compose it with format_lazy"
+
+[[pitfalls]]
 text = "reverse relations are not in the schemas by default: add them to `fields` of the route"
 
 [[pitfalls]]

@@ -79,7 +79,11 @@ choice labels (`enumDict`) are translated when a JSON schema is generated, so th
 once per language; `app.openapi()` is in the active language, export it under
 `translation.override(settings.LANGUAGE_CODE)`, or fetch it with `?lang=` or without
 `Accept-Language`). Every HTTP response has `Vary: Accept-Language`. Keep titles lazy (`gettext_lazy`,
-`verbose_name`): a `str` is fixed in the language of the code that made it. In tests set
+`verbose_name`): a `str` is fixed in the language of the code that made it. Compose the
+names of models and fields with `format_lazy`, not an f-string: a name made at import is in
+the language active then and gets into the migrations (the names of the models
+`AbstractForeignKey` makes, such as the status history of bazis-statusy, are lazy, and
+`makemigrations` writes the English msgids). In tests set
 `LANGUAGES` with `monkeypatch.setattr(settings, ...)`, not with the `settings` fixture or
 `override_settings`: their signal makes Django replace the per-request translations of the
 core with thread-local ones.
@@ -132,6 +136,10 @@ class OrderRouteSet(JsonapiRouteBase):
   `actions_exclude`.
 - Reverse relations and calculated fields are not in the schemas by default: add them with
   `SchemaFields(include=...)`. Writable relations are those of the UPDATE (CREATE) schema.
+  A relation read-only there (`SchemaField(read_only=True)`, the field permission
+  `readonly` of bazis-permit) is ignored by an update, and the relationships endpoints
+  refuse it as a relation that is not in the schema: 403 `ERR_RELATIONSHIP_READONLY` with
+  `source.parameter` `/related_field_name`.
 - Visibility of the objects of a model for the other routes: override the classmethod
   `restrict_queryset(qs, access_action, user=None, **kwargs)` of `RestrictedQsRouteMixin`
   (`bazis.core.routes_abstract.jsonapi`) in the default route of the model (the core
