@@ -24,3 +24,21 @@ def get_route_ctx(request: Request) -> RouteContext:
     scope.
     """
     return request.scope['endpoint'].route_ctx
+
+
+#: the default `scope` of the services of the filter, the sorting and the search
+REQUEST_SCOPE = object()
+
+
+def request_query_scope(scope=REQUEST_SCOPE):
+    """
+    The `scope` of a service of the filter, the sorting or the search: as given (None is not
+    restricted), by default the `query_scope()` of the route of the request
+    (`JsonApiMixin.CTX_ROUTE`), so that a route calling the service itself is restricted too.
+    """
+    if scope is not REQUEST_SCOPE:
+        return scope
+    from bazis.core.models_abstract import JsonApiMixin
+
+    route = JsonApiMixin.CTX_ROUTE.get()
+    return route.query_scope() if route is not None else None

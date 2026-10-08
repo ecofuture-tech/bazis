@@ -18,6 +18,8 @@ from django.utils.translation import gettext as _
 
 from bazis.core.errors import JsonApiBazisError, JsonApiBazisException
 from bazis.core.routes_abstract.initial import InitialRouteBase
+from bazis.core.services.route_ctx import REQUEST_SCOPE, request_query_scope
+from bazis.core.utils.query_complex import QueryScope
 
 
 class SortingSearching:
@@ -39,24 +41,47 @@ class SortingSearching:
         if sort:
             self.terms = [it.strip() for it in sort.split(',') if it.strip()]
 
-    def apply(self, queryset: QuerySet):
+    def apply(self, queryset: QuerySet, scope: QueryScope | None = REQUEST_SCOPE):
         """
-        Applies the sorting terms to the given queryset. Raises a JsonApiBazisException
-        if the sorting parameters are invalid.
+        Applies the sorting terms to the given queryset. With a scope (by default the scope
+        of the route of the request) a term is a field of the route that can order, or a
+        field of an object a to-one relation of the route leads to (null if the user cannot
+        see the object); without one (None) any field path of the model. Invalid terms are
+        400 ERR_FILTER.
         """
         if not self.terms:
             return queryset
-        ordering = [F(t[1:]).desc(nulls_last=True) if t.startswith('-') else t for t in self.terms]
-        # the primary key makes the order deterministic when the sorted values are not unique,
-        # otherwise pagination may skip or repeat items between pages
-        pk_names = {'pk', queryset.model._meta.pk.name}
-        if not any(t.lstrip('-') in pk_names for t in self.terms):
-            ordering.append('pk')
+        scope = request_query_scope(scope)
         try:
+            ordering = [self._ordering(queryset.model, t, scope) for t in self.terms]
+            # the primary key makes the order deterministic when the sorted values are not
+            # unique, otherwise pagination may skip or repeat items between pages
+            pk_names = {'pk', queryset.model._meta.pk.name}
+            if not any(t.lstrip('-') in pk_names for t in self.terms):
+                ordering.append('pk')
             return queryset.order_by(*ordering)
-        except FieldError:
+        except (FieldError, ValueError):
             raise JsonApiBazisException(
                 JsonApiBazisError(
-                    detail=_('Invalid sorting parameters: `%s`') % self.terms, loc=('path', 'sort')
+                    detail=_('Invalid sorting parameters: `%s`') % self.terms,
+                    loc=('query', 'sort'),
+                    code='ERR_FILTER',
+                    title=_('Invalid filter'),
+                    status=400,
                 ),
+                status=400,
             ) from None
+
+    @staticmethod
+    def _ordering(model, term: str, scope: QueryScope | None):
+        """
+        The ordering of a term (`-` for the descending order, nulls last).
+        """
+        path = term.removeprefix('-')
+        expr = path if scope is None else scope.order_expression(model, path)
+        if isinstance(expr, F):
+            # a field of the model, by its name: order_by checks it
+            expr = expr.name
+        if term.startswith('-'):
+            return (F(expr) if isinstance(expr, str) else expr).desc(nulls_last=True)
+        return expr if isinstance(expr, str) else expr.asc()

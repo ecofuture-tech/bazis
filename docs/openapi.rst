@@ -132,10 +132,22 @@ with the error 400 ``ERR_FILTER``. So is an unknown field, also after a relation
 Full-Text Search in Filtering
 ------------------------------
 
-- ``$search=text``: Identical to the top-level query ``'?search=text'``. Full-text search across all text and integer fields of the model.
+- ``$search=text``: Identical to the top-level query ``'?search=text'``: the search fields of the route
+  (``search_fields``); a route without them has no search (400 ``ERR_FILTER``).
 - ``description__$search=some text``: Full-text search only in the *description* text field.
-- ``author__$search=text``: Full-text search across all text and integer fields of the nested *author* model.
+- ``author__$search=text``: The search fields of the default route of the nested *author* model.
 - ``author__username__$search=text``: Full-text search only in the *username* text field of the nested *author* entity.
+
+What the Filter Reaches
+-----------------------
+
+The filter, ``sort`` and ``search`` reach only what the route shows the user (``BAZIS_FILTERS_STRICT``, on by
+default since 2.9). A key starts with a field of the LIST schema of the route (``filterLabel``/``orderLabel``) or
+``id``. A relation of the schema leads into the related objects the default route of the related model shows (its
+``restrict_queryset`` for ``view``), and the key goes on with the fields of the LIST schema of that route; a model
+without a route gives only ``id`` (``pk``), ``__exists`` and ``__isnull``. ``sort`` follows to-one relations only, an object
+the user cannot see sorts as null. Any other key is 400 ``ERR_FILTER`` with the pointer ``/query/filter``,
+``/query/sort`` or ``/query/search``, the same answer as for a field that does not exist.
 
 Working with Related Entities
 -----------------------------

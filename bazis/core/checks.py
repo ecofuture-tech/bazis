@@ -131,6 +131,68 @@ def check_default_routes(app_configs, **kwargs):
     return messages
 
 
+@register(Tags.security)
+def check_filters_strict(app_configs, **kwargs):
+    """
+    `BAZIS_FILTERS_STRICT=false` is the transitional rollback of 2.9: the filter, the sorting
+    and the search of the API reach every field of the models and every relation, also the
+    fields a route does not show and the objects a user cannot see.
+    """
+    if getattr(settings, 'BAZIS_FILTERS_STRICT', True):
+        return []
+    return [
+        Warning(
+            'BAZIS_FILTERS_STRICT is off: the filter, sort and search of the API reach the '
+            'fields the routes do not show and the related objects the users cannot see.',
+            hint=(
+                'Remove BS_BAZIS_FILTERS_STRICT=false: the setting is transitional and will be '
+                'removed. Add the fields a client filters, sorts or searches by to the LIST '
+                'schema of the route (`fields`, `search_fields`).'
+            ),
+            id='bazis.W006',
+        )
+    ]
+
+
+@register()
+def check_search_fields(app_configs, **kwargs):
+    """
+    A search field of a route must be a field of its LIST schema (`fields`): the search of a
+    request (BAZIS_FILTERS_STRICT) leaves out the others. Needs the application
+    (`bazis_doctor` loads it); skipped without it.
+    """
+    from bazis.core import introspect
+    from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
+    from bazis.core.utils.query_complex import LOOKUP_PREFIXES, QueryScope
+
+    if (app := introspect.loaded_app()) is None:
+        return []
+
+    messages = []
+    for route_cls in introspect.route_sets(app):
+        if not issubclass(route_cls, JsonapiRouteBase) or not route_cls.search_fields:
+            continue
+        # the LIST schema of the route itself, not the one a package makes per user
+        scope = QueryScope(
+            f.source for f in JsonapiRouteBase.query_fields.__func__(route_cls) if f.can_filter
+        )
+        for field in route_cls.search_fields:
+            name = str(field)
+            name = (name[1:] if name[:1] in LOOKUP_PREFIXES else name).split('__')[0]
+            if not scope.allows(name, route_cls.model):
+                messages.append(
+                    Warning(
+                        f'The search field {field!r} of the route set is not a field of its '
+                        'LIST schema: the search leaves it out.',
+                        hint='Add the field to `fields` of the route or remove it from '
+                        '`search_fields`.',
+                        obj=_qualname(route_cls),
+                        id='bazis.W007',
+                    )
+                )
+    return messages
+
+
 def _qualname(cls) -> str:
     return f'{cls.__module__}.{cls.__qualname__}' if cls is not None else 'None'
 

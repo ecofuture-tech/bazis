@@ -48,7 +48,27 @@ class TagRouteSet(RestrictedQsRouteMixin):
 
 class NoteRouteSet(JsonapiRouteBase):
     model = apps.get_model('visibility.Note')
+    default_route = True
+    search_fields = ['name', 'tag__name']
 
     fields = {
         None: SchemaFields(include={'attached_tags': None}),
     }
+
+
+class NoteBriefRouteSet(JsonapiRouteBase):
+    """
+    A projection of the notes without their name and label, as a calendar shows the
+    occupancy of the rooms without the topics of the bookings of the others: the filter,
+    the sorting and the search of its requests do not reach them.
+    """
+
+    model = apps.get_model('visibility.Note')
+
+    fields = {
+        None: SchemaFields(origin={'folder': None, 'tag': None, 'tags': None}),
+    }
+
+    @classmethod
+    def get_url_prefix(cls) -> str:
+        return '/visibility/note_brief'
