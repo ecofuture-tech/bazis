@@ -103,7 +103,7 @@ def _initialize_app(app): # noqa: C901
     from urllib.parse import unquote, urlsplit
 
     from django.conf import settings
-    from django.utils.translation import get_language, to_locale
+    from django.utils.translation import get_language, gettext_lazy, to_locale
 
     from fastapi import Request
     from fastapi.encoders import jsonable_encoder
@@ -392,7 +392,7 @@ def _initialize_app(app): # noqa: C901
             # with the primary key) is an item that does not exist, as on the routes that
             # do not type it (`get_queryset_for_item`)
             return await json_api_http_exception_handler(
-                request, HTTPException(status_code=404, detail='Item not found')
+                request, HTTPException(status_code=404, detail=gettext_lazy('Item not found'))
             )
         return exc_encoder(
             [
