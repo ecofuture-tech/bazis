@@ -19,6 +19,54 @@ General features
 * **Transactionality:** All operations are executed within transactions
 * **Validation:** Object existence and type correctness are verified
 
+Access to the related objects
+-----------------------------
+
+The default route of a model (``Model.get_default_route()``) defines which of its objects
+the other routes can link and include: the classmethod ``restrict_queryset`` of
+``RestrictedQsRouteMixin``. The core calls it on the class with ``user``, the
+``inject.user`` of the calling route: ``None`` if the route has no user, or an anonymous
+user. An override must not raise for them: it returns what a user without authentication
+may see (e.g. ``qs.none()``), or falls back to a request-level user of its package. The
+route of the request is ``JsonApiMixin.CTX_ROUTE.get()``. An override should accept
+``**kwargs``.
+
+.. code-block:: python
+
+    class TagRouteSet(RestrictedQsRouteMixin):
+        model = apps.get_model('notes.Tag')
+        default_route = True
+
+        @classmethod
+        def restrict_queryset(cls, qs, access_action, user=None, **kwargs):
+            # user is None (no user) or anonymous for a request without authentication
+            if getattr(user, 'is_staff', False):
+                return qs
+            qs = qs.filter(is_hidden=False)
+            if access_action == CrudAccessAction.CHANGE:
+                qs = qs.filter(is_locked=False)
+            return qs
+
+        def get_queryset(self):
+            # the list and the item of the route itself
+            return self.restrict_queryset(super().get_queryset(), CrudAccessAction.VIEW)
+
+* A created or changed item (create, update, the relationships endpoints above) links only
+  the objects ``restrict_queryset`` returns for ``view``; a reverse relationship changes the
+  foreign key of the objects it links and unlinks, so they must be returned for ``change``.
+  Only the objects whose link changes are checked: an object linked before stays linked
+  and can be unlinked. Otherwise the request fails with ``403``, code
+  ``ERR_RELATION_ACCESS`` and the pointer ``/data/relationships/<field>``.
+* ``included`` contains only the objects ``restrict_queryset`` returns for ``view``; the
+  relationship keeps the identifiers of all linked objects.
+* The objects of a model whose default route does not override ``restrict_queryset``, or
+  that has no route, are not checked (no extra query).
+* ``relation_targets_check = False`` on a route turns the check of its relationships off.
+* The default route of a model is the last defined route class of the model (abstract ones
+  never), unless a route class declares ``default_route = True`` in its body (the flag is
+  not inherited). ``bazis_doctor`` warns (``bazis.W003``) about a model with several route
+  sets that restrict its objects differently and not one explicit default route.
+
 M2M (Many-to-Many)
 ------------------
 

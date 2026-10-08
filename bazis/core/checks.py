@@ -87,6 +87,55 @@ def check_bazis_apps(app_configs, **kwargs):
 
 
 @register()
+def check_default_routes(app_configs, **kwargs):
+    """
+    The default route of a model restricts the objects of the model in the relationships
+    and `included` of the other routes (its `restrict_queryset`). With several route sets
+    of a model in the application that restrict its objects differently, the last defined
+    one is the default unless one of them declares `default_route = True`: the order of
+    the imports decides otherwise. Needs the application (`bazis_doctor` loads it);
+    skipped without it.
+    """
+    from bazis.core import introspect
+    from bazis.core.routes_abstract.jsonapi.mixins import restrict_queryset_override
+
+    if (app := introspect.loaded_app()) is None:
+        return []
+
+    by_model: dict[type, list[type]] = {}
+    for route_cls in introspect.route_sets(app):
+        if (model := getattr(route_cls, 'model', None)) is not None:
+            by_model.setdefault(model, []).append(route_cls)
+
+    messages = []
+    for model, route_classes in by_model.items():
+        if len({id(restrict_queryset_override(it)) for it in route_classes}) < 2:
+            continue
+        if sum(1 for it in route_classes if vars(it).get('default_route')) == 1:
+            continue
+        names = ', '.join(sorted(_qualname(it) for it in route_classes))
+        messages.append(
+            Warning(
+                f'The model has several route sets that restrict its objects differently '
+                f'({names}) and not one explicit default route: the default one is '
+                f'{_qualname(model.get_default_route())}.',
+                hint=(
+                    'Declare `default_route = True` in the route set whose restrict_queryset '
+                    'restricts the objects of the model in the relationships and `included` '
+                    'of the other routes.'
+                ),
+                obj=model._meta.label,
+                id='bazis.W003',
+            )
+        )
+    return messages
+
+
+def _qualname(cls) -> str:
+    return f'{cls.__module__}.{cls.__qualname__}' if cls is not None else 'None'
+
+
+@register()
 def check_translation_conflicts(app_configs, **kwargs):
     """
     Two Bazis packages translate the same msgid differently: the catalog that comes first in

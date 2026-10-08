@@ -378,8 +378,13 @@ class JsonApiMixin(InitialBase):
     def fields_for_included(self) -> dict:
         """
         Collects and caches fields that can be included in the response based on the
-        request and schema.
+        request and schema. Only the related objects the default route of their model
+        shows (its `restrict_queryset`, VIEW) are included; the relationships keep their
+        identifiers.
         """
+        from bazis.core.routes_abstract.jsonapi.mixins import route_restrict_queryset
+        from bazis.core.schemas.enums import CrudAccessAction
+
         route = self.CTX_ROUTE.get()
         api_action = self.CTX_API_ACTION.get()
         response = {}
@@ -405,6 +410,12 @@ class JsonApiMixin(InitialBase):
                         # if it is a relation, get the queryset associated with the current object
                         # and compute the fields
                         queryset = relation.get_child_queryset(self.pk)
+                        if restrict := route_restrict_queryset(relation.related_model):
+                            queryset = restrict(
+                                queryset,
+                                CrudAccessAction.VIEW,
+                                user=getattr(route.inject, 'user', None),
+                            )
                         k = f'fields_{relation.related_model.get_resource_label().replace(".", "_")}'
                         v = getattr(route.inject, k, None)
                         if v:

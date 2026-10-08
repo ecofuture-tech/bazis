@@ -30,6 +30,17 @@ sample/router.py         # root router, BS_BAZIS_ROUTER_MODULE=sample.router
 <app>/conf.py            # optional `Settings(BazisSettings)` of the app
 ```
 
+Files: the application redirects `MEDIA_URL` to `MEDIA_HOST_URL` (else `ADMIN_HOST_URL`)
+and `STATIC_URL` to `ADMIN_HOST_URL`. Without such a host (or when the redirect would
+point at the request itself: the same host, port and path, whatever the scheme), in DEBUG
+it serves the files from `MEDIA_ROOT` / `STATIC_ROOT` itself, the media with `X-Content-
+Type-Options: nosniff`, `Content-Security-Policy: sandbox` and, except raster images,
+`Content-Disposition: attachment`; without DEBUG it answers 404 naming the setting. In
+production serve them by the web server or a media host (`BS_MEDIA_HOST_URL`); do not
+mount `MEDIA_ROOT` in the project. The loop is detected against the Host of the request: a
+proxy in front of the application must preserve the Host header (not rewrite it to an
+internal address), or a host setting that names the public address redirects to itself.
+
 Settings are environment variables with the `BS_` prefix (`BS_DEBUG`, `BS_SECRET_KEY`,
 `BS_DATABASES__DEFAULT__HOST`, lists and dicts as JSON). Apps, including Bazis packages,
 are listed in `BS_INSTALLED_APPS` (`'["myapp", "bazis.contrib.permit"]'`). The settings
@@ -120,6 +131,27 @@ class OrderRouteSet(JsonapiRouteBase):
   `actions_exclude`.
 - Reverse relations and calculated fields are not in the schemas by default: add them with
   `SchemaFields(include=...)`. Writable relations are those of the UPDATE (CREATE) schema.
+- Visibility of the objects of a model for the other routes: override the classmethod
+  `restrict_queryset(qs, access_action, user=None, **kwargs)` of `RestrictedQsRouteMixin`
+  (`bazis.core.routes_abstract.jsonapi`) in the default route of the model (the core
+  calls it on the class with `user`, the `inject.user` of the calling route: None if the
+  route has no user, or anonymous; never raise for them, return what a user without
+  authentication may see, e.g. `qs.none()`, or fall back to a request-level user of the
+  package; the route of the request is `JsonApiMixin.CTX_ROUTE.get()`; accept
+  `**kwargs`). A relationship of a created or changed item (create, update, the
+  relationships endpoints) links only the objects it returns for `view`, a reverse
+  relationship only the objects it returns for `change` (their foreign key changes), both
+  for the objects whose link changes; otherwise 403 `ERR_RELATION_ACCESS` with the pointer
+  `/data/relationships/<field>`. `included` shows only the visible objects (the
+  relationship keeps the identifiers). The objects of a model whose default route does not
+  override `restrict_queryset` (or that has no route) are not checked and not queried.
+  `relation_targets_check = False` turns the check off for the relationships of a route.
+  The route's own list and item do not use `restrict_queryset` by themselves: apply it in
+  `get_queryset` too.
+- The default route of a model (`Model.get_default_route()`) is the last defined route
+  class of the model (abstract ones never), unless one declares `default_route = True` in
+  its class body (not inherited). With several route sets of a model that restrict its
+  objects differently, declare it (`bazis_doctor` warns, `bazis.W003`).
 - Logic around writes: override `hook_before_create`, `hook_after_create`,
   `hook_before_update`, `hook_after_update` (and `hook_before/after_relationships_change`
   for the relationships endpoints). They run inside the transaction.
@@ -133,6 +165,9 @@ class OrderRouteSet(JsonapiRouteBase):
 - The OpenAPI operations document the errors they fail with (`SchemaErrors`): 400 and 422
   on the CRUD operations, 404 on every route of an item (`{item_id}` in the path), 403 on
   the relationships routes. The core has no authentication, so no 401 and no `security`.
+  An id in the path that cannot be a primary key of the model (`not-a-uuid`) is 404, like
+  a missing item, on every route of an item (also the custom ones that take the item with
+  `set_item`/`get_item`).
   A route class or package that fails its routes with a status adds it by extending the
   classmethod `route_responses(route_ctx)` (call `super()`); `responses=` of a decorator
   wins. Other facts of the operation (`security`, extensions) are added the same way by
@@ -175,7 +210,12 @@ class OrderRouteSet(JsonapiRouteBase):
 
 - Every way of changing an object goes through the checks of an update: do not change
   relations in custom endpoints without the route (use `relationships_change`, which
-  applies the update schema, the `filter:` restrictions and the hooks).
+  applies the update schema, the visibility of the targets, the `filter:` restrictions
+  and the hooks).
+- Restrict the objects of a model that a user must not see in `restrict_queryset` of its
+  default route, not only in `get_queryset`: `get_queryset` restricts the route's own
+  list and item, the relationships and `included` of the other routes use
+  `restrict_queryset`.
 - Do not access `settings.<dynamic setting>` at import time: dynamic settings are read from
   the database (constance).
 - Do not edit generated schemas by hand; change the model or `fields` of the route.

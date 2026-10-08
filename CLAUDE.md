@@ -85,6 +85,10 @@ Security boundaries that span packages:
   relationships endpoints (`JsonapiRouteBase.relationships_change`) accept only the
   relations of the update schema and call `hook_before/after_relationships_change`, which
   bazis-permit uses.
+- A relationship links only the objects the default route of the related model shows
+  (`restrict_queryset`), and `included` shows only those objects
+  (`JsonapiRouteBase.relations_access_check`, `JsonApiMixin.fields_for_included`): a
+  package restricts the objects of its models there, not only in `get_queryset`.
 - Session JWTs (bazis-users) require `exp` and `sub`; on HTTP a token without `exp` (the
   store token of bazis-authing) is anonymous, bazis-ws rejects it.
 - Anonymous WebSocket channels (bazis-ws) live under `user_ws:anon:`; bazis-async-background

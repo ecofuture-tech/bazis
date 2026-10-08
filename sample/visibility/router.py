@@ -14,11 +14,11 @@
 
 from bazis.core.routing import BazisRouter
 
+from . import routes
 
-router = BazisRouter(prefix='/api/v1')
 
-router.register('entity.router')
-router.register('dynamic.router')
-router.register('route_injection.router')
-router.register('sparse_fieldsets.router')
-router.register('visibility.router')
+router = BazisRouter(tags=['Visibility'])
+
+router.register(routes.FolderRouteSet.as_router())
+router.register(routes.TagRouteSet.as_router())
+router.register(routes.NoteRouteSet.as_router())
