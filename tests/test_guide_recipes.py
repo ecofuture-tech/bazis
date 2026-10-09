@@ -71,7 +71,10 @@ def test_uniq_number(sample_app):
 
 @pytest.mark.django_db(transaction=True)
 def test_report_on_a_proxy_model(sample_app):
-    """The route of a proxy model narrows its list and items in `get_queryset`."""
+    """
+    The route of a proxy model narrows its list and items in `get_queryset`; its calculated
+    fields include one declared by a callable (`first_card`).
+    """
     busy = Memo.objects.create(title='busy')
     Card.objects.create(name='a', memo=busy)
     Card.objects.create(name='b', memo=busy)
@@ -82,7 +85,11 @@ def test_report_on_a_proxy_model(sample_app):
     assert response.status_code == 200, response.text
     data = response.json()['data']
     assert [(it['type'], str(it['id'])) for it in data] == [('catalog.busy_memo', str(busy.pk))]
-    assert data[0]['attributes'] == {'title': 'busy', 'cards_count': 2}
+    assert data[0]['attributes'] == {'title': 'busy', 'cards_count': 2, 'first_card': 'a'}
+
+    response = client.get(f'{BUSY}{busy.pk}/')
+    assert response.status_code == 200, response.text
+    assert response.json()['data']['attributes']['first_card'] == 'a'
 
     assert client.get(f'{BUSY}{idle.pk}/').status_code == 404
     # no writes

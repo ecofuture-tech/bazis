@@ -70,7 +70,7 @@ class BusyMemoRouteSet(JsonapiRouteBase):
     actions = ['action_list', 'action_retrieve', 'action_schema_list', 'action_schema_retrieve']
 
     fields = {
-        None: SchemaFields(origin={'title': None, 'cards_count': None}),
+        None: SchemaFields(origin={'title': None, 'cards_count': None, 'first_card': None}),
     }
 
     def get_queryset(self):
