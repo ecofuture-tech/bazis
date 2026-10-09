@@ -11,8 +11,13 @@ Facts about a concrete project come from the project itself, not from this text:
 - `python manage.py bazis_introspect [packages|settings|models|routes]` prints the
   installed Bazis packages (with their manifests), the settings, the JSON:API models and
   the routes as JSON;
-- `python manage.py bazis_doctor [--deploy] [--json]` runs the system checks of Django and
-  of the Bazis packages and fails on errors. Run it after every change.
+- `python manage.py bazis_doctor [--deploy] [--database ALIAS] [--json]` runs the system
+  checks of Django and of the Bazis packages and fails on errors. Run it after every change.
+  It also runs the database checks, which compare the project with its database (such as
+  the declared roles and workflows against the rows), against `default` when it can be
+  reached; otherwise they are skipped with the info `bazis.database`, so a warning-free
+  doctor without the database says nothing about the data. `--database` (repeatable)
+  names the databases, and one that cannot be reached is an error.
 
 With bazis-mcp installed, the MCP server `bazis-mcp` gives the same facts and checks and the
 guides of all Bazis packages, also the ones not installed.

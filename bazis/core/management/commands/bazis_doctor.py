@@ -15,6 +15,7 @@
 import json
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import DEFAULT_DB_ALIAS, connections
 
 from bazis.core import introspect
 
@@ -22,8 +23,11 @@ from bazis.core import introspect
 class Command(BaseCommand):
     """
     Runs the Django system checks of the project, including the checks of the Bazis
-    packages that need the API routes (the application is loaded first). With `--json`
-    prints the messages for tools and AI agents. Fails if there is an error.
+    packages that need the API routes (the application is loaded first) and the database
+    checks, which compare the project with its database (`--database`, by default the
+    database `default` when it can be reached; otherwise they are skipped with the info
+    `bazis.database`). With `--json` prints the messages for tools and AI agents. Fails if
+    there is an error.
 
     Tags: RAG
     """
@@ -34,10 +38,19 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--deploy', action='store_true', help='Also run the deployment checks.')
         parser.add_argument(
+            '--database',
+            action='append',
+            dest='databases',
+            help=(
+                'Run the database checks against this database (repeatable). Default: the '
+                'database "default" when it can be reached; one given that cannot is an error.'
+            ),
+        )
+        parser.add_argument(
             '--json', action='store_true', dest='as_json', help='Print the messages as JSON.'
         )
 
-    def handle(self, *args, deploy, as_json, **options):
+    def handle(self, *args, deploy, databases, as_json, **options):
         # the checks of the routes need the application
         try:
             from bazis.core.app import app  # noqa: F401
@@ -53,7 +66,8 @@ class Command(BaseCommand):
                 self.stdout.write(json.dumps([problem], ensure_ascii=False, indent=2))
             raise CommandError(f'The application cannot be loaded: {err!r}') from err
 
-        messages = introspect.check_messages(deploy)
+        reachable, messages = _reachable(databases)
+        messages += introspect.check_messages(deploy, reachable)
 
         if as_json:
             self.stdout.write(json.dumps(messages, ensure_ascii=False, indent=2))
@@ -64,6 +78,37 @@ class Command(BaseCommand):
 
         if any(m['level'] in ('error', 'critical') for m in messages):
             raise CommandError('The project has errors.')
+
+
+def _reachable(databases: list[str] | None) -> tuple[list[str], list[dict]]:
+    """
+    The databases the database checks run against, and a message for each one that cannot
+    be reached: an error for one given with `--database`, an info for `default` checked by
+    default (a project checked without its database, such as before it is created).
+    """
+    reachable, messages = [], []
+    for alias in databases or [DEFAULT_DB_ALIAS]:
+        try:
+            connections[alias].ensure_connection()
+        except Exception as err:
+            messages.append(
+                {
+                    'id': 'bazis.database',
+                    'level': 'error' if databases else 'info',
+                    'message': (
+                        f'The database {alias} cannot be reached, its database checks are '
+                        f'skipped: {" ".join(str(err).split()) or type(err).__name__}'
+                    ),
+                    'hint': (
+                        'The database checks compare the project with its database (such as '
+                        'the declared roles and workflows); run them with the database up.'
+                    ),
+                    'object': None,
+                }
+            )
+        else:
+            reachable.append(alias)
+    return reachable, messages
 
 
 def _message_text(message: dict) -> str:

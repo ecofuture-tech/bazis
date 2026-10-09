@@ -321,11 +321,13 @@ def project_info(app=None) -> dict:
     }
 
 
-def check_messages(deploy: bool = False) -> list[dict]:
+def check_messages(deploy: bool = False, databases: Sequence[str] = ()) -> list[dict]:
     """
     The messages of the Django system checks, including those of the Bazis packages (the
     checks of the routes need the application: import `bazis.core.app` first). `deploy`
-    adds the deployment checks. Silenced messages are left out.
+    adds the deployment checks; `databases` (aliases) adds the database checks against
+    those databases, which compare the project with the data (such as the declared roles
+    of bazis-permit). Silenced messages are left out.
     """
     from django.core import checks
 
@@ -337,7 +339,10 @@ def check_messages(deploy: bool = False) -> list[dict]:
             'hint': message.hint,
             'object': str(message.obj) if message.obj is not None else None,
         }
-        for message in checks.run_checks(include_deployment_checks=deploy)
+        # without databases Django gives the other checks every alias (`None`), as `check`
+        for message in checks.run_checks(
+            include_deployment_checks=deploy, databases=list(databases) or None
+        )
         if not message.is_silenced()
     ]
 
