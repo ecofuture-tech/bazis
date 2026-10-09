@@ -14,8 +14,8 @@
 
 """
 Models of the tests of the geographic filters and of the distance sorting: a point of every
-kind (geography, geometry in WGS 84, geometry in another projection) and one that the route
-does not show.
+kind (geography, geometry in WGS 84, geometry in another projection), one that the route
+does not show, and geometries of other types.
 """
 
 from django.contrib.gis.db import models
@@ -30,3 +30,5 @@ class Place(JsonApiMixin):
     entrance = models.PointField('Entrance', null=True, blank=True)
     mercator = models.PointField('Projected point', srid=3857, null=True, blank=True)
     secret = models.PointField('Secret point', null=True, blank=True)
+    area = models.PolygonField('Area', null=True, blank=True)
+    stops = models.MultiPointField('Stops', null=True, blank=True)

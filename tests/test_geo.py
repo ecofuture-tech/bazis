@@ -291,6 +291,12 @@ def test_point_as_geojson(sample_app):
         # out of range of longitude, latitude
         {'type': 'Point', 'coordinates': [181, 0]},
         {'type': 'Point', 'coordinates': [0, -90.5]},
+        # not finite numbers
+        # (a JSON document of the API has no NaN: in a GeoJSON string, which Python reads)
+        '{"type": "Point", "coordinates": [NaN, 55.7]}',
+        '{"type": "Point", "coordinates": [37.6, Infinity]}',
+        {'type': 'Point', 'coordinates': ['37.6', '55.7']},
+        {'type': 'Point', 'coordinates': [True, 55.7]},
         # a JSON string of such a geometry
         '{"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}',
     ],
@@ -331,3 +337,109 @@ def test_geojson_range_edges(corner):
         {'type': 'Point', 'coordinates': corner}, Place._meta.get_field('entrance')
     )
     assert (point.coords, point.srid) == (tuple(corner), 4326)
+
+
+@pytest.mark.parametrize('number', [float('nan'), float('inf'), -float('inf')])
+def test_geojson_not_finite(number):
+    from bazis.core.utils.geo import geojson_geometry
+
+    with pytest.raises(ValueError, match='finite numbers'):
+        geojson_geometry(
+            {'type': 'Point', 'coordinates': [37.6, number]}, Place._meta.get_field('entrance')
+        )
+
+
+def test_geojson_coordinates_read_as_no_geometry():
+    """Coordinates GDAL drops (an empty geometry from numbers) are refused."""
+    from django.contrib.gis.db.models import GeometryCollectionField
+
+    from bazis.core.utils.geo import geojson_geometry
+
+    value = {'type': 'GeometryCollection', 'geometries': [{'type': 'Point', 'coordinates': [1]}]}
+    with pytest.raises(ValueError, match='Invalid GeoJSON geometry'):
+        geojson_geometry(value, GeometryCollectionField())
+    empty = {'type': 'GeometryCollection', 'geometries': []}
+    assert geojson_geometry(empty, GeometryCollectionField()).empty
+
+
+@pytest.mark.django_db(transaction=True)
+def test_projected_field_reads_wgs84(sample_app):
+    """
+    GeoJSON is WGS 84 in both directions: a field of another SRID (Web Mercator) shows the
+    longitude, latitude it was written with, so a GET and a PATCH of the same value round
+    trip (it showed the coordinates of its projection, which a write refused or misread).
+    """
+    client = get_api_client(sample_app)
+    written = [37.6173, 55.7558]
+    response = client.post(
+        PLACES,
+        json_data={
+            'data': {
+                'type': 'geo.place',
+                'attributes': {'name': 'x', 'mercator': {'type': 'Point', 'coordinates': written}},
+            }
+        },
+    )
+    assert response.status_code == 201, response.text
+    place_id = response.json()['data']['id']
+
+    attributes = client.get(f'{PLACES}{place_id}/').json()['data']['attributes']
+    assert attributes['mercator']['coordinates'] == pytest.approx(written, abs=1e-9)
+    assert Place.objects.get(pk=place_id).mercator.srid == 3857
+
+    response = client.patch(
+        f'{PLACES}{place_id}/',
+        json_data={
+            'data': {
+                'id': place_id,
+                'type': 'geo.place',
+                'attributes': {'mercator': attributes['mercator']},
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+    again = response.json()['data']['attributes']['mercator']['coordinates']
+    assert again == pytest.approx(written, abs=1e-9)
+    assert names(sample_app, filter=f'mercator__near={MOSCOW},1m') == ['x']
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    'field, value',
+    [
+        ('area', {'type': 'Polygon', 'coordinates': [[[37, 55], [38, 55], [38, 56], [37, 55]]]}),
+        ('stops', {'type': 'MultiPoint', 'coordinates': [[37.6, 55.7], [30.3, 59.9]]}),
+    ],
+)
+def test_other_geometries(sample_app, field, value):
+    client = get_api_client(sample_app)
+    response = client.post(
+        PLACES,
+        json_data={'data': {'type': 'geo.place', 'attributes': {'name': 'x', field: value}}},
+    )
+    assert response.status_code == 201, response.text
+    shown = response.json()['data']['attributes'][field]
+    assert (shown['type'], shown['coordinates']) == (value['type'], value['coordinates'])
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    'field, value',
+    [
+        ('area', {'type': 'Point', 'coordinates': [37.6, 55.7]}),
+        ('area', {'type': 'MultiPoint', 'coordinates': [[37.6, 55.7]]}),
+        # a ring that is not closed
+        ('area', {'type': 'Polygon', 'coordinates': [[[37, 55], [38, 55], [38, 56]]]}),
+        ('area', {'type': 'Polygon', 'coordinates': [[[37, 55], [380, 55], [38, 56], [37, 55]]]}),
+        ('stops', {'type': 'Point', 'coordinates': [37.6, 55.7]}),
+        ('stops', {'type': 'Polygon', 'coordinates': [[[37, 55], [38, 55], [38, 56], [37, 55]]]}),
+        ('stops', {'type': 'MultiPoint', 'coordinates': [[37.6, 55.7, 1]]}),
+    ],
+)
+def test_other_geometries_refused(sample_app, field, value):
+    response = get_api_client(sample_app).post(
+        PLACES,
+        json_data={'data': {'type': 'geo.place', 'attributes': {'name': 'x', field: value}}},
+    )
+    assert_invalid_attribute(response, field)
+    assert not Place.objects.filter(name='x').exists()

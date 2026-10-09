@@ -147,22 +147,45 @@ def point_within(field: GeometryField, point, meters: float) -> Q:
     )
 
 
+def _coordinates(value: dict):
+    """The numbers of the coordinates of a GeoJSON geometry (of a collection, of its members)."""
+    stack = [value.get('coordinates', [])]
+    for member in value.get('geometries') or []:
+        if isinstance(member, dict):
+            stack.append(list(_coordinates(member)))
+    while stack:
+        item = stack.pop()
+        if isinstance(item, list):
+            stack.extend(item)
+        else:
+            yield item
+
+
 def geojson_geometry(value: dict, field: GeometryField) -> GEOSGeometry:
     """
     The geometry of a GeoJSON object of a request for a geometry field of the model:
-    longitude and latitude of WGS 84 (RFC 7946; a `crs` member is refused), of the type of
-    the field (any for a `GeometryField`) and of its dimension. A field of another SRID
-    stores it transformed. Raises ValueError for anything else (422 ERR_VALIDATE at the
+    longitude and latitude of WGS 84 (RFC 7946; a `crs` member is refused), finite and in
+    range, of the type of the field (any for a `GeometryField`) and of its dimension. A
+    field of another SRID stores it transformed (and the API shows it in WGS 84 again). Raises ValueError for anything else (422 ERR_VALIDATE at the
     attribute).
 
     Tags: RAG, EXPORT
     """
     if 'crs' in value:
         raise ValueError('A GeoJSON geometry is in WGS 84 (RFC 7946): the crs member is refused')
+    numbers = list(_coordinates(value))
+    if not all(
+        isinstance(it, int | float) and not isinstance(it, bool) and math.isfinite(it)
+        for it in numbers
+    ):
+        raise ValueError('The coordinates are finite numbers')
     try:
         geometry = GEOSGeometry(json.dumps(value), srid=SRID_WGS84)
     except (GDALException, GEOSException, ValueError, TypeError):
         raise ValueError('Invalid GeoJSON geometry') from None
+    if geometry.empty and numbers:
+        # coordinates that GDAL could not read as the geometry
+        raise ValueError('Invalid GeoJSON geometry')
     if field.geom_type != 'GEOMETRY' and geometry.geom_type.upper() != field.geom_type:
         raise ValueError(f'A {field.geom_type.title()} is expected, not a {geometry.geom_type}')
     if geometry.hasz != (field.dim == 3):
