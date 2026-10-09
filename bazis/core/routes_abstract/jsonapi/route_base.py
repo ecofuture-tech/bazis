@@ -407,6 +407,42 @@ class JsonapiRouteBase(InitialRouteBase):
             )
         return scope
 
+    def includes_check(self):
+        """
+        `include` names only the relations the schema of the action can include (its
+        `fields`; an update also the ones of the create): any other name, also a path
+        (`a.b`), is 400 `ERR_INCLUDE` (pointer `/query/include`), as JSON:API requires for
+        a path the server cannot include. Not checked when `BAZIS_FILTERS_STRICT` is off
+        (transitional: such names are left out, as before 2.12). The relations a package
+        hides from the user (the field permissions of bazis-permit) are left out without
+        an error.
+        """
+        includes = getattr(self.inject, 'include', None)
+        api_action = self.route_ctx.store.get('api_action')
+        if not includes or api_action is None or not settings.BAZIS_FILTERS_STRICT:
+            return
+        actions = [api_action]
+        if api_action == CrudApiAction.UPDATE:
+            actions.append(CrudApiAction.CREATE)
+        known = set()
+        for action in actions:
+            if factory := self.schema_factories.get(action):
+                known.update(factory.inclusions_factory_with_default)
+        if unknown := [it for it in includes if it not in known]:
+            raise JsonApiBazisException(
+                JsonApiBazisError(
+                    detail=format_lazy(
+                        _('The relationships cannot be included: {names}'),
+                        names=', '.join(unknown),
+                    ),
+                    loc=('query', 'include'),
+                    code='ERR_INCLUDE',
+                    title=_('Invalid include'),
+                    status=400,
+                ),
+                status=400,
+            )
+
     def route_run(self, *args, **kwargs):
         """
         Executes the route, wrapping the endpoint execution in a transaction and
@@ -426,6 +462,7 @@ class JsonapiRouteBase(InitialRouteBase):
         # execute the entire endpoint in a single transaction
         with transaction.atomic(savepoint=False):
             try:
+                self.includes_check()
                 data = super().route_run(*args, **kwargs)
 
                 # for the standard case when the endpoint defines the schema by the api_action type
@@ -882,9 +919,31 @@ class JsonapiRouteBase(InitialRouteBase):
                 },
             }
         }
+
+        def refuse():
+            raise JsonApiBazisException(
+                JsonApiBazisError(
+                    detail=format_lazy(
+                        _('The relationship {name} cannot be changed'), name=related_field_name
+                    ),
+                    loc=('path', 'related_field_name'),
+                    code='ERR_RELATIONSHIP_READONLY',
+                    title=_('Relationship is read-only'),
+                    status=403,
+                ),
+                status=403,
+            )
+
         try:
             item_data = schema.model_validate(item_raw)
         except ValidationError as e:
+            # a relationship missing from the schema (the update schema refuses the fields
+            # it does not have)
+            missing = ('data', 'relationships', related_field_name)
+            if any(
+                it['type'] == 'extra_forbidden' and tuple(it['loc']) == missing for it in e.errors()
+            ):
+                refuse()
             # the body of the endpoint is the `data` of the relationship: its errors point
             # there (`/data`, `/data/<index>/id`), not into the document of an update, and
             # name no item (the id and type of the update document are those of the path)
@@ -900,22 +959,11 @@ class JsonapiRouteBase(InitialRouteBase):
                 errors.append(error)
             raise RequestValidationError(errors, body=item_raw) from e
 
-        # a relationship missing from the schema, or read-only in it (the schema keeps a
-        # read-only field and `readonly_validator` drops its value), is not set
+        # a relationship read-only in the schema (the schema keeps a read-only field and
+        # `readonly_validator` drops its value) is not set
         relationships = item_data.data.relationships
         if relationships is None or related_field_name not in relationships.model_fields_set:
-            raise JsonApiBazisException(
-                JsonApiBazisError(
-                    detail=format_lazy(
-                        _('The relationship {name} cannot be changed'), name=related_field_name
-                    ),
-                    loc=('path', 'related_field_name'),
-                    code='ERR_RELATIONSHIP_READONLY',
-                    title=_('Relationship is read-only'),
-                    status=403,
-                ),
-                status=403,
-            )
+            refuse()
         return item_data.data
 
     def relations_access_check(

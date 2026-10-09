@@ -1047,8 +1047,10 @@ def _apply_calc_queryset(  # noqa: C901
                     if field_calc.distinct:
                         func_kwargs['distinct'] = True
 
+                    # without the Meta.ordering of the related model: an ordered column is
+                    # not grouped by the aggregate
                     annotates[alias] = Subquery(
-                        qs_related.annotate(
+                        qs_related.order_by().annotate(
                             _resp=Func(F(f_related), function=field_calc.func, **func_kwargs)
                         ).values('_resp'),
                         output_field=IntegerField()

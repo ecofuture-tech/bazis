@@ -434,8 +434,10 @@ def test_sparse_fieldsets(sample_app):
         SELECT "sparse_fieldsets_category"."id",
                "sparse_fieldsets_category"."name"
         FROM "sparse_fieldsets_category"
-        INNER JOIN "sparse_fieldsets_article" ON ("sparse_fieldsets_category"."id" = "sparse_fieldsets_article"."category_id")
-        WHERE "sparse_fieldsets_article"."id" = 'id_hex'::UUID
+        WHERE "sparse_fieldsets_category"."id" IN
+            (SELECT "U0"."category_id" AS "category_id"
+             FROM "sparse_fieldsets_article" "U0"
+             WHERE "U0"."id" = 'id_hex'::UUID)
     """
     assert_sql_query(expected_sql_template, sql_query2, article.id.hex)
     expected_sql_template = """

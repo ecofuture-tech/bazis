@@ -61,7 +61,17 @@ use_when = "a tool (a client generator, the contract of bazis-front) needs the s
 [[extension_points]]
 name = "calc_property"
 import = "bazis.core.utils.orm.calc_property"
-use_when = "a calculated field fetched in the same query"
+use_when = "a calculated field fetched in the same query: FieldAnnotate (an expression of the row), FieldDynamic (an aggregate with func=, related objects, has_* EXISTS); add it to the route with include={'<name>': None}; as_filter=True for filter"
+
+[[extension_points]]
+name = "UniqNumberMixin"
+import = "bazis.core.models_abstract.UniqNumberMixin"
+use_when = "a human-readable number of an item from a database sequence (django-sequences, installed by the core): uniq_number on the first save, the property number; NUMBER_LABEL names the sequence; show number with include={'number': None} and exclude uniq_number from the create and update schemas"
+
+[[extension_points]]
+name = "translated_name"
+import = "bazis.core.utils.query_complex.translated_name"
+use_when = "reference data named in every language (a TranslatedFieldWithFallback of django-translated-fields, a column per language): the API attribute is in the language of the request, and filter, sort and search use its column of that language; translated_name(model, name) gives that column for a query of the project"
 
 [[extension_points]]
 name = "RouteKind"
@@ -145,7 +155,16 @@ text = "the pointers (source) of the errors of the core, by code; create and upd
 text = "a relation by a foreign key with to_field: its identifiers are values of that field (checked as such), but the relation checks (relations_access_check, the relationships endpoints) look the objects up by their primary key: such relations are not supported there"
 
 [[pitfalls]]
-text = "reverse relations are not in the schemas by default: add them to `fields` of the route"
+text = "reverse relations are not in the schemas by default: add them to `fields` of the route; `include` of a relation that is not in the schema of the action (or a path a.b) is 400 ERR_INCLUDE (/query/include) since 2.12.0"
+
+[[pitfalls]]
+text = "a create or an update that names an attribute or a relationship that is not in the schema of the route (excluded by fields, hidden by a field permission, unknown) is 422 ERR_VALIDATE extra_forbidden at /data/attributes/<f> since 2.12.0; a field of the schema that is read-only there is ignored"
+
+[[pitfalls]]
+text = "a CharField/TextField without blank=True refuses an empty or whitespace-only value in a create or an update (422 ERR_VALIDATE at the field) since 2.12.0: mark blank=True the texts a client may leave empty; save() in code does not run the schemas"
+
+[[pitfalls]]
+text = "a calculated field (calc_property) is read-only, does not sort and is not a search field; as_filter=True makes it a filter key when it is in the LIST schema; an aggregate (FieldDynamic(func=...)) drops the Meta.ordering of the related model since 2.12.0"
 
 [[pitfalls]]
 text = "`filter` lookups are not Django lookups: `__in`, `__icontains`, `__contains` on a text or number field are 400 ERR_FILTER; the supported suffixes are in AGENTS.md"

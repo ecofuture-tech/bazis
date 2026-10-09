@@ -27,6 +27,7 @@ from collections.abc import Callable, Iterable
 from enum import Enum
 from functools import reduce
 from hashlib import md5
+from inspect import getattr_static
 from typing import Union
 from urllib.parse import unquote, urlencode
 
@@ -37,11 +38,15 @@ from django.db import models
 from django.db.models import Exists, F, Q, QuerySet, Subquery
 from django.db.models.constants import LOOKUP_SEP
 from django.utils.dateparse import parse_date, parse_datetime
+from django.utils.text import format_lazy
+from django.utils.translation import gettext_lazy as _
+
+from translated_fields import TranslatedField
 
 from bazis.core.models_abstract import InitialBase
 from bazis.core.utils.functools import get_attr
 from bazis.core.utils.model_meta import FieldsInfo, RelationInfo
-from bazis.core.utils.orm import apply_calc_queryset, calc_cached_property
+from bazis.core.utils.orm import apply_calc_queryset, calc_cached_property, translated_column
 
 
 OP_NEG = '~'
@@ -108,6 +113,42 @@ class FieldDummy:
     name: str
     model: type[models.Model] = None
     related_model: type[models.Model] = None
+
+
+def _unknown_filter_field(key: str, model: type[models.Model]):
+    """The message of a filter key that is not a field (or out of the scope)."""
+    return format_lazy(
+        _("Unknown filter field '{key}' of {model}"), key=key, model=model._meta.label
+    )
+
+
+def translated_name(model: type[models.Model], name: str) -> str:
+    """
+    The column of a translated field of the model (`TranslatedField` of
+    django-translated-fields) in the current language (`translated_column`), or the name
+    itself: a filter, a sorting or a search by the field uses the language of the request.
+
+    Tags: RAG, EXPORT
+    """
+    attr = getattr_static(model, name, None)
+    if isinstance(attr, TranslatedField):
+        return translated_column(name, attr)
+    return name
+
+
+def translated_lookup(model: type[models.Model], lookup: str) -> str:
+    """
+    The lookup (a path through relations, a field, lookups) with its field translated
+    (`translated_name`).
+    """
+    parts = lookup.split(LOOKUP_SEP)
+    for index, name in enumerate(parts):
+        relation = FieldsInfo.get_fields_info(model).relations.get(name)
+        if relation is None:
+            parts[index] = translated_name(model, name)
+            break
+        model = relation.related_model
+    return LOOKUP_SEP.join(parts)
 
 
 class QueryScope:
@@ -220,7 +261,7 @@ class QueryScope:
         LIST schema of the default route of the related model itself (`for_model` with
         `schema`: not the fields a package gives per user, and no queries).
         """
-        name, _, rest = lookup.partition(LOOKUP_SEP)
+        name, __, rest = lookup.partition(LOOKUP_SEP)
         if not self.allows(name, model):
             return False
         relation = FieldsInfo.get_fields_info(model).relations.get(name)
@@ -237,19 +278,25 @@ class QueryScope:
         model is not restricted, else a subquery of the objects the user can see (null for
         the others). Raises ValueError for any other key (a to-many relation does not order).
         """
-        name, _, rest = path.partition(LOOKUP_SEP)
+        name, __, rest = path.partition(LOOKUP_SEP)
         relation = FieldsInfo.get_fields_info(model).relations.get(name)
         if (
             not self.allows(name, model, order=True)
             or (relation is not None and relation.to_many)
             or (rest and relation is None)
         ):
-            raise ValueError(f"Unknown sort field '{path}' of {model._meta.label}")
+            raise ValueError(
+                format_lazy(
+                    _("Unknown sort field '{key}' of {model}"), key=path, model=model._meta.label
+                )
+            )
         # the columns of the keys, never a relation: Django would sort by the Meta.ordering
         # of the related model through a join that no restriction applies to (also the
         # primary key of a child model of a multi-table inheritance, a link to its parent)
         if relation is None:
-            return F(model._meta.pk.attname if name in ('pk', model._meta.pk.name) else name)
+            if name in ('pk', model._meta.pk.name):
+                return F(model._meta.pk.attname)
+            return F(translated_name(model, name))
         if not rest:
             if relation.reverse:
                 pk_column = relation.related_model._meta.pk.attname
@@ -937,7 +984,7 @@ class QueryToOrm:
             and not isinstance(param, _AliasPart)
             and not scope.allows(param, model)
         ):
-            raise ValueError(f"Unknown filter field '{param}' of {model._meta.label}")
+            raise ValueError(_unknown_filter_field(param, model))
 
         def queries_add(_q, _f=None):
             """
@@ -950,9 +997,12 @@ class QueryToOrm:
             if _f:
                 queries[1].extend(_f)
 
+        param = translated_name(model, param)
         if '.' in param:
             if params:
-                raise ValueError(f"The filter by objects of '{param}' takes no lookup")
+                raise ValueError(
+                    format_lazy(_("The filter by objects of '{key}' takes no lookup"), key=param)
+                )
             queries_add(self._filter_by_type(param, value, model, scope))
         elif field_info := fields_info.fields.get(param):
             if params and param in fields_info.relations:
@@ -961,7 +1011,9 @@ class QueryToOrm:
                 queries_add(self._filters_apply_native(params, value, field_info))
         elif param == SEARCH_TERM:
             if params:
-                raise ValueError(f"The filter '{SEARCH_TERM}' takes no lookup")
+                raise ValueError(
+                    format_lazy(_("The filter '{key}' takes no lookup"), key=SEARCH_TERM)
+                )
             if scope is None:
                 queries_add(self._filters_apply_search(model, value))
             else:
@@ -980,7 +1032,7 @@ class QueryToOrm:
 
             queries_add(self._filters_apply_native(params, value, type_obj), func_calc.fields_calc)
         else:
-            raise ValueError(f"Unknown filter field '{param}' of {model._meta.label}")
+            raise ValueError(_unknown_filter_field(param, model))
 
         return queries
 
@@ -993,13 +1045,24 @@ class QueryToOrm:
         relations_by_model = (
             source_model.get_fields_info().relations_by_model if source_model else {}
         )
-        relations = relations_by_model.get(target_model, [])
+        # the objects of the target model are filtered by the reverse relation of a forward
+        # one: a foreign key or one-to-one relation without it (`related_name='+'`) does not
+        # filter them (its name `+` names the hidden relation of any model); a many-to-many
+        # relation without it has a hidden name of its own, which filters
+        relations = [
+            it
+            for it in relations_by_model.get(target_model, [])
+            if it.reverse or it.is_m2m or not it.related_field.hidden
+        ]
         if scope is not None:
             relations = [it for it in relations if scope.allows(it.related_field.name, target_model)]
         if not relations:
             raise ValueError(
-                f"Unknown filter field '{model_label}': not a model related to "
-                f'{target_model._meta.label}'
+                format_lazy(
+                    _("Unknown filter field '{key}': not a model related to {model}"),
+                    key=model_label,
+                    model=target_model._meta.label,
+                )
             )
 
         ids = ids.split(',')
@@ -1080,12 +1143,17 @@ class QueryToOrm:
         if lookup not in lookups:
             supported = ', '.join(sorted(it for it in lookups | BOOL_SUFFIX if it))
             if lookup:
-                problem = (
-                    f"The filter lookup '{lookup}' is not supported for the field '{field.name}'"
+                message = _(
+                    "The filter lookup '{lookup}' is not supported for the field '{field}'; "
+                    'supported lookups: {supported}'
                 )
             else:
-                problem = f"The filter field '{field.name}' requires a lookup"
-            raise ValueError(f'{problem}; supported lookups: {supported}')
+                message = _(
+                    "The filter field '{field}' requires a lookup; supported lookups: {supported}"
+                )
+            raise ValueError(
+                format_lazy(message, lookup=lookup, field=field.name, supported=supported)
+            )
 
         return func(value, params, field)
 
@@ -1268,7 +1336,8 @@ class SearchToOrm:
                 f.name for f in model._meta.get_fields() if type(f) in DJANGO_SEARCH_FIELDS
             ]
             conditions = [
-                self._condition(self._construct_search(str(it))) for it in self.search_fields
+                self._condition(translated_lookup(model, self._construct_search(str(it))))
+                for it in self.search_fields
             ]
         else:
             self.search_fields = list(search_fields or ())
@@ -1283,7 +1352,9 @@ class SearchToOrm:
             self.q = Q()
             return
         if not conditions:
-            raise ValueError(f'The search is not available for {model._meta.label}')
+            raise ValueError(
+                format_lazy(_('The search is not available for {model}'), model=model._meta.label)
+            )
 
         self.q = reduce(
             operator.and_,
@@ -1300,12 +1371,12 @@ class SearchToOrm:
         The condition of a search lookup in the scope (None if the scope does not reach it):
         a relation is searched in the related objects the user can see.
         """
-        name, _, rest = lookup.partition(LOOKUP_SEP)
+        name, __, rest = lookup.partition(LOOKUP_SEP)
         if not scope.allows(name, model):
             return None
         relation = FieldsInfo.get_fields_info(model).relations.get(name)
         if relation is None or not rest:
-            return self._condition(lookup)
+            return self._condition(translated_lookup(model, lookup))
         qs, sub_scope = scope.related(relation)
         if (inner := self._scoped_condition(relation.related_model, rest, sub_scope)) is None:
             return None

@@ -39,6 +39,7 @@ from .builders import SchemaBuilder, SchemaResourceBuilder
 from .enums import (
     ApiAction,
     CrudAccessAction,
+    CrudApiAction,
     FieldAvail,
     FieldBlank,
     FieldNull,
@@ -91,6 +92,15 @@ class SchemaFactory:
         if self.parent:
             name = f'{self.parent.schema_name}__{name}'
         return name
+
+    @cached_property
+    def is_write_document(self) -> bool:
+        """
+        Whether the schemas of the factory validate the document of a create or an update:
+        a text the forms of Django require (`blank=False`) must not be blank there, and
+        the fields that are not in the schema are refused.
+        """
+        return isinstance(self.api_action, CrudApiAction) and self.api_action.for_write_only
 
     @cached_property
     def pk_field(self) -> SchemaField:
@@ -184,6 +194,10 @@ class SchemaFactory:
                     field_model = getattr(self.model, field.source)
                     if isinstance(field_model, calc_cached_property) and field_model.as_filter:
                         field.can_filter = True
+                    elif isinstance(field_model, TranslatedField):
+                        # by its column of the language of the request
+                        field.can_filter = True
+                        field.can_order = True
 
                 # trying to find auto-assembled field parameters
                 field_db = None
@@ -225,6 +239,14 @@ class SchemaFactory:
                             field.nullable = False
                     if field.blank is None and 'allow_blank' in field_params:
                         field.blank = field_params['allow_blank']
+                    elif (
+                        field.blank is None
+                        and self.is_write_document
+                        and isinstance(
+                            field.field_db_attr, django_models.CharField | django_models.TextField
+                        )
+                    ):
+                        field.blank = False
 
                 # trying to find the default value if it is not explicitly set
                 if field.default == PydanticUndefined:

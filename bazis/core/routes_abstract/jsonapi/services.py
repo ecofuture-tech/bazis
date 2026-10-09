@@ -32,6 +32,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import TypeAdapter
 
+from translated_fields import TranslatedField
+
 from bazis.core.routes_abstract.initial import InitialRouteBase
 from bazis.core.routing import iter_api_routes
 
@@ -88,7 +90,10 @@ class RouteFilterFieldsService:
         else:
             # Calculated field — get method's response_type and resolve its OpenAPI type.
             method = getattr(route_cls.model, route_schema_field.source, None)
-            response_type = getattr(method, 'response_type', None)
+            if isinstance(method, TranslatedField):
+                response_type = str
+            else:
+                response_type = getattr(method, 'response_type', None)
             field_info['py_type'] = (
                 cls.get_openapi_type_name(response_type) if response_type else 'unknown'
             )
