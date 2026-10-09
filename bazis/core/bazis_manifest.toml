@@ -29,6 +29,11 @@ import = "bazis.core.item_validation.defer_validate_item"
 use_when = "several writes of an item in a script, a command or a task validated once at the end, with the user who makes them; in a hook of a route, `with defer_validate_item() as scope: scope.validate()` validates the writes so far (the route validates at the end of the request, after its hooks)"
 
 [[extension_points]]
+name = "TranslatedSchemaModel"
+import = "bazis.core.utils.schemas.TranslatedSchemaModel"
+use_when = "a pydantic model with lazy texts (Field(title=_('…'))) whose JSON schema the code reads itself (model_json_schema() outside the OpenAPI): the schema is in the active language; TranslatedJsonSchema (bazis.core.utils.schemas) is the generator for any other model"
+
+[[extension_points]]
 name = "ValidateItemAdminMixin"
 import = "bazis.core.admin_abstract.ValidateItemAdminMixin"
 use_when = "the admin change form validates the item once after the item, its many-to-many relations and the inlines are saved, and shows the errors of validate_item in the form"
@@ -125,7 +130,7 @@ text = "a language of LANGUAGES other than English needs catalogs: the texts of 
 check = "bazis.W005"
 
 [[pitfalls]]
-text = "the language of a request is ?lang, then Accept-Language (by weight, base code), then LANGUAGE_CODE; titles must stay lazy (gettext_lazy, verbose_name) so that the cached schemas, schema_* routes and /openapi.json follow it; app.openapi() is in the active language"
+text = "the language of a request is ?lang, then Accept-Language (by weight, base code), then LANGUAGE_CODE; titles must stay lazy (gettext_lazy, verbose_name) so that the cached schemas, schema_* routes and /openapi.json follow it; app.openapi() is in the active language; the lazy texts of the models, parameters and operations of custom routes (Field(title=_('…')), Query(description=_('…')), summary) are translated in the OpenAPI too; lazy examples go in json_schema_extra={'examples': [...]}: pydantic serializes Field(examples=...) when it defines the model"
 
 [[pitfalls]]
 text = "a verbose_name of a model or field composed with an f-string at import is in the language active then and gets into the migrations: compose it with format_lazy"
