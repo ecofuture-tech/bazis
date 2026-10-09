@@ -65,7 +65,7 @@ from bazis.core.schemas.fields import (
     SchemaInclusions,
     SchemaMetaFields,
 )
-from bazis.core.schemas.schemas import JsonApiDataSchema
+from bazis.core.schemas.schemas import JsonApiDataSchema, included_document_index
 from bazis.core.services.filtering import ServiceFiltering
 from bazis.core.services.includes import include_to_list
 from bazis.core.services.meta_fields import meta_to_list
@@ -107,6 +107,18 @@ def errors_point_to_included(index: int):
             if loc[:1] == ('data',):
                 error.loc = ('body', 'included', index, *loc[1:])
         raise
+
+
+def relationship_body_loc(refused: set, positions: dict, is_list: bool) -> tuple:
+    """
+    The location of a refused object in the body of the relationships endpoints, the `data`
+    of the relationship: the first refused identifier of a to-many value (`positions`: its
+    index by key), else the value (a to-one value, or only objects the change unlinks,
+    which are not in the body).
+    """
+    if is_list and (indexes := [positions[pk] for pk in refused if pk in positions]):
+        return ('body', 'data', min(indexes))
+    return ('body', 'data')
 
 
 class JsonapiRouteBase(InitialRouteBase):
@@ -824,7 +836,7 @@ class JsonapiRouteBase(InitialRouteBase):
                 item = self.set_item(str(item_id).strip())
 
                 data = self.relationships_validate(item, related_field_name, relationships_data)
-                self.relations_access_check(data, item, action)
+                self.relations_access_check(data, item, action, relationship_body=True)
                 self.relationships_restricts_check(item, data, related_field_name, action)
 
                 self.hook_before_relationships_change(item, data, related_field_name, action)
@@ -907,7 +919,12 @@ class JsonapiRouteBase(InitialRouteBase):
         return item_data.data
 
     def relations_access_check(
-        self, data: JsonApiDataSchema, item: JsonApiMixin | None = None, action: str = 'set'
+        self,
+        data: JsonApiDataSchema,
+        item: JsonApiMixin | None = None,
+        action: str = 'set',
+        *,
+        relationship_body: bool = False,
     ):
         """
         Checks that the relationships of the item data link only the objects the default
@@ -917,7 +934,10 @@ class JsonapiRouteBase(InitialRouteBase):
         For a changed item only the objects whose link changes are checked; `action` is the
         action of the relationships endpoints (`add`, `remove`, `set`; an update sets the
         value). The models whose route does not restrict them are not queried. Fails with
-        403 `ERR_RELATION_ACCESS`; `relation_targets_check = False` turns the check off.
+        403 `ERR_RELATION_ACCESS`, pointing to `/data/relationships/<field>`; with
+        `relationship_body` (the relationships endpoints, whose body is the `data` of the
+        relationship) to the refused identifier of a to-many relationship, `/data/<index>`,
+        else to `/data`. `relation_targets_check = False` turns the check off.
         """
         if self.relation_targets_check is False or not getattr(data, 'relationships', None):
             return
@@ -937,14 +957,9 @@ class JsonapiRouteBase(InitialRouteBase):
                 continue
 
             rel_data = (value or {}).get('data')
-            if not isinstance(rel_data, list):
-                rel_data = [rel_data] if rel_data else []
-            # normalized as the primary keys of the database (e.g. a UUID in upper case)
-            ids = {
-                str(self.relationships_service._parse_id(it['id'], rel_model))
-                for it in rel_data
-                if it and it.get('id') is not None
-            }
+            is_list = isinstance(rel_data, list)
+            positions = self._relation_positions(rel_data, rel_model)
+            ids = set(positions)
             unlinked = set()
             if item is not None:
                 if field_info.to_many:
@@ -973,19 +988,38 @@ class JsonapiRouteBase(InitialRouteBase):
                 continue
 
             allowed = restrict(rel_model.objects.filter(pk__in=ids), access_action, user=user)
-            if ids - {str(pk) for pk in allowed.values_list('pk', flat=True)}:
+            if refused := ids - {str(pk) for pk in allowed.values_list('pk', flat=True)}:
+                if relationship_body:
+                    loc = relationship_body_loc(refused, positions, is_list)
+                else:
+                    loc = ('body', 'data', 'relationships', f_name)
                 raise JsonApiBazisException(
                     JsonApiBazisError(
                         detail=format_lazy(
                             _('No access to the related object of {name}'), name=f_name
                         ),
-                        loc=('body', 'data', 'relationships', f_name),
+                        loc=loc,
                         code='ERR_RELATION_ACCESS',
                         title=_('Access denied'),
                         status=403,
                     ),
                     status=403,
                 )
+
+    def _relation_positions(self, rel_data, rel_model) -> dict[str, int]:
+        """
+        The keys of the identifiers of a relationship value (a list, one identifier or
+        None), normalized as the primary keys of the database (e.g. a UUID in upper case),
+        with the first index of each in the value.
+        """
+        if not isinstance(rel_data, list):
+            rel_data = [rel_data] if rel_data else []
+        positions = {}
+        for index, it in enumerate(rel_data):
+            if it and it.get('id') is not None:
+                pk = str(self.relationships_service._parse_id(it['id'], rel_model))
+                positions.setdefault(pk, index)
+        return positions
 
     def relationships_restricts_check(
         self, item: JsonApiMixin, data: JsonApiDataSchema, related_field_name: str, action: str
@@ -1188,8 +1222,10 @@ class JsonapiRouteBase(InitialRouteBase):
                     for include in includes:
                         includes_cached[(include.get_resource_label(), str(include.id))] = include
 
-                # from the input included, take those that came for updating
+                # from the input included, take those that came for updating (`index`: in
+                # the document, the errors point to it)
                 for index, include_data in enumerate(item_data_included):
+                    index = included_document_index(include_data, index)
                     if include_data.action != CrudAccessAction.CHANGE.value:
                         continue
                     try:
@@ -1210,6 +1246,7 @@ class JsonapiRouteBase(InitialRouteBase):
 
                 # from the input included, take those that came for creation
                 for index, include_data in enumerate(item_data_included):
+                    index = included_document_index(include_data, index)
                     if include_data.action == CrudAccessAction.ADD.value:
                         with errors_point_to_included(index):
                             include = self.item_create(include_data)
@@ -1235,6 +1272,7 @@ class JsonapiRouteBase(InitialRouteBase):
             # try to get input data for included
             if item_data_included := getattr(item_data, 'included', None):
                 for index, include_data in enumerate(item_data_included):
+                    index = included_document_index(include_data, index)
                     with errors_point_to_included(index):
                         include = self.item_create(include_data)
                     # the errors of its validation point to it

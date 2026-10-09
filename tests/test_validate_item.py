@@ -21,6 +21,7 @@ override it pay nothing.
 """
 
 import json
+import uuid
 
 from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
@@ -523,6 +524,72 @@ def test_request_errors_point_as_the_item_errors(sample_app, calls):
         'type': 'validation.booking',
     }
     assert Booking.objects.get().end == 20
+
+
+@pytest.mark.django_db(transaction=True)
+def test_included_errors_point_to_the_index_in_the_document(sample_app, calls, monkeypatch):
+    """
+    The items of `included` without a schema for the request (`bs:action` `view`, an
+    unknown type) are left out; the errors of the items after them point to their index in
+    the document, not in the list of the validated items.
+    """
+    from bazis.core.routes_abstract.jsonapi import RestrictedQsRouteMixin
+
+    monkeypatch.setattr(Person, '_default_route', Person.get_default_route())
+
+    class HiddenPersonRouteSet(RestrictedQsRouteMixin):
+        model = Person
+
+        @classmethod
+        def restrict_queryset(cls, qs, access_action, user=None, **kwargs):
+            return qs.exclude(name='Hidden')
+
+    hidden = Person.objects.create(name='Hidden')
+    dropped = [
+        {'type': 'validation.booking', 'bs:action': 'view', 'id': str(uuid.uuid4())},
+        {'type': 'validation.unknown', 'bs:action': 'add', 'attributes': {}},
+    ]
+    client = get_api_client(sample_app)
+
+    def post(included):
+        return client.post(
+            '/api/v1/validation/room/?include=bookings',
+            json_data={
+                'data': {'type': 'validation.room', 'attributes': {'name': 'Blue'}},
+                'included': [*dropped, included],
+            },
+        )
+
+    invalid = booking_data(start=20, end=10)['data'] | {'bs:action': 'add'}
+    assert_invalid(post(invalid), pointer='/included/2/attributes/end')
+
+    denied = booking_data(participants=[hidden])['data'] | {'bs:action': 'add'}
+    response = post(denied)
+    assert response.status_code == 403, response.text
+    assert response.json()['errors'][0]['source'] == {
+        'pointer': '/included/2/relationships/participants'
+    }
+    assert not Room.objects.exists() and not Booking.objects.exists()
+
+    # an update: the included item to change after the left out ones
+    room = Room.objects.create(name='Blue')
+    booking = make_booking(room, 10, 20)
+    response = client.patch(
+        f'/api/v1/validation/room/{room.pk}/?include=bookings',
+        json_data={
+            'data': {'id': str(room.pk), 'type': 'validation.room', 'attributes': {}},
+            'included': [
+                *dropped,
+                {
+                    'id': str(booking.pk),
+                    'type': 'validation.booking',
+                    'bs:action': 'change',
+                    'attributes': {'end': 5},
+                },
+            ],
+        },
+    )
+    assert_invalid(response, pointer='/included/2/attributes/end')
 
 
 @pytest.mark.django_db(transaction=True)

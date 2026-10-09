@@ -201,8 +201,8 @@ class OrderRouteSet(JsonapiRouteBase):
   `**kwargs`). A relationship of a created or changed item (create, update, the
   relationships endpoints) links only the objects it returns for `view`, a reverse
   relationship only the objects it returns for `change` (their foreign key changes), both
-  for the objects whose link changes; otherwise 403 `ERR_RELATION_ACCESS` with the pointer
-  `/data/relationships/<field>`. `included` shows only the visible objects (the
+  for the objects whose link changes; otherwise 403 `ERR_RELATION_ACCESS` (pointers: see
+  Errors). `included` shows only the visible objects (the
   relationship keeps the identifiers), and the filter, sorting and search of the other
   routes reach only the visible objects through a relation. The objects of a model whose
   default route does not
@@ -304,17 +304,27 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   other exception 500 (the traceback in `detail` only with DEBUG), also an
   `IntegrityError` of a constraint checked at the commit (a foreign key to a missing
   object).
-- The pointers: the errors of the request schemas (`ERR_VALIDATE`), of `validate_item`
-  (`ERR_ITEM_INVALID`) and of the relation access (`ERR_RELATION_ACCESS`) point into the
-  request document the same way: `/data/attributes/<f>`, `/data/relationships/<f>`,
-  `/data/id`, and `/included/<i>/attributes/<f>` for the included item at index `i`;
-  `source.id` and `source.type` name the item of an `ERR_VALIDATE` when the document gives
-  its id. A related id that cannot be a key of the related model is an `ERR_VALIDATE` of
-  its identifier (`/data/relationships/<f>/data/<i>/id`); a document without `data` is
-  `missing` at `/data`. On the relationships endpoints, whose body is the `data` of the
-  relationship, `ERR_VALIDATE` points into that body: `/data`, `/data/<i>/id` (`/data/id`).
+- The pointers (`source`) of the errors of the core, by code. Create and update point into
+  the request document; an included item is `/included/<i>` instead of `/data`, `<i>` its
+  index in the `included` of the document. The relationships endpoints point into their
+  body, the `data` of the relationship.
+  - `ERR_VALIDATE`: `/data/attributes/<f>`, `/data/relationships/<f>/...`, `/data/id`, `/data`
+    (`missing` for a document without `data`); a related id that cannot be a key of the
+    related model at its identifier, `/data/relationships/<f>/data/<j>/id`; `source.id` and
+    `source.type` name the item when the document gives its id. On the relationships
+    endpoints `/data`, `/data/<j>/id` (`/data/id`).
+  - `ERR_ITEM_INVALID`: `/data/attributes/<f>`, `/data/relationships/<f>`, `/data`. On the
+    relationships endpoints the parameter `/related_field_name`.
+  - `ERR_RELATION_ACCESS`: `/data/relationships/<f>`. On the relationships endpoints
+    `/data/<j>`, the refused identifier of a to-many relationship, else `/data` (a to-one
+    relationship, or an object the change unlinks).
   Up to 2.10 `ERR_VALIDATE` pointed to `/attributes/<f>` and `/relationships/<f>`, also for
-  an included item: a client that also serves older servers reads both forms.
+  an included item, and the relationships endpoints into the document of an update: a
+  client that also serves older servers reads both forms.
+- A relation by a foreign key with `to_field`: its identifiers are values of that field
+  (checked as such), but the relation checks (`relations_access_check`, the relationships
+  endpoints) look the objects up by their primary key: such relations are not supported
+  there.
 - The titles and the fixed details of the errors of the core follow the language of the
   request (`ru` is translated); the Pydantic messages and the diagnostics of `ERR_FILTER`
   are English.

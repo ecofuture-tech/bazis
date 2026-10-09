@@ -141,3 +141,30 @@ def test_relationships_endpoint_errors_point_into_its_body(sample_app, field, da
         response = send(client, method, url, {'data': data})
         assert [it['pointer'] for it in sources(response)] == pointers, method
         assert all(set(it) == {'pointer'} for it in sources(response)), method
+
+
+def test_identifier_of_a_relation_to_another_field():
+    """
+    The id of an identifier is a value of the field the relation references: the primary
+    key, or the `to_field` of a foreign key (its value is what the identifiers show).
+    """
+    from pydantic import ValidationError
+
+    from entity.models import ParentEntity
+    from entity.routes import ChildEntityRouteSet
+
+    from bazis.core.schemas.builders import SchemaResourceBuilder
+    from bazis.core.schemas.enums import CrudApiAction
+
+    builder = SchemaResourceBuilder(ChildEntityRouteSet.schema_factories[CrudApiAction.UPDATE])
+    by_pk = builder._build_resource_identifier_schema(ParentEntity, None)
+    by_price = builder._build_resource_identifier_schema(
+        ParentEntity, None, ParentEntity._meta.get_field('price')
+    )
+    identifier = {'type': 'entity.parent_entity'}
+
+    assert by_price.model_validate(identifier | {'id': '10.50'}).id == '10.50'
+    with pytest.raises(ValidationError):
+        by_price.model_validate(identifier | {'id': 'not-a-price'})
+    with pytest.raises(ValidationError):
+        by_pk.model_validate(identifier | {'id': '10.50'})

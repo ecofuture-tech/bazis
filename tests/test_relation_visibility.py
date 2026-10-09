@@ -50,11 +50,15 @@ def note_payload(note=None, **relationships):
     return {'data': data}
 
 
-def assert_relation_denied(response, field):
+def assert_relation_denied(response, field, pointer=None):
+    """
+    The pointer of a create or an update is the relationship in the document; the
+    relationships endpoints point into their body, the `data` of the relationship (`pointer`).
+    """
     assert response.status_code == 403, response.text
     error = response.json()['errors'][0]
     assert error['code'] == 'ERR_RELATION_ACCESS'
-    assert error['source']['pointer'] == f'/data/relationships/{field}'
+    assert error['source'] == {'pointer': pointer or f'/data/relationships/{field}'}
 
 
 def relationships_request(client, method, note, field, payload):
@@ -170,11 +174,12 @@ def test_relationships_endpoints_with_invisible_target(sample_app, tags):
         response = relationships_request(
             client, method, note, 'tags', rels('tag', tags['visible2'], tags['hidden'])
         )
-        assert_relation_denied(response, 'tags')
+        # the refused identifier
+        assert_relation_denied(response, 'tags', '/data/1')
     assert list(note.tags.all()) == [tags['visible']]
 
     response = relationships_request(client, 'PATCH', note, 'tag', rel('tag', tags['hidden']))
-    assert_relation_denied(response, 'tag')
+    assert_relation_denied(response, 'tag', '/data')
 
     response = relationships_request(client, 'POST', note, 'tags', rels('tag', tags['visible2']))
     assert response.status_code == 204, response.text
@@ -209,7 +214,7 @@ def test_reverse_relation_requires_change(sample_app, tags):
     response = relationships_request(
         client, 'POST', note, 'attached_tags', rels('tag', tags['locked'])
     )
-    assert_relation_denied(response, 'attached_tags')
+    assert_relation_denied(response, 'attached_tags', '/data/0')
     response = client.patch(
         f'{NOTES}{note.id}/',
         json_data=note_payload(
@@ -225,14 +230,15 @@ def test_reverse_relation_requires_change(sample_app, tags):
     response = relationships_request(
         client, 'DELETE', note, 'attached_tags', rels('tag', tags['locked'])
     )
-    assert_relation_denied(response, 'attached_tags')
+    assert_relation_denied(response, 'attached_tags', '/data/0')
     tags['locked'].refresh_from_db()
     assert tags['locked'].note == note
 
     # replacing the linked tags unlinks the locked one
     for payload in (rels('tag', tags['visible2']), {'data': []}):
         response = relationships_request(client, 'PATCH', note, 'attached_tags', payload)
-        assert_relation_denied(response, 'attached_tags')
+        # the unlinked tag is not in the body
+        assert_relation_denied(response, 'attached_tags', '/data')
     assert set(note.attached_tags.all()) == {tags['visible'], tags['locked']}
 
     # linking a changeable tag

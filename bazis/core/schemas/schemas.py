@@ -43,6 +43,20 @@ JsonApiIncludedT = TypeVar('JsonApiIncludedT')
 JsonApiMetaT = TypeVar('JsonApiMetaT')
 
 
+
+#: the attribute of a validated included item that keeps its index in the request document
+INCLUDED_INDEX_ATTR = '_bs_document_index'
+
+
+def included_document_index(include_data: BaseModel, default: int) -> int:
+    """
+    The index of a validated included item in the `included` of the request document (the
+    items without a schema for the request, `bs:action` `view` or an unknown type, are
+    left out of the validated list); `default` for an item that was not validated from a
+    document.
+    """
+    return getattr(include_data, INCLUDED_INDEX_ATTR, default)
+
 class JsonApiDataSchema(BaseModel):
     """
     Tags: RAG, INTERNAL
@@ -293,7 +307,11 @@ class JsonApiTopIncludedObjectSchema[JsonApiDataT, JsonApiIncludedT, JsonApiMeta
 
                 # if a schema is found, apply it
                 if include_schema:
-                    schema_included.append(model_validate(include_schema, include, ('included', i)))
+                    include_data = model_validate(include_schema, include, ('included', i))
+                    # the index of the item in the document: the items without a schema are
+                    # left out, the errors of the writes point to it (`/included/<index>`)
+                    object.__setattr__(include_data, INCLUDED_INDEX_ATTR, i)
+                    schema_included.append(include_data)
 
             params['included'] = schema_included
 
