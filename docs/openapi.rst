@@ -18,6 +18,9 @@ Inside the OpenAPI schema for attributes of type *attributes*, the following cha
 
 - **orderLabel**: if filled, this attribute can be used with the specified label as a sorting *sort* parameter.
   - Labels are listed separated by commas, for reverse sorting, specify "-" before the label.
+  - A geo-point field also sorts by the distance from a point of the request:
+    ``sort=location__distance(37.62,55.75)`` (``<longitude>,<latitude>``; the nearest first, ``-`` for the
+    farthest first; the objects without a point last), on the point fields of the LIST schema of the route only.
 - **filterLabel**: if filled, this attribute can be used with the specified label as a filtering *filter* parameter.
   - Filtering operations are described below.
 
@@ -124,10 +127,13 @@ with the error 400 ``ERR_FILTER``. So is an unknown field, also after a relation
   the values (``types=type1,type2,type3``); ``__contains``: all the values; ``__contained_by``: only these values.
 - **For range fields**: ``__contains``, ``__contained_by``, ``__overlap``, ``__fully_lt``, ``__fully_gt``, ``__not_lt``,
   ``__not_gt``, ``__adjacent_to`` with the value ``start,end``; a range field requires one of these suffixes.
-- **For geo-point fields**:
-  - Match to within 10m: ``point=49.124,55.76480``.
-  - Match with specified accuracy in meters: ``point__near=49.124,55.76480,100``, where the last parameter is the accuracy in meters.
-  - Fall within specified bbox: ``point__in_bbox=160.6,-55.95,-170,-25.89``.
+- **For geo-point fields** (``PointField``; a point is ``<longitude>,<latitude>`` in degrees of WGS 84, the
+  distances are in meters on the sphere, :py:mod:`~bazis.core.utils.geo`):
+  - Within 10 m of a point: ``point=49.124,55.76480``.
+  - Within a distance of a point: ``point__near=49.124,55.76480,100`` (meters), ``...,500m`` or ``...,2.5km``;
+    100 m without a distance (``ST_DWithin``, which uses the GiST index of a ``geography=True`` field).
+  - Inside a bbox: ``point__in_bbox=160.6,-55.95,-170,-25.89`` (longitude, latitude of two corners).
+  - A malformed point or distance, or a point out of range, is 400 ``ERR_FILTER``.
 
 Full-Text Search in Filtering
 ------------------------------

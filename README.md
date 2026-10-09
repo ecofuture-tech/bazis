@@ -511,7 +511,9 @@ A relation accepts `exists` and `isnull` (`true`/`false`) or a field of the rela
 - array fields: none (= `overlap`), `overlap`, `contains`, `contained_by`;
 - range fields: `contains`, `contained_by`, `overlap`, `fully_lt`, `fully_gt`, `not_lt`,
   `not_gt`, `adjacent_to`;
-- geo points: none (within 10 m), `near`, `in_bbox`.
+- geo points: none (within 10 m), `near` (`<lon>,<lat>[,<distance>]`: meters, `500m`,
+  `2.5km`; 100 m by default), `in_bbox`; `sort=<point>__distance(<lon>,<lat>)` sorts by
+  the distance from the point (nearest first).
 
 `iexact`, `istartswith`, `iregex`, `search` and `$search` apply to every word of the value. Any
 other suffix (`__in`, `__icontains`, ...), an unknown field (also after a relation) and a
@@ -624,7 +626,9 @@ class ParentEntityAdmin(DtAdminMixin, admin.ModelAdmin):
 
 `python manage.py bazis_introspect` prints the Bazis packages, settings, models and routes of
 a project as JSON, and `python manage.py bazis_doctor` checks the project for errors and
-risky settings. Every package ships `AGENTS.md` and `bazis_manifest.toml` describing how to
+risky settings. `python manage.py bazis_messages make|status|apply <file.json>|compile`
+makes the gettext catalogs of the project, lists their untranslated and fuzzy entries as
+JSON and fills them from a JSON file. Every package ships `AGENTS.md` and `bazis_manifest.toml` describing how to
 use it (see [docs/agents.md](docs/agents.md)).
 
 ## Architecture
