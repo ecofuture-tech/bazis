@@ -536,6 +536,13 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   other routes use `restrict_queryset`.
 - A route that hides fields of its model (a projection with `fields`) hides them from the
   filter, the sorting and the search too; do not list hidden fields in `search_fields`.
+- The database connection of a thread other than the main one (the AnyIO worker threads
+  that run the sync endpoints and dependencies, a thread a package starts) is closed by the
+  core when the thread ends. While the thread lives it keeps its connection between the
+  requests for `CONN_MAX_AGE`, and an endpoint closes the connection of its thread once it
+  is obsolete or broken (`close_old_connections` of `bazis.core.utils.orm`, also for a
+  thread that runs a loop of jobs, between the jobs). Do not close the connections in the
+  endpoints, and do not hand a connection to another thread.
 - Do not access `settings.<dynamic setting>` at import time: dynamic settings are read from
   the database (constance).
 - Do not edit generated schemas by hand; change the model or `fields` of the route.

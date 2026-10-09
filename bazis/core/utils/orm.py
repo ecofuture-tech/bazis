@@ -20,6 +20,7 @@ import inspect
 import json
 import logging
 import os
+import threading
 from collections.abc import Callable
 from copy import deepcopy
 from functools import wraps
@@ -82,6 +83,49 @@ def close_old_connections(**kwargs):
         if conn.in_atomic_block:
             continue
         conn.close_if_unusable_or_obsolete()
+
+
+class _ThreadConnections:
+    """
+    The connections a thread other than the main one has opened, closed when the thread
+    ends: Python frees the thread-local data of a thread in that thread when it ends.
+    """
+
+    __slots__ = ('connections',)
+
+    def __init__(self):
+        self.connections = set()
+
+    def __del__(self):
+        for conn in self.connections:
+            try:
+                conn.close()
+            except Exception:
+                logger.warning(
+                    'The connection %r of an ended thread failed to close', conn.alias, exc_info=True
+                )
+
+
+_thread_connections = threading.local()
+
+
+def close_with_thread(sender, connection, **kwargs):
+    """
+    Receiver of `connection_created`: the connection of a thread other than the main one is
+    closed when that thread ends. A thread keeps its connection between the requests while
+    it lives (`CONN_MAX_AGE`), and the connection of an ended thread, which no thread can
+    use, would otherwise stay open until the garbage collector frees it (the connection is
+    in a reference cycle), with an idle PostgreSQL session until then and a
+    `ResourceWarning` of the driver. The sync endpoints run in the worker threads of AnyIO,
+    which end after 10 s without work.
+    """
+    if threading.current_thread() is threading.main_thread():
+        return
+    try:
+        opened = _thread_connections.opened
+    except AttributeError:
+        opened = _thread_connections.opened = _ThreadConnections()
+    opened.connections.add(connection)
 
 
 def get_file_path(instance, filename):
