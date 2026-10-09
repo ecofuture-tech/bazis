@@ -181,7 +181,10 @@ class OrderRouteSet(JsonapiRouteBase):
 
 - A route class gives list, retrieve, create, update, destroy and the relationships
   endpoints for its model. Restrict them with `as_router(actions=[...])` or
-  `actions_exclude`.
+  `actions_exclude`. A route class of a proxy model has no create and update (its own
+  `actions_exclude`, the inherited list is not changed). There is no route that shows an
+  item past its schema (`/{item_id}/dict_data/` was removed in 2.11.0); a project that
+  needs one defines it in its route class and restricts it itself.
 - Reverse relations and calculated fields are not in the schemas by default: add them with
   `SchemaFields(include=...)`. Writable relations are those of the UPDATE (CREATE) schema.
   A relation read-only there (`SchemaField(read_only=True)`, the field permission
@@ -198,8 +201,8 @@ class OrderRouteSet(JsonapiRouteBase):
   `**kwargs`). A relationship of a created or changed item (create, update, the
   relationships endpoints) links only the objects it returns for `view`, a reverse
   relationship only the objects it returns for `change` (their foreign key changes), both
-  for the objects whose link changes; otherwise 403 `ERR_RELATION_ACCESS` with the pointer
-  `/data/relationships/<field>`. `included` shows only the visible objects (the
+  for the objects whose link changes; otherwise 403 `ERR_RELATION_ACCESS` (pointers: see
+  Errors). `included` shows only the visible objects (the
   relationship keeps the identifiers), and the filter, sorting and search of the other
   routes reach only the visible objects through a relation. The objects of a model whose
   default route does not
@@ -301,12 +304,27 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   other exception 500 (the traceback in `detail` only with DEBUG), also an
   `IntegrityError` of a constraint checked at the commit (a foreign key to a missing
   object).
-- Known defect, fixed in 2.11.0: up to 2.10 the errors of the request schemas
-  (`ERR_VALIDATE`) point to `/attributes/<field>` and `/relationships/<field>`, without
-  `/data` and also for an included item, while the other errors of the core point into
-  the document (`/data/...`, `/included/<index>/...`). The contract is the pointer into
-  the document; until 2.11.0 a client that maps errors to the fields also reads the old
-  form.
+- The pointers (`source`) of the errors of the core, by code. Create and update point into
+  the request document; an included item is `/included/<i>` instead of `/data`, `<i>` its
+  index in the `included` of the document. The relationships endpoints point into their
+  body, the `data` of the relationship.
+  - `ERR_VALIDATE`: `/data/attributes/<f>`, `/data/relationships/<f>/...`, `/data/id`, `/data`
+    (`missing` for a document without `data`); a related id that cannot be a key of the
+    related model at its identifier, `/data/relationships/<f>/data/<j>/id`; `source.id` and
+    `source.type` name the item when the document gives its id. On the relationships
+    endpoints `/data`, `/data/<j>/id` (`/data/id`).
+  - `ERR_ITEM_INVALID`: `/data/attributes/<f>`, `/data/relationships/<f>`, `/data`. On the
+    relationships endpoints the parameter `/related_field_name`.
+  - `ERR_RELATION_ACCESS`: `/data/relationships/<f>`. On the relationships endpoints
+    `/data/<j>`, the refused identifier of a to-many relationship, else `/data` (a to-one
+    relationship, or an object the change unlinks).
+  Up to 2.10 `ERR_VALIDATE` pointed to `/attributes/<f>` and `/relationships/<f>`, also for
+  an included item, and the relationships endpoints into the document of an update: a
+  client that also serves older servers reads both forms.
+- A relation by a foreign key with `to_field`: its identifiers are values of that field
+  (checked as such), but the relation checks (`relations_access_check`, the relationships
+  endpoints) look the objects up by their primary key: such relations are not supported
+  there.
 - The titles and the fixed details of the errors of the core follow the language of the
   request (`ru` is translated); the Pydantic messages and the diagnostics of `ERR_FILTER`
   are English.
@@ -324,12 +342,9 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   writes are `action_create`, `action_update`, `action_destroy`, `action_post_relationships`,
   `action_update_relationships`, `action_delete_relationships` and their schemas
   `action_schema_create`, `action_schema_update`; the other actions are `action_list_id`
-  (`/_id/`), `get_route_filter_fields` and `action_dict_data` (`/{item_id}/dict_data/`).
-- Known defects, being fixed: `action_dict_data` answers all the attributes of the model,
-  whatever the `fields` of the route (keep it out of a projection by listing the actions);
-  on a proxy model the core adds `action_create` and `action_update` to the
-  `actions_exclude` list the route class inherits, which can change the routes of the
-  parent and sibling classes (give such a route its own `actions_exclude` list).
+  (`/_id/`) and `get_route_filter_fields`. No action shows the attributes of an item past
+  the schema of the route (the `dict_data` route was removed in 2.11.0). A route class of
+  a proxy model excludes `action_create` and `action_update` in a list of its own.
 
 ## API conventions
 

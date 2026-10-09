@@ -17,6 +17,8 @@ from collections.abc import Callable
 from itertools import groupby
 from typing import TYPE_CHECKING, Any, TypeVar, get_type_hints
 
+from django.core.exceptions import ValidationError as DjangoValidationError
+
 from pydantic import (
     BaseModel,
     Field,
@@ -335,20 +337,35 @@ class SchemaResourceBuilder:
         return schema
 
     def _build_resource_identifier_schema(
-        self, model: type[InitialBase], default_id: Any
+        self, model: type[InitialBase], default_id: Any, key_field=None
     ) -> type[BaseModel]:
         """
         Method to build a schema for resource identifiers, including id and type fields.
+        The id must be a value of `key_field`, the field of the related model the relation
+        references (its primary key by default).
         """
+        key_field = key_field or model._meta.pk
         schema_name = (
             f'_{self.factory.schema_name}'
             f'__ResourceIdentifierSchema'
             f'__{model.get_resource_label().replace(".", "__")}'
+            f'{"" if key_field.primary_key else "__" + key_field.name}'
         )
         if schema := get_schema_from_cache(schema_name):
             return schema
+
+        def id_validator(cls, value):
+            # an id that cannot be a key of the related model is an error of the document
+            # (the write would fail with the ValidationError of the field)
+            try:
+                key_field.to_python(value)
+            except DjangoValidationError as e:
+                raise ValueError(e.messages[0]) from None
+            return value
+
         schema = schema_create(
             schema_name,
+            __validators__={'id_validator': field_validator('id')(id_validator)},
             id=(str, Field(default_id, json_schema_extra={'example': model.get_id_example()})),
             type=(str, Field(model.get_resource_label())),
         )
@@ -477,9 +494,17 @@ class SchemaResourceBuilder:
                 continue
 
             # resource identifier schema
+            rel = field.field_db_rel
+            # a foreign key references its `to_field` (the value of the identifier)
+            key_field = (
+                getattr(rel.model_field, 'target_field', None)
+                if not (rel.reverse or rel.to_many)
+                else None
+            )
             schema_resource_identifier = self._build_resource_identifier_schema(
-                field.field_db_rel.related_model,
+                rel.related_model,
                 field.default,
+                key_field,
             )
 
             schema_data = schema_create(

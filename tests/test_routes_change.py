@@ -331,7 +331,11 @@ def test_routes_update_error(sample_app):
                 'title': 'bool_parsing',
                 'code': 'ERR_VALIDATE',
                 'detail': 'Input should be a valid boolean, unable to interpret input',
-                'source': {'pointer': '/attributes/is_active'},
+                'source': {
+                    'pointer': '/data/attributes/is_active',
+                    'id': str(parent_entity.pk),
+                    'type': 'entity.parent_entity',
+                },
             }
         ]
     }

@@ -242,7 +242,7 @@ def test_read_only_route(sample_app):
     """
     A route class that lists its `actions` has only them: the projection of the notes
     (visibility.note_brief) lists and shows, it does not write nor show the attributes it
-    hides (`dict_data` shows all the attributes of the model).
+    hides (no route shows them: `dict_data` is removed).
     """
     note = Note.objects.create(name='Secret topic')
     client = get_api_client(sample_app)

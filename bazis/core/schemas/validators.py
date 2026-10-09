@@ -96,7 +96,9 @@ def model_validate(model: type[BaseModel], value, loc: tuple):
             _id = value['id']
             _type = value['type']
 
-        for errs in e.errors():
+        # e.errors() makes new dicts on every call: change and raise the same ones
+        errors = e.errors()
+        for errs in errors:
             errs = errs if isinstance(errs, list) else [errs]
             for _e in errs:
                 if isinstance(_e['loc'], tuple):
@@ -111,4 +113,4 @@ def model_validate(model: type[BaseModel], value, loc: tuple):
                     _e['ctx']['_id'] = _id
                 if _type:
                     _e['ctx']['_type'] = _type
-        raise ValidationError.from_exception_data(str(e), e.errors()) from e
+        raise ValidationError.from_exception_data(str(e), errors) from e

@@ -83,7 +83,7 @@ class NoteBriefRouteSet(JsonapiRouteBase):
     A projection of the notes without their name and label, as a calendar shows the
     occupancy of the rooms without the topics of the bookings of the others: the filter,
     the sorting and the search of its requests do not reach them. Read-only: it has only
-    the actions it lists (not `action_dict_data`, which shows all the attributes).
+    the actions it lists.
     """
 
     model = apps.get_model('visibility.Note')
