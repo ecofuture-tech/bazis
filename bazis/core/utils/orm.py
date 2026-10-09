@@ -725,10 +725,22 @@ class calc_cached_property(cached_property):  # noqa: N801
     Tags: RAG, EXPORT
     """
 
-    fields_calc: list[FieldCalc] = []
+    fields_declared: list[FieldCalc | Callable[[], FieldCalc]] = []
     as_filter: bool = False
     filter_field: type = None
     response_type: type = None
+
+    @cached_property
+    def fields_calc(self) -> list[FieldCalc]:
+        """
+        The calculations of the property, normalized. A declaration may be a callable that
+        returns the calculation (`FieldDynamic` is one): its expression may need models that
+        are not loaded when the class is declared, so the callables are called on the first
+        use.
+        """
+        return _fields_related_normalize(
+            [field() if callable(field) else field for field in self.fields_declared]
+        )
 
     # def __set_name__(self, owner, name):
     #     super().__set_name__(owner, name)
@@ -920,10 +932,6 @@ def calc_property(
         Inner decorator function that applies the calc_cached_property to the decorated
         function.
         """
-        fields_converted = [
-            field() if isinstance(field, FieldDynamic) else field for field in fields_calc
-        ]
-        fields_normalized = _fields_related_normalize(fields_converted)
 
         @wraps(func)
         def wrapper(instance, *args, **kwargs):
@@ -937,13 +945,13 @@ def calc_property(
             )
             if calc_field_data_param:
                 depends_calc_model = DependsCalc()
-                depends_calc_model.build_calc_field_data(instance, fields_normalized)
+                depends_calc_model.build_calc_field_data(instance, prop.fields_calc)
                 return func(instance, depends_calc_model, *args, **kwargs)
             else:
                 return func(instance, *args, **kwargs)
 
         prop = calc_cached_property(wrapper)
-        prop.fields_calc = fields_normalized
+        prop.fields_declared = fields_calc
         prop.as_filter = as_filter
         prop.filter_field = filter_field
 

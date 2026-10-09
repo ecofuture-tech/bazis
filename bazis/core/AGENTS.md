@@ -188,6 +188,21 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   `Meta.ordering` of the related model is dropped there); with `fields=[...]` a list of
   dicts of the related objects (`order_by`, `slice`); without them the related objects
   themselves (`nested=[...]` for theirs); an `alias` starting with `has_` is an `EXISTS`.
+  A subquery over another model is declared by a callable that returns the field: it is
+  called on the first query, so its expression may use a model declared later in the
+  module or a queryset, which cannot be built while the models load:
+
+  ```python
+  from django.db.models import OuterRef, Subquery, Sum
+
+  class Department(DtMixin, UuidMixin, JsonApiMixin):
+      @calc_property([lambda: FieldAnnotate(source='spent', query=Subquery(
+          Request.objects.filter(department=OuterRef('pk'), status_id='approved')
+          .order_by().values('department').annotate(total=Sum('amount')).values('total')))])
+      def spent(self) -> Decimal | None:
+          return self.spent
+  ```
+
   A method that takes a `DependsCalc` argument reads them from `dc.data.<alias>`. The return
   annotation is the type of the attribute. Add it to the schema of the route with
   `fields = {None: SchemaFields(include={'open_tickets': None})}` (read-only, not required;

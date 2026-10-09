@@ -20,12 +20,13 @@ project.
 """
 
 from django.db import models
+from django.db.models import OuterRef, Subquery
 from django.utils.translation import gettext_lazy as _
 
 from translated_fields import TranslatedFieldWithFallback
 
 from bazis.core.models_abstract import JsonApiMixin, UniqNumberMixin
-from bazis.core.utils.orm import FieldDynamic, calc_property
+from bazis.core.utils.orm import FieldAnnotate, FieldDynamic, calc_property
 
 
 class Attachment(JsonApiMixin):
@@ -64,6 +65,18 @@ class Memo(UniqNumberMixin, JsonApiMixin):
     @calc_property([FieldDynamic(source='cards', func='Count', alias='cards_count')])
     def cards_count(self) -> int:
         return self.cards_count
+
+    # a callable: its expression needs `Card`, which is declared below
+    @calc_property(
+        [
+            lambda: FieldAnnotate(
+                source='first_card',
+                query=Subquery(Card.objects.filter(memo=OuterRef('pk')).values('name')[:1]),
+            )
+        ]
+    )
+    def first_card(self) -> str | None:
+        return self.first_card
 
 
 class Card(JsonApiMixin):

@@ -61,7 +61,7 @@ use_when = "a tool (a client generator, the contract of bazis-front) needs the s
 [[extension_points]]
 name = "calc_property"
 import = "bazis.core.utils.orm.calc_property"
-use_when = "a calculated field fetched in the same query: FieldAnnotate (an expression of the row), FieldDynamic (an aggregate with func=, related objects, has_* EXISTS); add it to the route with include={'<name>': None}; as_filter=True for filter"
+use_when = "a calculated field fetched in the same query: FieldAnnotate (an expression of the row), FieldDynamic (an aggregate with func=, related objects, has_* EXISTS), a callable returning the field (lambda: FieldAnnotate(query=Subquery(...)) when the expression needs the loaded models); add it to the route with include={'<name>': None}; as_filter=True for filter"
 
 [[extension_points]]
 name = "UniqNumberMixin"
