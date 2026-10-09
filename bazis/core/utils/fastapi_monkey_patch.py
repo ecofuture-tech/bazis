@@ -142,6 +142,36 @@ def jsonable_encoder(obj, *args, **kwargs):
 
 encoders.jsonable_encoder = jsonable_encoder
 
+######################################################################
+
+from fastapi.openapi import utils as openapi_utils
+from fastapi.openapi.models import OpenAPI
+
+from pydantic import model_validator
+
+from bazis.core.utils.schemas import translated
+
+
+class TranslatedOpenAPI(OpenAPI):
+    """
+    Monkey patch: the OpenAPI document of FastAPI with its lazy texts translated.
+
+    FastAPI copies the texts of the models (`Field(title=_('…'))`, `description`,
+    `json_schema_extra`), of the parameters (`Query(description=_('…'))`) and of the operations
+    (`summary`, `tags`) into the document as they are, and validates it with the model
+    `OpenAPI`, which refuses a lazy text where it expects a string. They are written in the
+    active language before: every generation (`app.openapi()`, once per language in the
+    core) is in its own language.
+    """
+
+    @model_validator(mode='before')
+    @classmethod
+    def texts_translated(cls, data):
+        return translated(data)
+
+
+openapi_utils.OpenAPI = TranslatedOpenAPI
+
 
 ######################################################################
 
