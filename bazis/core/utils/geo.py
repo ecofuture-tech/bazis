@@ -28,12 +28,14 @@ with `near` on a large table.
 Tags: RAG, EXPORT
 """
 
+import json
 import math
 import re
 
 from django.contrib.gis.db.models import GeometryField, PointField
 from django.contrib.gis.db.models.functions import Transform
-from django.contrib.gis.geos import Point
+from django.contrib.gis.gdal import GDALException
+from django.contrib.gis.geos import GEOSException, GEOSGeometry, Point
 from django.db.models import BooleanField, F, FloatField, Func, Q, Value
 from django.db.models.functions import Cast
 from django.utils.text import format_lazy
@@ -143,3 +145,30 @@ def point_within(field: GeometryField, point, meters: float) -> Q:
             output_field=BooleanField(),
         )
     )
+
+
+def geojson_geometry(value: dict, field: GeometryField) -> GEOSGeometry:
+    """
+    The geometry of a GeoJSON object of a request for a geometry field of the model:
+    longitude and latitude of WGS 84 (RFC 7946; a `crs` member is refused), of the type of
+    the field (any for a `GeometryField`) and of its dimension. A field of another SRID
+    stores it transformed. Raises ValueError for anything else (422 ERR_VALIDATE at the
+    attribute).
+
+    Tags: RAG, EXPORT
+    """
+    if 'crs' in value:
+        raise ValueError('A GeoJSON geometry is in WGS 84 (RFC 7946): the crs member is refused')
+    try:
+        geometry = GEOSGeometry(json.dumps(value), srid=SRID_WGS84)
+    except (GDALException, GEOSException, ValueError, TypeError):
+        raise ValueError('Invalid GeoJSON geometry') from None
+    if field.geom_type != 'GEOMETRY' and geometry.geom_type.upper() != field.geom_type:
+        raise ValueError(f'A {field.geom_type.title()} is expected, not a {geometry.geom_type}')
+    if geometry.hasz != (field.dim == 3):
+        raise ValueError(f'The coordinates have {field.dim} dimensions')
+    if not geometry.empty:
+        lon_min, lat_min, lon_max, lat_max = geometry.extent
+        if lon_min < -180 or lon_max > 180 or lat_min < -90 or lat_max > 90:
+            raise ValueError('Out of range: longitude -180..180, latitude -90..90')
+    return geometry

@@ -268,16 +268,66 @@ def test_point_as_geojson(sample_app):
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize(
     'value',
-    [{'type': 'Point', 'coordinates': [1]}, {'type': 'Point', 'coordinates': ['a', 'b']}],
+    [
+        # not a geometry
+        {'type': 'Point', 'coordinates': [1]},
+        {'type': 'Point', 'coordinates': ['a', 'b']},
+        # not the type of the field (was a 500)
+        {'type': 'LineString', 'coordinates': [[1, 2], [3, 4]]},
+        {'type': 'Polygon', 'coordinates': [[[0, 0], [1, 0], [1, 1], [0, 0]]]},
+        # not the dimension of the field (was a 500)
+        {'type': 'Point', 'coordinates': [37.6, 55.7, 120]},
+        # another coordinate system: RFC 7946 is WGS 84 only (was stored as WGS 84)
+        {
+            'type': 'Point',
+            'coordinates': [4187489.0, 7509938.0],
+            'crs': {'type': 'name', 'properties': {'name': 'EPSG:3857'}},
+        },
+        {
+            'type': 'Point',
+            'coordinates': [37.6, 55.7],
+            'crs': {'type': 'name', 'properties': {'name': 'EPSG:4326'}},
+        },
+        # out of range of longitude, latitude
+        {'type': 'Point', 'coordinates': [181, 0]},
+        {'type': 'Point', 'coordinates': [0, -90.5]},
+        # a JSON string of such a geometry
+        '{"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}',
+    ],
 )
-def test_malformed_geojson(sample_app, value):
-    response = get_api_client(sample_app).post(
+@pytest.mark.parametrize('field', POINT_FIELDS)
+def test_malformed_geojson(sample_app, places, field, value):
+    client = get_api_client(sample_app)
+    response = client.post(
         PLACES,
-        json_data={'data': {'type': 'geo.place', 'attributes': {'name': 'x', 'location': value}}},
+        json_data={'data': {'type': 'geo.place', 'attributes': {'name': 'x', field: value}}},
     )
+    assert_invalid_attribute(response, field)
+    # an update, of a place that has the point
+    place = Place.objects.get(name='moscow')
+    response = client.patch(
+        f'{PLACES}{place.pk}/',
+        json_data={
+            'data': {'id': str(place.pk), 'type': 'geo.place', 'attributes': {field: value}}
+        },
+    )
+    assert_invalid_attribute(response, field)
+    assert getattr(Place.objects.get(pk=place.pk), field) == getattr(place, field)
+    assert not Place.objects.filter(name='x').exists()
+
+
+def assert_invalid_attribute(response, field):
     assert response.status_code == 422, response.text
     error = response.json()['errors'][0]
-    assert (error['code'], error['source']) == (
-        'ERR_VALIDATE',
-        {'pointer': '/data/attributes/location'},
+    assert error['code'] == 'ERR_VALIDATE'
+    assert error['source']['pointer'] == f'/data/attributes/{field}'
+
+
+@pytest.mark.parametrize('corner', [[-180, -90], [180, 90]])
+def test_geojson_range_edges(corner):
+    from bazis.core.utils.geo import geojson_geometry
+
+    point = geojson_geometry(
+        {'type': 'Point', 'coordinates': corner}, Place._meta.get_field('entrance')
     )
+    assert (point.coords, point.srid) == (tuple(corner), 4326)

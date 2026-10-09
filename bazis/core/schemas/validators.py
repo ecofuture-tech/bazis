@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 from typing import Any
+
+from django.contrib.gis.db.models import GeometryField
 
 from pydantic import (
     BaseModel,
@@ -21,6 +24,7 @@ from pydantic import (
 )
 
 from bazis.core.models_abstract import InitialBase
+from bazis.core.utils.geo import geojson_geometry
 
 from .utils import get_types
 
@@ -53,6 +57,23 @@ def not_blank_validator(cls: type[BaseModel], v: Any, field: ValidationInfo):
         not v or (isinstance(v, str) and not v.strip())
     ):
         raise ValueError("Can't be blank")
+    return v
+
+
+def geometry_validator(cls: type[BaseModel], v: Any, field: ValidationInfo):
+    """
+    Validator of the GeoJSON value of a geometry field of the model in a request (before
+    the GeoJSON schema drops its other members): `geojson_geometry` (WGS 84 without `crs`,
+    the type and the dimension of the field, the coordinates in range).
+
+    Tags: RAG, INTERNAL
+    """
+    schema_field = cls.schema_factory.fields.get(field.field_name)
+    model_field = getattr(schema_field, 'field_db_attr', None)
+    if v is not None and isinstance(model_field, GeometryField):
+        value = json.loads(v) if isinstance(v, str) else v
+        if isinstance(value, dict):
+            geojson_geometry(value, model_field)
     return v
 
 

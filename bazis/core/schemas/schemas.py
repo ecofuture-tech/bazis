@@ -12,14 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import re
 from collections.abc import Iterable
 from itertools import chain
 from typing import Any, TypeVar
 
 from django.contrib.gis.db.models import GeometryField
-from django.contrib.gis.geos import GEOSGeometry
 from django.db.models import Q, QuerySet
 
 from pydantic import (
@@ -33,6 +31,7 @@ from pydantic_core import PydanticUndefined
 from bazis.core.item_validation import reverse_items_link, validates_items
 from bazis.core.models_abstract import InitialBase, JsonApiMixin
 from bazis.core.utils.functools import get_attr
+from bazis.core.utils.geo import geojson_geometry
 from bazis.core.utils.orm import set_related_with_delete
 from bazis.core.utils.query_complex import QueryToOrm
 
@@ -54,12 +53,11 @@ INCLUDED_INDEX_ATTR = '_bs_document_index'
 def _attribute_value(model: type[InitialBase], name: str, value: Any) -> Any:
     """
     The value of an attribute of a request for the field of the model: a GeoJSON object
-    (the schema of a geometry field) is a GEOS geometry (WGS 84 unless it names its SRID).
+    of a geometry field (checked by `geometry_validator`) is its GEOS geometry.
     """
-    if isinstance(value, dict) and isinstance(
-        model.get_fields_info().attributes.get(name), GeometryField
-    ):
-        return GEOSGeometry(json.dumps(value))
+    field = model.get_fields_info().attributes.get(name)
+    if isinstance(value, dict) and isinstance(field, GeometryField):
+        return geojson_geometry(value, field)
     return value
 
 

@@ -44,6 +44,7 @@ from .schemas import (
 )
 from .validators import (
     field_validate,
+    geometry_validator,
     not_blank_validator,
     not_null_validator,
     readonly_validator,
@@ -491,6 +492,17 @@ class SchemaResourceBuilder:
             __config__=self._fields_config(is_response_schema),
             __validators__={
                 **self._value_validators(is_response_schema),
+                # the GeoJSON of a request against its geometry field (not a response: the
+                # values of the database)
+                **(
+                    {}
+                    if is_response_schema
+                    else {
+                        'geometry_validator': field_validator('*', mode='before')(
+                            geometry_validator
+                        )
+                    }
+                ),
                 'readonly_validator': model_validator(mode='before')(readonly_validator),
                 'data_validator': model_validator(mode='before')(data_validator),
             },
