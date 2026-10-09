@@ -17,6 +17,8 @@ from collections.abc import Callable
 from itertools import groupby
 from typing import TYPE_CHECKING, Any, TypeVar, get_type_hints
 
+from django.core.exceptions import ValidationError as DjangoValidationError
+
 from pydantic import (
     BaseModel,
     Field,
@@ -347,8 +349,20 @@ class SchemaResourceBuilder:
         )
         if schema := get_schema_from_cache(schema_name):
             return schema
+        pk_field = model._meta.pk
+
+        def id_validator(cls, value):
+            # an id that cannot be a key of the related model is an error of the document
+            # (the write would fail with the ValidationError of the field)
+            try:
+                pk_field.to_python(value)
+            except DjangoValidationError as e:
+                raise ValueError(e.messages[0]) from None
+            return value
+
         schema = schema_create(
             schema_name,
+            __validators__={'id_validator': field_validator('id')(id_validator)},
             id=(str, Field(default_id, json_schema_extra={'example': model.get_id_example()})),
             type=(str, Field(model.get_resource_label())),
         )

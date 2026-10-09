@@ -191,8 +191,9 @@ class JsonApiTopObjectSchema[JsonApiDataT, JsonApiMetaT](BaseModel):
         """
         if isinstance(data, InitialBase):
             return cls._validate(data)
-        elif isinstance(data, dict):
+        elif isinstance(data, dict) and 'data' in data:
             return cls._validate(**data)
+        # a document without `data`: the schema reports it (422 ERR_VALIDATE, `/data`)
         return data
 
     @classmethod
@@ -230,8 +231,9 @@ class JsonApiTopIncludedObjectSchema[JsonApiDataT, JsonApiIncludedT, JsonApiMeta
         """
         if isinstance(data, JsonApiMixin):
             return cls._validate(data, included=chain(*data.fields_for_included.values()))
-        elif isinstance(data, dict):
+        elif isinstance(data, dict) and 'data' in data:
             return cls._validate(**data)
+        # a document without `data`: the schema reports it (422 ERR_VALIDATE, `/data`)
         return data
 
     @classmethod

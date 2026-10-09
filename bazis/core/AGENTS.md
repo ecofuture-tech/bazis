@@ -293,7 +293,10 @@ class OrderRouteSet(JsonapiRouteBase):
   `/included/<i>/attributes/<f>` for the included item at index `i`; `source.id` and
   `source.type` name the item of an `ERR_VALIDATE` when the document gives its id (before
   2.11.0 `ERR_VALIDATE` pointed to `/attributes/<f>` for the item and every included item
-  alike).
+  alike). A related id that cannot be a key of the related model is an `ERR_VALIDATE` of
+  its identifier (`/data/relationships/<f>/data/<i>/id`); a document without `data` is
+  `missing` at `/data`. On the relationships endpoints, whose body is the `data` of the
+  relationship, `ERR_VALIDATE` points into that body: `/data`, `/data/<i>/id` (`/data/id`).
 
 ## Rules
 

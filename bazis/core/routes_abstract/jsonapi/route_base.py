@@ -869,7 +869,20 @@ class JsonapiRouteBase(InitialRouteBase):
         try:
             item_data = schema.model_validate(item_raw)
         except ValidationError as e:
-            raise RequestValidationError(e.errors(), body=item_raw) from e
+            # the body of the endpoint is the `data` of the relationship: its errors point
+            # there (`/data`, `/data/<index>/id`), not into the document of an update, and
+            # name no item (the id and type of the update document are those of the path)
+            prefix = ('data', 'relationships', related_field_name, 'data')
+            errors = []
+            for error in e.errors():
+                loc = tuple(error['loc'])
+                if loc[: len(prefix)] == prefix:
+                    error['loc'] = ('body', 'data', *loc[len(prefix) :])
+                    if ctx := error.get('ctx'):
+                        ctx.pop('_id', None)
+                        ctx.pop('_type', None)
+                errors.append(error)
+            raise RequestValidationError(errors, body=item_raw) from e
 
         # a relationship missing from the schema, or read-only in it (the schema keeps a
         # read-only field and `readonly_validator` drops its value), is not set

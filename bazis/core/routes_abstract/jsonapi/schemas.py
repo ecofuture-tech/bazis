@@ -25,7 +25,9 @@ Used in conjunction with `RouteFilterFieldsService` to expose filter metadata vi
 """
 
 
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, TypeAdapter, field_validator
 from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
 
 from pydantic_core import core_schema
@@ -77,6 +79,10 @@ class ResourceIdentifier(BaseModel):
     id: str
 
 
+_RESOURCE_IDENTIFIER = TypeAdapter(ResourceIdentifier)
+_RESOURCE_IDENTIFIERS = TypeAdapter(list[ResourceIdentifier])
+
+
 class RelationshipData(BaseModel):
     """
     Universal model for JSON:API relationships.
@@ -87,6 +93,20 @@ class RelationshipData(BaseModel):
     """
 
     data: None | ResourceIdentifier | list[ResourceIdentifier]
+
+    @field_validator('data', mode='wrap')
+    @classmethod
+    def data_validator(cls, value: Any, handler) -> Any:
+        """
+        A list is validated as a to-many value, anything else as a to-one value: the errors
+        point into the body (`/data`, `/data/<index>/id`), not to the members of the union
+        (`/data/list[ResourceIdentifier]/0/id`).
+        """
+        if value is None:
+            return None
+        if isinstance(value, list):
+            return _RESOURCE_IDENTIFIERS.validate_python(value)
+        return _RESOURCE_IDENTIFIER.validate_python(value)
 
 
 openapi_relationship_examples = {
