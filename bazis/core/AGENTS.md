@@ -75,6 +75,39 @@ its own title (`verbose_name` of the model field, or `SchemaField(title=...)` in
 the route). Write the msgids in English (`gettext_lazy`): English needs no catalog, every
 other language of `LANGUAGES` does (`bazis.W005` lists the Bazis packages left untranslated).
 
+The catalogs of the project (`<BASE_DIR>/locale` and the `locale` directories of its apps,
+never those of the installed packages) are made, filled and compiled by
+`python manage.py bazis_messages` (GNU gettext required); do not write a script that edits
+`.po` files:
+
+- `make`: makemessages from BASE_DIR for the languages of `LANGUAGES` but English
+  (`-l ru` to choose), without the obsolete (`#~`) entries, ignoring the hidden
+  directories (`.venv`, `.scratch`) and `node_modules` anywhere, `MEDIA_ROOT`,
+  `STATIC_ROOT`, a virtual environment at the top of BASE_DIR (its `pyvenv.cfg`, whatever
+  its name), and `venv`, `frontend`, `static`, `media`, `build`, `dist` there unless they
+  are Python packages (an app named `media` is translated, as a
+  directory of such a name deeper in the tree); `-i <glob>` adds a pattern of
+  makemessages; then prints the status;
+- `status`: JSON by language: `catalogs`, `total`, `translated`, `untranslated` and `fuzzy`
+  (each entry `{"msgid", "msgctxt"?, "msgid_plural"?}`, a fuzzy one with the `msgstr`
+  gettext guessed after its source changed);
+- `apply <file.json>`: sets the translations of the file, drops their fuzzy flags, fills
+  the header of a new catalog (not fuzzy, `Language`) and compiles the catalogs
+  (`msgfmt --check-format`); prints `applied`, `unknown` (msgids not in the catalogs) and
+  what stays `untranslated`/`fuzzy`. Applying the file again changes nothing, and the next
+  `make` keeps the catalog as written. The file maps a language to its translations:
+  `{"ru": {"Open": "Открыть", "%(n)s item": ["%(n)s предмет", "%(n)s предмета",
+  "%(n)s предметов"]}}` (a plural takes the list of its forms), or to a list of entries,
+  which also give the context: `{"ru": [{"msgctxt": "verb", "msgid": "Open", "msgstr":
+  "Открыть"}]}`;
+- `compile`: compiles the catalogs only;
+- `--check` (with `status` or `apply`) fails while an entry stays untranslated or fuzzy, or
+  a msgid of the file is unknown: the check of a CI.
+
+The loop after a change of the texts: `make` → write the translations of `untranslated`
+and `fuzzy` to a file → `apply` (keep the file in the project to reapply it after the next
+`make`).
+
 Languages: `BS_LANGUAGES` (default `[["en", "English"]]`) and `BS_LANGUAGE_CODE` (default
 `en`, one of them). The language of a request is the query parameter `lang`, otherwise the
 header `Accept-Language` by weight, matched against `LANGUAGES` by code or base code
@@ -211,6 +244,22 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
           return self.spent
   ```
 
+  The expressions see the filter context of the route
+  (`get_fiter_context(route=...)`, a classmethod to extend with `super()`): its keys that
+  start with `_` are aliases of the queryset, so a subquery refers to them with
+  `OuterRef('<key>')` (an expression of the row with `F('<key>')`). bazis-users puts
+  `_user`, the id of the user of the request:
+
+  ```python
+  @calc_property([lambda: FieldAnnotate(source='my_open', query=Subquery(
+      Ticket.objects.filter(agent=OuterRef('pk'), assignee=OuterRef('_user'), done=False)
+      .order_by().values('agent').annotate(n=Count('pk')).values('n')))])
+  def my_open(self) -> int | None:
+      return self.my_open
+  ```
+
+  The value depends on the user of the request: it is right for the API, not for a cache
+  shared between users.
   A method that takes a `DependsCalc` argument reads them from `dc.data.<alias>`. The return
   annotation is the type of the attribute. Add it to the schema of the route with
   `fields = {None: SchemaFields(include={'open_tickets': None})}` (read-only, not required;
@@ -322,8 +371,39 @@ class OrderRouteSet(JsonapiRouteBase):
 - Logic around writes: the hooks of the route (below). They are for the side effects of
   the writes of the route; a rule about the item (an invariant) belongs in `validate_item`
   of the model (see Models), which no way of writing bypasses.
-- Custom routes: `@http_get('/{item_id}/card/', kind=RouteKind.ITEM)` (decorators from
-  `bazis.core.routes_abstract.initial`, `RouteKind` from `bazis.core.schemas.enums`). Every
+- Custom routes: `@http_get('/{item_id}/card/', kind=RouteKind.ITEM)` (decorators
+  `http_get`, `http_post`, `http_put`, `http_patch`, `http_delete` from
+  `bazis.core.routes_abstract.initial`, `RouteKind` from `bazis.core.schemas.enums`). The
+  decorator takes the path, then `inject_tags` (the injections of an action, e.g.
+  `[CrudApiAction.LIST]` for `self.inject.filtering`), `response_model` (a Pydantic model
+  of the response), `kind`, and the arguments of FastAPI (`status_code`, `responses`,
+  `summary`, ...). The method is the endpoint: its parameters other than `self` and
+  `**kwargs` are the parameters of FastAPI (a path parameter `item_id: str`, a Pydantic
+  model the JSON body, a typed name a query parameter); `self.inject.user` is the user
+  with bazis-users; `self.set_item(item_id)` loads the item the route shows (404
+  otherwise) and `self.item` is it then:
+
+  ```python
+  class ExportRequest(BaseModel):
+      date_from: date
+      date_to: date
+
+  class ExportResponse(BaseModel):
+      task: str
+
+  class WorkOrderRouteSet(JsonapiRouteBase):
+      @http_post('/export/', response_model=ExportResponse, kind=RouteKind.OTHER)
+      def action_export(self, data: ExportRequest, **kwargs):
+          ...
+          return ExportResponse(task=str(task.pk))
+
+      @http_post('/{item_id}/close/', kind=RouteKind.OTHER)
+      def action_close(self, item_id: str, **kwargs):
+          item = self.set_item(item_id)
+          ...
+  ```
+
+  A route that changes the item goes through the checks of an update (see Rules). Every
   operation of a route class has the OpenAPI extension
   `x-bazis: {resource, route_set, action, kind}` (`action` is the method name,
   `kind` is collection, create, item, update, delete, relationship, schema or other);
@@ -508,7 +588,8 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
     for string fields (`CharField`) only;
   - boolean: none; array: none (= `overlap`), `overlap`, `contains`, `contained_by` with
     `a,b`; range: `contains`, `contained_by`, `overlap`, `fully_lt`, `fully_gt`, `not_lt`,
-    `not_gt`, `adjacent_to` with `start,end`; point: none (within 10 m), `near`, `in_bbox`.
+    `not_gt`, `adjacent_to` with `start,end`; point: none (within 10 m), `near`, `in_bbox`
+    (see Points and distances).
 
   Any other suffix (`__in`, `__icontains`, `__contains` on a text or number field), an
   unknown field (also after a relation, such as `customer__in`) and a calculated field that
@@ -517,7 +598,8 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   the server decodes the expression once more and every value once more, so a value with
   `&|()[]~=+%` is percent-encoded twice inside the expression; quotes are removed from
   values.
-- `sort=-dt_created,number,customer__name`, `page[limit]` / `page[offset]`
+- `sort=-dt_created,number,customer__name`, `sort=location__distance(37.62,55.75)` (see
+  Points and distances), `page[limit]` / `page[offset]`
   (`BAZIS_API_PAGINATION_PAGE_SIZE_MAX` caps the limit), `include=customer,items`,
   `fields[crm.order]=number,customer` (sparse fieldsets).
 - `include` (retrieve, create, update) names relations of the schema of the action (an
@@ -528,6 +610,52 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   permission `disable` of bazis-permit) is left out without an error, and `included` has
   only the objects the default route of the related model shows.
 - Errors are JSON:API error objects (see Errors).
+
+### Points and distances (nearby)
+
+A point is a `PointField` (`django.contrib.gis.db.models`) of the model, given in a request
+as `<longitude>,<latitude>` (degrees of WGS 84); a distance is in meters on the sphere
+(`ST_DistanceSphere`). Declare it `geography=True`: Django creates a GiST index on it, which
+the `near` filter uses (a geometry point, the default, gives the same distances, cast on
+every row, without the index). Never two `FloatField`s with
+`ST_MakePoint` per row: no index, and the filter and the sorting below are not available.
+
+```python
+from django.contrib.gis.db import models
+
+class Site(DtMixin, UuidMixin, JsonApiMixin):
+    name = models.CharField(_('Name'), max_length=255)
+    location = models.PointField(_('Location'), geography=True, null=True, blank=True)
+```
+
+The API shows it as GeoJSON (`{"type": "Point", "coordinates": [lon, lat]}`) and takes it so
+on a write, in both directions longitude, latitude of WGS 84 (RFC 7946), whatever the SRID
+of the field (a field of another SRID stores it transformed and shows it transformed
+back), so the value of a GET can be sent back. A write is of the type of the field (a
+point for a `PointField`), of its dimension (no third coordinate on a 2D field), finite
+and in range (-180..180, -90..90), without a `crs` member; anything else is 422
+`ERR_VALIDATE` at the attribute. On a route whose LIST schema has `location`:
+
+- `filter=location__near=37.62,55.75,5km`: within 5 km (`500` and `500m` are meters; 100 m
+  without a distance); `filter=location=37.62,55.75`: within 10 m;
+  `filter=location__in_bbox=<lon min>,<lat min>,<lon max>,<lat max>`;
+- `sort=location__distance(37.62,55.75)`: the nearest first (`-location__distance(...)` the
+  farthest first), the objects without a point last; other terms follow
+  (`sort=location__distance(37.62,55.75),name`).
+
+The nearby list of a mobile client: the point comes from the client (the geolocation of the
+browser) in the request, nothing is stored about the user:
+`?filter=location__near=37.62,55.75,10km&sort=location__distance(37.62,55.75)`. The sorting
+computes the distance of every object the filter leaves: bound it with `near` on a large
+table. Like any key, the point field must be in the LIST schema of the route (400
+`ERR_FILTER` otherwise, pointer `/query/filter` or `/query/sort`); a malformed point or
+distance is 400 too. The responses carry no distance: it depends on the request, not on the
+resource, and the client has both points to show it (the haversine formula gives the same
+value). A distance in the code (an annotation, a calculated field, a distance to a point of
+another row): `point_distance(field, point)` and `point_within(field, point, meters)` of
+`bazis.core.utils.geo` (`field` is `Site._meta.get_field('location')`, `point` a GEOS point
+(`parse_point('37.62,55.75')`) or an expression of a point such as a `Subquery` of a point
+field).
 
 ## Rules
 

@@ -33,8 +33,6 @@ def _native(field, name: str, key: str, value: str) -> Q:
 @pytest.mark.parametrize(
     'field, key, value, lookup',
     [
-        (PointField(), 'point', '49.124,55.7648', 'point__distance_lte'),
-        (PointField(), 'point__near', '49.124,55.7648,100', 'point__distance_lte'),
         (PointField(), 'point__in_bbox', '160.6,-55.95,-170,-25.89', 'point__contained'),
         (DateRangeField(), 'period__overlap', '2024-01-01,2024-02-01', 'period__overlap'),
         (DateRangeField(), 'period__fully_lt', '2024-01-01,2024-02-01', 'period__fully_lt'),

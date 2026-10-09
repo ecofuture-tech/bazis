@@ -17,6 +17,7 @@ from collections.abc import Iterable
 from itertools import chain
 from typing import Any, TypeVar
 
+from django.contrib.gis.db.models import GeometryField
 from django.db.models import Q, QuerySet
 
 from pydantic import (
@@ -30,6 +31,7 @@ from pydantic_core import PydanticUndefined
 from bazis.core.item_validation import reverse_items_link, validates_items
 from bazis.core.models_abstract import InitialBase, JsonApiMixin
 from bazis.core.utils.functools import get_attr
+from bazis.core.utils.geo import geojson_geometry
 from bazis.core.utils.orm import set_related_with_delete
 from bazis.core.utils.query_complex import QueryToOrm
 
@@ -46,6 +48,17 @@ JsonApiMetaT = TypeVar('JsonApiMetaT')
 
 #: the attribute of a validated included item that keeps its index in the request document
 INCLUDED_INDEX_ATTR = '_bs_document_index'
+
+
+def _attribute_value(model: type[InitialBase], name: str, value: Any) -> Any:
+    """
+    The value of an attribute of a request for the field of the model: a GeoJSON object
+    of a geometry field (checked by `geometry_validator`) is its GEOS geometry.
+    """
+    field = model.get_fields_info().attributes.get(name)
+    if isinstance(value, dict) and isinstance(field, GeometryField):
+        return geojson_geometry(value, field)
+    return value
 
 
 def included_document_index(include_data: BaseModel, default: int) -> int:
@@ -111,7 +124,7 @@ class JsonApiDataSchema(BaseModel):
         """
         for f_name, val in self.attributes.model_dump(exclude_unset=True).items():
             if self.check_restrict_json(f_name, val):
-                setattr(item, f_name, val)
+                setattr(item, f_name, _attribute_value(type(item), f_name, val))
         # dependencies are set depending on their type
         if self.relationships:
             for f_name, val in self.relationships.model_dump(exclude_unset=True).items():
@@ -141,7 +154,7 @@ class JsonApiDataSchema(BaseModel):
         if self.attributes:
             for f_name, val in self.attributes.model_dump(exclude_unset=True).items():
                 if self.check_restrict_json(f_name, val):
-                    fields[f_name] = val
+                    fields[f_name] = _attribute_value(model, f_name, val)
         # add id
         fields['id'] = self.id
 

@@ -60,6 +60,7 @@ dependencies = [
     "gunicorn>=23",
     "itsdangerous>=2.2",
     "jsonref>=1.1",
+    "polib~=1.2",
 ]
 
 [project.optional-dependencies]

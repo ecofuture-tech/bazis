@@ -11,17 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from bazis.core.routing import BazisRouter
-
-
-router = BazisRouter(prefix='/api/v1')
-
-router.register('entity.router')
-router.register('dynamic.router')
-router.register('route_injection.router')
-router.register('sparse_fieldsets.router')
-router.register('visibility.router')
-router.register('validation.router')
-router.register('catalog.router')
-router.register('geo.router')

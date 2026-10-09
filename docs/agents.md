@@ -19,6 +19,16 @@ project needs, use them the way they are meant to be used and check the result.
   timeout of 5 seconds; `SILENCED_SYSTEM_CHECKS` silences the info); `--database`
   (repeatable) names the databases, and one that cannot be reached is an error
   (`bazis.database`).
+- `python manage.py bazis_messages make|status|apply <file.json>|compile [-l LANG]
+  [--check]` keeps the gettext catalogs of the project (`<BASE_DIR>/locale` and the
+  `locale` directories of its apps): `make` runs makemessages with the ignores of a
+  project (hidden directories and `node_modules` anywhere; virtual environments, and
+  `venv`, `frontend`, `static`, `media`, `build`, `dist` that are not packages, at the
+  top of the project),
+  `status` lists the untranslated and fuzzy entries by language as JSON, `apply` sets the
+  translations of a JSON file (`{"ru": {"<msgid>": "<msgstr>"}}`, or a list of
+  `{"msgctxt", "msgid", "msgstr"}`) and compiles; `--check` fails on what stays
+  untranslated.
 - `bazis.core.introspect` is the Python API of the same data.
 - The OpenAPI schema (`/api/openapi.json`) carries the same facts about each operation of a
   route class in the extension `x-bazis` (`resource`, `route_set`, `action`, `kind`; see

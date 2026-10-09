@@ -59,6 +59,8 @@ except ImportError:
 try:
     from django.contrib.gis.db.models.fields import GeometryField
     from django.contrib.gis.geos.geometry import GEOSGeometry
+
+    from bazis.core.utils.geo import SRID_WGS84
 except ImportError:
     GeometryField = None
     GEOSGeometry = None
@@ -228,9 +230,12 @@ class GeoJson(BaseModel):
     def validator(cls, data: Any) -> Any:
         """
         Validates and converts various GeoJSON input formats.
-        Handles Django GEOSGeometry, JSON strings, and dictionaries.
+        Handles Django GEOSGeometry, JSON strings, and dictionaries. A geometry of another
+        SRID is shown in WGS 84, as GeoJSON is (RFC 7946) and as the requests write it.
         """
         if isinstance(data, GEOSGeometry):
+            if data.srid and data.srid != SRID_WGS84:
+                data = data.transform(SRID_WGS84, clone=True)
             return json.loads(data.geojson)
         elif isinstance(data, str):
             try:
