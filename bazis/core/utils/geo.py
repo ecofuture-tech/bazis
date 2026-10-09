@@ -148,11 +148,16 @@ def point_within(field: GeometryField, point, meters: float) -> Q:
 
 
 def _coordinates(value: dict):
-    """The numbers of the coordinates of a GeoJSON geometry (of a collection, of its members)."""
+    """
+    The numbers of the coordinates of a GeoJSON geometry (of a collection, of its members).
+    Raises ValueError for members of a collection that are not a list of objects.
+    """
     stack = [value.get('coordinates', [])]
-    for member in value.get('geometries') or []:
-        if isinstance(member, dict):
-            stack.append(list(_coordinates(member)))
+    members = value.get('geometries', [])
+    if not isinstance(members, list) or not all(isinstance(it, dict) for it in members):
+        raise ValueError('The geometries of a GeoJSON collection are a list of geometries')
+    for member in members:
+        stack.append(list(_coordinates(member)))
     while stack:
         item = stack.pop()
         if isinstance(item, list):
@@ -161,23 +166,30 @@ def _coordinates(value: dict):
             yield item
 
 
+def _finite(number) -> bool:
+    """Whether a coordinate is a finite number (a boolean is not; a huge integer is not)."""
+    if isinstance(number, bool) or not isinstance(number, int | float):
+        return False
+    try:
+        return math.isfinite(number)
+    except OverflowError:
+        return False
+
+
 def geojson_geometry(value: dict, field: GeometryField) -> GEOSGeometry:
     """
     The geometry of a GeoJSON object of a request for a geometry field of the model:
     longitude and latitude of WGS 84 (RFC 7946; a `crs` member is refused), finite and in
     range, of the type of the field (any for a `GeometryField`) and of its dimension. A
-    field of another SRID stores it transformed (and the API shows it in WGS 84 again). Raises ValueError for anything else (422 ERR_VALIDATE at the
-    attribute).
+    field of another SRID stores it transformed (and the API shows it in WGS 84 again).
+    Raises ValueError for anything else (422 ERR_VALIDATE at the attribute).
 
     Tags: RAG, EXPORT
     """
     if 'crs' in value:
         raise ValueError('A GeoJSON geometry is in WGS 84 (RFC 7946): the crs member is refused')
     numbers = list(_coordinates(value))
-    if not all(
-        isinstance(it, int | float) and not isinstance(it, bool) and math.isfinite(it)
-        for it in numbers
-    ):
+    if not all(_finite(it) for it in numbers):
         raise ValueError('The coordinates are finite numbers')
     try:
         geometry = GEOSGeometry(json.dumps(value), srid=SRID_WGS84)

@@ -297,6 +297,11 @@ def test_point_as_geojson(sample_app):
         '{"type": "Point", "coordinates": [37.6, Infinity]}',
         {'type': 'Point', 'coordinates': ['37.6', '55.7']},
         {'type': 'Point', 'coordinates': [True, 55.7]},
+        # an integer too large for a float (math.isfinite overflowed: was a 500)
+        {'type': 'Point', 'coordinates': [10**400, 55.7]},
+        # members of a collection that are not a list of geometries (was a 500)
+        {'type': 'GeometryCollection', 'coordinates': [], 'geometries': 5},
+        {'type': 'GeometryCollection', 'coordinates': [], 'geometries': [5]},
         # a JSON string of such a geometry
         '{"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}',
     ],
@@ -339,7 +344,7 @@ def test_geojson_range_edges(corner):
     assert (point.coords, point.srid) == (tuple(corner), 4326)
 
 
-@pytest.mark.parametrize('number', [float('nan'), float('inf'), -float('inf')])
+@pytest.mark.parametrize('number', [float('nan'), float('inf'), -float('inf'), 10**400])
 def test_geojson_not_finite(number):
     from bazis.core.utils.geo import geojson_geometry
 
@@ -355,6 +360,11 @@ def test_geojson_coordinates_read_as_no_geometry():
 
     from bazis.core.utils.geo import geojson_geometry
 
+    for members in (5, [5], {'type': 'Point'}):
+        with pytest.raises(ValueError, match='a list of geometries'):
+            geojson_geometry(
+                {'type': 'GeometryCollection', 'geometries': members}, GeometryCollectionField()
+            )
     value = {'type': 'GeometryCollection', 'geometries': [{'type': 'Point', 'coordinates': [1]}]}
     with pytest.raises(ValueError, match='Invalid GeoJSON geometry'):
         geojson_geometry(value, GeometryCollectionField())
