@@ -83,8 +83,9 @@ never those of the installed packages) are made, filled and compiled by
 - `make`: makemessages from BASE_DIR for the languages of `LANGUAGES` but English
   (`-l ru` to choose), without the obsolete (`#~`) entries, ignoring the hidden
   directories (`.venv`, `.scratch`) and `node_modules` anywhere, `MEDIA_ROOT`,
-  `STATIC_ROOT`, and `venv`, `frontend`, `static`, `media`, `build`, `dist` at the top of
-  BASE_DIR unless they are Python packages (an app named `media` is translated, as a
+  `STATIC_ROOT`, a virtual environment at the top of BASE_DIR (its `pyvenv.cfg`, whatever
+  its name), and `venv`, `frontend`, `static`, `media`, `build`, `dist` there unless they
+  are Python packages (an app named `media` is translated, as a
   directory of such a name deeper in the tree); `-i <glob>` adds a pattern of
   makemessages; then prints the status;
 - `status`: JSON by language: `catalogs`, `total`, `translated`, `untranslated` and `fuzzy`
@@ -628,9 +629,11 @@ class Site(DtMixin, UuidMixin, JsonApiMixin):
 ```
 
 The API shows it as GeoJSON (`{"type": "Point", "coordinates": [lon, lat]}`) and takes it so
-on a write: always longitude, latitude of WGS 84 (RFC 7946; a `crs` member is refused), of
-the type of the field (a point for a `PointField`) and of its dimension (no third
-coordinate on a 2D field), in range (-180..180, -90..90); anything else is 422
+on a write, in both directions longitude, latitude of WGS 84 (RFC 7946), whatever the SRID
+of the field (a field of another SRID stores it transformed and shows it transformed
+back), so the value of a GET can be sent back. A write is of the type of the field (a
+point for a `PointField`), of its dimension (no third coordinate on a 2D field), finite
+and in range (-180..180, -90..90), without a `crs` member; anything else is 422
 `ERR_VALIDATE` at the attribute. On a route whose LIST schema has `location`:
 
 - `filter=location__near=37.62,55.75,5km`: within 5 km (`500` and `500m` are meters; 100 m
