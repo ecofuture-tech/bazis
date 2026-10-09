@@ -114,7 +114,15 @@ choice labels (`enumDict`) are translated when a JSON schema is generated, so th
 `schema_*` routes answer in the language of the request and `/openapi.json` too (built
 once per language; `app.openapi()` is in the active language, export it under
 `translation.override(settings.LANGUAGE_CODE)`, or fetch it with `?lang=` or without
-`Accept-Language`). Every HTTP response has `Vary: Accept-Language`. Keep titles lazy (`gettext_lazy`,
+`Accept-Language`). The lazy texts of the request and response models of custom routes
+(`Field(title=_('…'), description=_('…'))`, `json_schema_extra`), of their parameters
+(`Query(description=_('…'))`) and operations (`summary`) are translated in the OpenAPI
+as well (bazis 2.14; before, a lazy title broke `/openapi.json`). Lazy examples go in
+`json_schema_extra={'examples': [_('…')]}`: pydantic serializes `Field(examples=...)` when
+it defines the model, and refuses a lazy text there. A model whose JSON schema the code
+reads itself (`model_json_schema()`, outside the OpenAPI) inherits `TranslatedSchemaModel`
+(`bazis.core.utils.schemas`), or passes `schema_generator=TranslatedJsonSchema`: the schema
+is then in the active language too. Every HTTP response has `Vary: Accept-Language`. Keep titles lazy (`gettext_lazy`,
 `verbose_name`): a `str` is fixed in the language of the code that made it. Compose the
 names of models and fields with `format_lazy`, not an f-string: a name made at import is in
 the language active then and gets into the migrations (the names of the models
