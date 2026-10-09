@@ -73,13 +73,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install GDAL (required by the PostGIS database backend)
+      - name: Install GDAL (the PostGIS database backend) and GNU gettext (bazis_messages)
         # a stalled Ubuntu mirror must fail the step quickly instead of hanging the job
         timeout-minutes: 10
         run: |
           APT="sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
           $APT update
-          $APT install -y --no-install-recommends gdal-bin
+          $APT install -y --no-install-recommends gdal-bin gettext
 
       - uses: astral-sh/setup-uv@v6
         with:
