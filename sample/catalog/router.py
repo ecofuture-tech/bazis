@@ -14,13 +14,13 @@
 
 from bazis.core.routing import BazisRouter
 
+from . import routes
 
-router = BazisRouter(prefix='/api/v1')
 
-router.register('entity.router')
-router.register('dynamic.router')
-router.register('route_injection.router')
-router.register('sparse_fieldsets.router')
-router.register('visibility.router')
-router.register('validation.router')
-router.register('catalog.router')
+router = BazisRouter(tags=['Catalog'])
+
+router.register(routes.AttachmentRouteSet.as_router())
+router.register(routes.CategoryRouteSet.as_router())
+router.register(routes.MemoRouteSet.as_router())
+router.register(routes.CardRouteSet.as_router())
+router.register(routes.BusyMemoRouteSet.as_router())

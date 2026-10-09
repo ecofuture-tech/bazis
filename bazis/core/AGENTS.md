@@ -152,9 +152,72 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   write the item in `validate_item` (its own writes there are not validated again); items
   whose `validate_item` save each other are stopped after 10 validations of one item in one
   validation pass (`ImproperlyConfigured`). A model that does not override it pays nothing.
-- Calculated fields: `@calc_property([...])` from `bazis.core.utils.orm`, declared with the
-  fields they need (`FieldRelated`, `FieldJson`, ...) so that the query fetches them in one
-  pass; then add them to the route with `SchemaField(source=..., required=False)`.
+- Calculated fields: `@calc_property([...], as_filter=False)` from `bazis.core.utils.orm`
+  declares what the query of the routes fetches for the property in the same pass; the
+  values come to the item as attributes named by `alias` (else `source`):
+
+  ```python
+  from django.db.models import BooleanField, Case, Q, Value, When
+  from django.db.models.functions import Now
+  from django.utils import timezone
+  from bazis.core.utils.orm import FieldAnnotate, FieldDynamic, calc_property
+
+  class Ticket(DtMixin, UuidMixin, JsonApiMixin):
+      @calc_property([FieldAnnotate(source='is_late', query=Case(
+          When(Q(due__lt=Now(), done=False), then=Value(True)),
+          default=Value(False), output_field=BooleanField()))], as_filter=True)
+      def is_late(self) -> bool:  # the annotation replaces it; this is for other reads
+          return not self.done and self.due < timezone.now()
+
+  class Agent(DtMixin, UuidMixin, JsonApiMixin):
+      @calc_property([FieldDynamic(source='tickets', func='Count', alias='open_tickets',
+                                   query=Q(done=False))])
+      def open_tickets(self) -> int:
+          return self.open_tickets
+  ```
+
+  `FieldAnnotate(source, query)`: an expression of the row. `FieldDynamic(source=<relation>,
+  ...)`: with `func` (`'Count'`, `'Sum'`, ...; `source` may end with the field,
+  `tickets__hours`) a subquery aggregate over the related objects filtered by `query` (the
+  `Meta.ordering` of the related model is dropped there); with `fields=[...]` a list of
+  dicts of the related objects (`order_by`, `slice`); without them the related objects
+  themselves (`nested=[...]` for theirs); an `alias` starting with `has_` is an `EXISTS`.
+  A method that takes a `DependsCalc` argument reads them from `dc.data.<alias>`. The return
+  annotation is the type of the attribute. Add it to the schema of the route with
+  `fields = {None: SchemaFields(include={'open_tickets': None})}` (read-only, not required;
+  `SchemaField(source=..., title=...)` to rename or title it). `as_filter=True` makes it a
+  key of `filter` (when it is in the LIST schema; a boolean takes `true`/`false`,
+  `filter_field=` a model field class for the lookups of another type); a calculated field
+  does not sort and is not a search field. For a report, put the calculated fields on a
+  proxy model with a route of its own (see Several route sets).
+- Numbers: `UniqNumberMixin` (`bazis.core.models_abstract`) gives the item `uniq_number`, the
+  next value of a database sequence (django-sequences, installed by the core) on its first
+  save, and the property `number` (its string; override it to format, calling `super()`).
+  The sequence is named by `NUMBER_LABEL` (default: the resource label of the model; give
+  several models one label to share the numbering). Show it with
+  `include={'number': None}`, and exclude `uniq_number` from the create and update schemas
+  (it is an ordinary integer field there).
+- Data named in every language of the project (statuses, priorities, categories): a
+  `TranslatedFieldWithFallback` of django-translated-fields (a dependency of the core, used
+  by bazis-permit and bazis-statusy), a column per language:
+
+  ```python
+  from translated_fields import TranslatedFieldWithFallback
+
+  class Priority(DtMixin, UuidMixin, JsonApiMixin):
+      name = TranslatedFieldWithFallback(
+          models.CharField(_('Name'), max_length=100), languages=['en', 'ru'])
+  ```
+
+  The columns are `name_en`, `name_ru` (the first language is required, the others may be
+  blank; list the languages of `BS_LANGUAGES` explicitly so that the migrations do not
+  depend on the settings, and add a migration with a language). The API has one attribute
+  `name`, read-only, in the language of the request (the first language when its column
+  is blank); `filter`, `sort` and `search` (`search_fields = ['name']`) by it use the
+  column of the language of the request (a blank translation is matched and sorted as
+  empty, not by the fallback: fill every language). The columns are edited in the admin
+  (`translated_fields.TranslatedFieldAdmin`), or through the API when the route adds them
+  (`include={'name_en': None, 'name_ru': None}`).
 - A callable default of a model field (`auto_now`, `timezone.now`, `uuid.uuid4`, `dict`, a
   database lookup) is never evaluated by the schemas, neither when they are built nor when
   a request or a response is validated: the field is optional, without a `default` in the
@@ -187,6 +250,15 @@ class OrderRouteSet(JsonapiRouteBase):
   needs one defines it in its route class and restricts it itself.
 - Reverse relations and calculated fields are not in the schemas by default: add them with
   `SchemaFields(include=...)`. Writable relations are those of the UPDATE (CREATE) schema.
+- A create or an update names only the attributes and relationships of the schema of its
+  action: any other (excluded by `fields`, hidden by a field permission of bazis-permit,
+  unknown) is 422 `ERR_VALIDATE` with the title `extra_forbidden` and the pointer
+  `/data/attributes/<f>` (`/data/relationships/<f>`, `/included/<i>/...`); a field of the
+  schema that is read-only there (calculated fields, `SchemaField(read_only=True)`, the
+  permission `readonly`) is ignored. A text field (`CharField`, `TextField`) without
+  `blank=True` refuses an empty value or one of only whitespace (422 `ERR_VALIDATE` at the
+  field), as the forms of Django; the value is stored as sent. A field the client may
+  leave empty is `blank=True`. The responses are not checked for blank values.
   A relation read-only there (`SchemaField(read_only=True)`, the field permission
   `readonly` of bazis-permit) is ignored by an update, and the relationships endpoints
   refuse it as a relation that is not in the schema: 403 `ERR_RELATIONSHIP_READONLY` with
@@ -209,7 +281,11 @@ class OrderRouteSet(JsonapiRouteBase):
   override `restrict_queryset` (or that has no route) are not checked and not queried.
   `relation_targets_check = False` turns the check off for the relationships of a route.
   The route's own list and item do not use `restrict_queryset` by themselves: apply it in
-  `get_queryset` too.
+  `get_queryset` too. Who calls it: the core (`route_restrict_queryset(model)` of
+  `bazis.core.routes_abstract.jsonapi.mixins`) for the relationship targets of the writes,
+  `included` and the filter, sort and search through a relation; bazis-permit implements it from the permissions and
+  restricts the items of its routes with it; the core never applies it to the list of a
+  route by itself.
 - The default route of a model (`Model.get_default_route()`) is the last defined route
   class of the model (abstract ones never), unless one declares `default_route = True` in
   its class body (not inherited). With several route sets of a model that restrict its
@@ -315,6 +391,8 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
     endpoints `/data`, `/data/<j>/id` (`/data/id`).
   - `ERR_ITEM_INVALID`: `/data/attributes/<f>`, `/data/relationships/<f>`, `/data`. On the
     relationships endpoints the parameter `/related_field_name`.
+  - `ERR_INCLUDE` (400): `/query/include`. `ERR_FILTER` (400): `/query/filter`,
+    `/query/sort`, `/query/search`.
   - `ERR_RELATION_ACCESS`: `/data/relationships/<f>`. On the relationships endpoints
     `/data/<j>`, the refused identifier of a to-many relationship, else `/data` (a to-one
     relationship, or an object the change unlinks).
@@ -326,8 +404,9 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   endpoints) look the objects up by their primary key: such relations are not supported
   there.
 - The titles and the fixed details of the errors of the core follow the language of the
-  request (`ru` is translated); the Pydantic messages and the diagnostics of `ERR_FILTER`
-  are English.
+  request (`ru` is translated), also the diagnostics of `ERR_FILTER` and `ERR_INCLUDE` (the
+  names in them as given); the Pydantic messages (`ERR_VALIDATE`) and the messages of
+  Django and Python in `ERR_FILTER` (a value that is not a number) are English.
 
 ### Several route sets of a model, read-only routes
 
@@ -337,6 +416,24 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   `default_route = True` (`bazis.W003`). Its own list and items are its `get_queryset`;
   the relationships, `included` and filters of the other routes use the `restrict_queryset`
   of the default route.
+- A report (a narrowed list, an aggregate per object) is a route of a proxy model of the
+  project (`class OpenTicket(Ticket): class Meta: proxy = True`): its type is
+  `<app>.open_ticket`, its URL the resource path of the proxy, it has no create and update,
+  and `get_queryset` narrows its list and items (another item is 404):
+
+  ```python
+  class OpenTicketRouteSet(JsonapiRouteBase):
+      model = apps.get_model('support.OpenTicket')
+      actions = ['action_list', 'action_retrieve', 'action_schema_list',
+                 'action_schema_retrieve']
+      fields = {None: SchemaFields(origin={'title': None, 'is_late': None})}
+
+      def get_queryset(self):
+          qs = super().get_queryset().filter(done=False)
+          # who sees the tickets: the restrict_queryset of the default route of Ticket
+          return TicketRouteSet.restrict_queryset(
+              qs, CrudAccessAction.VIEW, user=getattr(self.inject, 'user', None))
+  ```
 - A read-only route lists its actions: `actions = ['action_list', 'action_retrieve',
   'action_schema_list', 'action_schema_retrieve']` (or `as_router(actions=[...])`). The
   writes are `action_create`, `action_update`, `action_destroy`, `action_post_relationships`,
@@ -394,6 +491,13 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
 - `sort=-dt_created,number,customer__name`, `page[limit]` / `page[offset]`
   (`BAZIS_API_PAGINATION_PAGE_SIZE_MAX` caps the limit), `include=customer,items`,
   `fields[crm.order]=number,customer` (sparse fieldsets).
+- `include` (retrieve, create, update) names relations of the schema of the action (an
+  update also those of the create schema); a relation that is not in it (a reverse
+  relation not added to `fields`, an attribute, a path `a.b`) is 400 `ERR_INCLUDE` with the
+  pointer `/query/include` (with `BAZIS_FILTERS_STRICT`; without it, left out as before
+  2.12). A relation in the schema that a package hides from the user (the field
+  permission `disable` of bazis-permit) is left out without an error, and `included` has
+  only the objects the default route of the related model shows.
 - Errors are JSON:API error objects (see Errors).
 
 ## Rules

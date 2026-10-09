@@ -150,7 +150,17 @@ class RelationInfo:
                 if child_pk:
                     qs = self.related_model.objects.filter(**{'pk': child_pk})
                 else:
-                    qs = self.related_model.objects.filter(**{self.related_field.name: parent_pk})
+                    # by the value of the foreign key of the parent, not by the reverse
+                    # relation: it may have none (`related_name='+'`), and then its name
+                    # names the hidden relation of another model
+                    field = self.model_field
+                    qs = self.related_model.objects.filter(
+                        **{
+                            f'{field.target_field.name}__in': field.model._base_manager.filter(
+                                pk=parent_pk
+                            ).values(field.attname)
+                        }
+                    )
         return qs
 
 

@@ -43,12 +43,15 @@ def not_null_validator(cls: type[BaseModel], v: Any, field: ValidationInfo):
 def not_blank_validator(cls: type[BaseModel], v: Any, field: ValidationInfo):
     """
     Validator to ensure that a field value is not blank if the field is marked as
-    non-blank in the schema.
+    non-blank in the schema: empty, or a text of only whitespace (as the forms of Django,
+    which strip it). Only the request schemas check it.
 
     Tags: RAG, INTERNAL
     """
     field_info = cls.model_fields[field.field_name]
-    if field_info.json_schema_extra.get('blank') is False and not v:
+    if field_info.json_schema_extra.get('blank') is False and (
+        not v or (isinstance(v, str) and not v.strip())
+    ):
         raise ValueError("Can't be blank")
     return v
 

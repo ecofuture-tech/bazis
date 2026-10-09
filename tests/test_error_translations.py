@@ -131,3 +131,34 @@ def test_invalid_filter(sample_app, two_languages):
 
     assert response.status_code == 400
     assert response.json()['errors'][0]['title'] == 'Недопустимый фильтр'
+    # the detail too, its dynamic parts as they are (it was English)
+    assert response.json()['errors'][0]['detail'] == (
+        "Неизвестное поле фильтра 'unknown' у validation.Booking"
+    )
+
+    response = request(
+        sample_app, 'GET', '/api/v1/validation/booking/?filter=title__in=a', headers=RU
+    )
+    assert response.status_code == 400
+    assert response.json()['errors'][0]['detail'].startswith(
+        "Суффикс фильтра 'in' не поддерживается для поля 'title'; поддерживаемые суффиксы: "
+    )
+
+    response = request(sample_app, 'GET', '/api/v1/validation/booking/?filter=unknown=1')
+    assert response.json()['errors'][0]['detail'] == (
+        "Unknown filter field 'unknown' of validation.Booking"
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_invalid_include(sample_app, two_languages):
+    booking = Booking.objects.create(title='Standup', start=1, end=2)
+
+    response = request(
+        sample_app, 'GET', f'/api/v1/validation/booking/{booking.pk}/?include=x', headers=RU
+    )
+
+    assert response.status_code == 400
+    error = response.json()['errors'][0]
+    assert (error['code'], error['title']) == ('ERR_INCLUDE', 'Недопустимый параметр include')
+    assert error['detail'] == 'Нельзя включить связи: x'

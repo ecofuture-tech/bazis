@@ -21,6 +21,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     create_model,
     field_validator,
@@ -302,10 +303,16 @@ class SchemaResourceBuilder:
 
         # internal schemas
         attributes_schema = self._build_attributes_schema(
-            schema_name, is_required=is_required, defaults=defaults
+            schema_name,
+            is_required=is_required,
+            defaults=defaults,
+            is_response_schema=is_response_schema,
         )
         relationships_schema = self._build_relationships_schema(
-            schema_name, is_required=is_required, defaults=defaults
+            schema_name,
+            is_required=is_required,
+            defaults=defaults,
+            is_response_schema=is_response_schema,
         )
 
         # create the resource schema
@@ -372,8 +379,29 @@ class SchemaResourceBuilder:
         set_schema_to_cache(schema_name, schema)
         return schema
 
+    @staticmethod
+    def _value_validators(is_response_schema: bool) -> dict:
+        """
+        The validators of the null and the blank values of the fields. A response is not
+        checked for blank values: they are the values of the database.
+        """
+        validators = {'not_null_validator': field_validator('*')(not_null_validator)}
+        if not is_response_schema:
+            validators['not_blank_validator'] = field_validator('*')(not_blank_validator)
+        return validators
+
+    def _fields_config(self, is_response_schema: bool) -> ConfigDict | None:
+        """
+        The config of an attributes or relationships schema: the document of a create or an
+        update refuses the fields that are not in the schema (pydantic `extra_forbidden`,
+        422 `ERR_VALIDATE` at the field); the read-only fields are in it and ignored.
+        """
+        if self.factory.is_write_document and not is_response_schema:
+            return ConfigDict(extra='forbid')
+        return None
+
     def _build_attributes_schema(  # noqa: C901
-        self, schema_name: str, is_required=None, defaults=None
+        self, schema_name: str, is_required=None, defaults=None, is_response_schema=False
     ) -> type[BaseModel]:
         """
         Method to build the attributes schema, including validators for null, blank, and
@@ -460,9 +488,9 @@ class SchemaResourceBuilder:
         # create the attributes schema
         schema = schema_create(
             f'_{schema_name}__Attributes',
+            __config__=self._fields_config(is_response_schema),
             __validators__={
-                'not_null_validator': field_validator('*')(not_null_validator),
-                'not_blank_validator': field_validator('*')(not_blank_validator),
+                **self._value_validators(is_response_schema),
                 'readonly_validator': model_validator(mode='before')(readonly_validator),
                 'data_validator': model_validator(mode='before')(data_validator),
             },
@@ -474,7 +502,7 @@ class SchemaResourceBuilder:
         return schema
 
     def _build_relationships_schema(
-        self, schema_name, is_required=None, defaults=None
+        self, schema_name, is_required=None, defaults=None, is_response_schema=False
     ) -> type[BaseModel]:
         """
         Method to build the relationships schema, including validators for null, blank,
@@ -509,10 +537,7 @@ class SchemaResourceBuilder:
 
             schema_data = schema_create(
                 f'_{schema_name}__Relationships__Data__{field.name}',
-                __validators__={
-                    'not_null_validator': field_validator('*')(not_null_validator),
-                    'not_blank_validator': field_validator('*')(not_blank_validator),
-                },
+                __validators__=self._value_validators(is_response_schema),
                 data=(
                     (
                         list[schema_resource_identifier]
@@ -605,9 +630,9 @@ class SchemaResourceBuilder:
 
         schema = schema_create(
             schema_name,
+            __config__=self._fields_config(is_response_schema),
             __validators__={
-                'not_null_validator': field_validator('*')(not_null_validator),
-                'not_blank_validator': field_validator('*')(not_blank_validator),
+                **self._value_validators(is_response_schema),
                 # disabled because there are operations like transitions that require mandatory fields which may well be read-only
                 'readonly_validator': model_validator(mode='before')(readonly_validator),
                 'data_validator': model_validator(mode='before')(data_validator),
