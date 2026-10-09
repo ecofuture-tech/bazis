@@ -117,3 +117,18 @@ def test_write_the_columns_of_the_languages(sample_app, two_languages, categorie
     assert response.json()['data']['attributes']['name'] == 'Груши'
     pear.refresh_from_db()
     assert (pear.name_en, pear.name_ru) == ('Pear', 'Груши')
+
+
+@pytest.mark.django_db(transaction=True)
+def test_unrestricted_queries_in_the_language_of_the_request(
+    sample_app, two_languages, categories, monkeypatch
+):
+    """`BAZIS_FILTERS_STRICT=false` (transitional): the same columns, without a scope."""
+    from django.conf import settings
+
+    monkeypatch.setattr(settings, 'BAZIS_FILTERS_STRICT', False)
+
+    assert names(sample_app, '&sort=name', lang='ru') == ['Plum', 'Груша', 'Яблоко']
+    assert names(sample_app, '&sort=-name') == ['Plum', 'Pear', 'Apple']
+    assert names(sample_app, '&filter=name=Груша', lang='ru') == ['Груша']
+    assert names(sample_app, '&search=руш', lang='ru') == ['Груша']

@@ -19,7 +19,7 @@ from django.utils.translation import gettext as _
 from bazis.core.errors import JsonApiBazisError, JsonApiBazisException
 from bazis.core.routes_abstract.initial import InitialRouteBase
 from bazis.core.services.route_ctx import REQUEST_SCOPE, request_query_scope
-from bazis.core.utils.query_complex import QueryScope
+from bazis.core.utils.query_complex import QueryScope, translated_lookup
 
 
 class SortingSearching:
@@ -78,7 +78,11 @@ class SortingSearching:
         The ordering of a term (`-` for the descending order, nulls last).
         """
         path = term.removeprefix('-')
-        expr = path if scope is None else scope.order_expression(model, path)
+        if scope is None:
+            # a translated field by its column of the language of the request
+            expr = translated_lookup(model, path)
+        else:
+            expr = scope.order_expression(model, path)
         if isinstance(expr, F):
             # a field of the model, by its name: order_by checks it
             expr = expr.name

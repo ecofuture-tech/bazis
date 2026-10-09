@@ -137,9 +137,18 @@ def translated_name(model: type[models.Model], name: str) -> str:
 
 
 def translated_lookup(model: type[models.Model], lookup: str) -> str:
-    """The lookup with its first name translated (`translated_name`)."""
-    name, sep, rest = lookup.partition(LOOKUP_SEP)
-    return f'{translated_name(model, name)}{sep}{rest}'
+    """
+    The lookup (a path through relations, a field, lookups) with its field translated
+    (`translated_name`).
+    """
+    parts = lookup.split(LOOKUP_SEP)
+    for index, name in enumerate(parts):
+        relation = FieldsInfo.get_fields_info(model).relations.get(name)
+        if relation is None:
+            parts[index] = translated_name(model, name)
+            break
+        model = relation.related_model
+    return LOOKUP_SEP.join(parts)
 
 
 class QueryScope:
@@ -1037,11 +1046,13 @@ class QueryToOrm:
             source_model.get_fields_info().relations_by_model if source_model else {}
         )
         # the objects of the target model are filtered by the reverse relation of a forward
-        # one: a relation without it (`related_name='+'`) does not filter them
+        # one: a foreign key or one-to-one relation without it (`related_name='+'`) does not
+        # filter them (its name `+` names the hidden relation of any model); a many-to-many
+        # relation without it has a hidden name of its own, which filters
         relations = [
             it
             for it in relations_by_model.get(target_model, [])
-            if it.reverse or not it.related_field.hidden
+            if it.reverse or it.is_m2m or not it.related_field.hidden
         ]
         if scope is not None:
             relations = [it for it in relations if scope.allows(it.related_field.name, target_model)]

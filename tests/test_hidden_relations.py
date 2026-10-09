@@ -102,13 +102,21 @@ def test_child_queryset_of_forward_relations(same_keys):
 @pytest.mark.django_db(transaction=True)
 def test_filter_by_objects_skips_relations_without_reverse(same_keys):
     """
-    `catalog.memo=<id>` on the attachments: the relations of the memos to them have no
-    reverse one to filter the attachments by, so the model is not related for the filter.
+    `catalog.card=<id>` on the attachments: the foreign key of the cards to them has no
+    reverse relation to filter the attachments by (its name `+` names a hidden relation of
+    any model), so the model is not related for the filter. A many-to-many relation without
+    a reverse one has a hidden name of its own and filters: `catalog.memo=<id>` gives the
+    extras of the memo, not its attachment and cover (foreign keys without a reverse one).
     """
     memo, card, files = same_keys
 
     with pytest.raises(ValueError, match='not a model related'):
-        QueryToOrm.qs_apply(Attachment.objects.all(), f'catalog.memo={memo.pk}', scope=None)
+        QueryToOrm.qs_apply(Attachment.objects.all(), f'catalog.card={card.pk}', scope=None)
+
+    attachments_of_memo = QueryToOrm.qs_apply(
+        Attachment.objects.all(), f'catalog.memo={memo.pk}', scope=None
+    )
+    assert list(attachments_of_memo) == [files['extra']]
 
     # a relation with a reverse one still filters
     cards = QueryToOrm.qs_apply(Card.objects.all(), f'catalog.memo={memo.pk}', scope=None)
