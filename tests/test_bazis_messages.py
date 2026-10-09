@@ -64,6 +64,10 @@ def project(tmp_path, monkeypatch):
     for path in IGNORED:
         (tmp_path / path).mkdir(parents=True, exist_ok=True)
         (tmp_path / path / 'texts.py').write_text(f"_('Ignored {path}')\n")
+    # a virtual environment of another name
+    (tmp_path / 'py312' / 'lib').mkdir(parents=True)
+    (tmp_path / 'py312' / 'pyvenv.cfg').write_text('home = /usr/bin\n')
+    (tmp_path / 'py312' / 'lib' / 'texts.py').write_text("_('Ignored py312')\n")
     for path, text in KEPT.items():
         (tmp_path / path).mkdir(parents=True, exist_ok=True)
         (tmp_path / path / '__init__.py').write_text('')

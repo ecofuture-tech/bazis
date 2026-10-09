@@ -53,8 +53,9 @@ class Command(BaseCommand):
     directories of the apps of the project, never the ones of the installed packages.
 
     - `make`: runs makemessages for the languages from BASE_DIR without the obsolete
-      entries, ignoring the hidden directories and `node_modules` anywhere and the
-      directories of TOP_IGNORED at the top of BASE_DIR that are not Python packages (`-i`
+      entries, ignoring the hidden directories and `node_modules` anywhere, the virtual
+      environments at the top of BASE_DIR and the directories of TOP_IGNORED there that are
+      not Python packages (`-i`
       adds a glob pattern of makemessages), then prints the status;
     - `status`: prints, by language, the untranslated and the fuzzy entries as JSON;
     - `apply FILE`: sets the translations of a JSON file, removes their fuzzy flags and
@@ -164,13 +165,17 @@ def _locale_dirs() -> list[Path]:
 def _skipped(path: Path) -> bool:
     """
     Whether a directory (relative to BASE_DIR) holds no code of the project: under a hidden
-    directory or `node_modules`, or under a directory of TOP_IGNORED at the top of BASE_DIR
-    that is not a Python package.
+    directory or `node_modules`, under a virtual environment at the top of BASE_DIR (its
+    `pyvenv.cfg`, whatever its name), or under a directory of TOP_IGNORED there that is not
+    a Python package.
     """
     if any(part.startswith('.') or part in IGNORE_PATTERNS for part in path.parts):
         return True
-    return bool(path.parts) and (
-        path.parts[0] in TOP_IGNORED and not (_base_dir() / path.parts[0] / '__init__.py').is_file()
+    if not path.parts:
+        return False
+    top = _base_dir() / path.parts[0]
+    return (top / 'pyvenv.cfg').is_file() or (
+        path.parts[0] in TOP_IGNORED and not (top / '__init__.py').is_file()
     )
 
 
