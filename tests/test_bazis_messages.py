@@ -37,7 +37,19 @@ HINT = _('A long text that the catalogs wrap on several lines: the file of the t
          'and makemessages must wrap it the same way, or every run would change the catalog')
 """
 # texts of the directories that are not the code of the project
-IGNORED = ['.venv/lib/pkg', 'venv', '.scratch', 'node_modules/pkg', 'frontend/src', 'media']
+IGNORED = [
+    '.venv/lib/pkg',
+    'venv',
+    '.scratch',
+    'node_modules/pkg',
+    'shop/static/node_modules',
+    'frontend/src',
+    'media',
+    'build/lib',
+]
+# directories of the same names that are code of the project: deeper in the tree, or a
+# package at the top (an app named `static`)
+KEPT = {'shop/media': 'Shop media', 'static': 'Static app'}
 RU_PO = 'locale/ru/LC_MESSAGES/django.po'
 LONG = (
     'A long text that the catalogs wrap on several lines: the file of the translations '
@@ -50,8 +62,12 @@ def project(tmp_path, monkeypatch):
     (tmp_path / 'shop').mkdir()
     (tmp_path / 'shop' / 'models.py').write_text(MODELS)
     for path in IGNORED:
-        (tmp_path / path).mkdir(parents=True)
+        (tmp_path / path).mkdir(parents=True, exist_ok=True)
         (tmp_path / path / 'texts.py').write_text(f"_('Ignored {path}')\n")
+    for path, text in KEPT.items():
+        (tmp_path / path).mkdir(parents=True, exist_ok=True)
+        (tmp_path / path / '__init__.py').write_text('')
+        (tmp_path / path / 'texts.py').write_text(f"_('{text}')\n")
     # not the fixture `settings`: see tests/test_request_language.py
     monkeypatch.setattr(settings, 'BASE_DIR', str(tmp_path))
     monkeypatch.setattr(settings, 'LANGUAGES', [('en', 'English'), ('ru', 'Русский')])
@@ -81,13 +97,16 @@ def test_make_reports_the_project_texts(project):
     assert list(status) == ['ru']
     assert status['ru'] == {
         'catalogs': [RU_PO],
-        'total': 4,
+        'total': 6,
         'translated': 0,
+        # in the order of the files
         'untranslated': [
+            {'msgid': 'Shop media'},
             {'msgid': 'Open'},
             {'msgid': 'Open', 'msgctxt': 'verb'},
             {'msgid': '%(n)s item', 'msgid_plural': '%(n)s items'},
             {'msgid': LONG},
+            {'msgid': 'Static app'},
         ],
         'fuzzy': [],
     }
@@ -112,13 +131,15 @@ def test_apply_and_compile(project, tmp_path):
                     'msgstr': ['%(n)s предмет', '%(n)s предмета', '%(n)s предметов'],
                 },
                 {'msgid': LONG, 'msgstr': 'Длинный текст, ' * 8},
+                {'msgid': 'Shop media', 'msgstr': 'Медиа магазина'},
+                {'msgid': 'Static app', 'msgstr': 'Статика'},
                 {'msgid': 'Missing', 'msgstr': 'Нет'},
             ]
         },
     )
     result = run('apply', translations)
     assert result == {
-        'ru': {'applied': 4, 'unknown': [{'msgid': 'Missing'}], 'untranslated': 0, 'fuzzy': 0}
+        'ru': {'applied': 6, 'unknown': [{'msgid': 'Missing'}], 'untranslated': 0, 'fuzzy': 0}
     }
     catalog = ru(project)
     assert catalog.gettext('Open') == 'Открыть'

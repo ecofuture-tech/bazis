@@ -14,32 +14,37 @@
 
 import contextlib
 import json
-from fnmatch import fnmatchcase
 from pathlib import Path
 
 from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
+from django.core.management.commands import makemessages
 from django.core.management.utils import find_command, popen_wrapper
 from django.utils.translation import to_locale
 
 import polib
 
 
-#: the directories of a project that hold no translatable code of its own: the virtual
-#: environments, the scratch files, the frontend, the collected and uploaded files (Django
-#: adds the hidden directories, `.*`, and MEDIA_ROOT and STATIC_ROOT)
-IGNORE_PATTERNS = [
-    '.venv',
-    'venv',
-    '.scratch',
-    'node_modules',
-    'frontend',
-    'static',
-    'media',
-    'build',
-    'dist',
-]
+#: the directories at the top of BASE_DIR that hold no translatable code of the project: a
+#: virtual environment, the frontend, the collected and uploaded files, the builds; never a
+#: Python package (an app named `media`), nor a directory of that name deeper in the tree
+TOP_IGNORED = ['venv', 'frontend', 'static', 'media', 'build', 'dist']
+#: the directories ignored anywhere: `node_modules` and the hidden ones (`.venv`, `.scratch`,
+#: `.git`; makemessages ignores `.*` itself)
+IGNORE_PATTERNS = ['node_modules']
+
+
+class _MakeMessages(makemessages.Command):
+    """makemessages without the files of the directories `_skipped` under BASE_DIR."""
+
+    def find_files(self, root):
+        base = _base_dir()
+        return [
+            it
+            for it in super().find_files(root)
+            if not _skipped((base / it.dirpath).resolve().relative_to(base))
+        ]
 
 
 class Command(BaseCommand):
@@ -47,8 +52,10 @@ class Command(BaseCommand):
     The gettext catalogs (`django`) of the project: `<BASE_DIR>/locale` and the `locale`
     directories of the apps of the project, never the ones of the installed packages.
 
-    - `make`: runs makemessages for the languages from BASE_DIR with the ignores of a Bazis
-      project and without the obsolete entries, then prints the status;
+    - `make`: runs makemessages for the languages from BASE_DIR without the obsolete
+      entries, ignoring the hidden directories and `node_modules` anywhere and the
+      directories of TOP_IGNORED at the top of BASE_DIR that are not Python packages (`-i`
+      adds a glob pattern of makemessages), then prints the status;
     - `status`: prints, by language, the untranslated and the fuzzy entries as JSON;
     - `apply FILE`: sets the translations of a JSON file, removes their fuzzy flags and
       compiles the catalogs; prints the result. The file maps a language to the
@@ -149,13 +156,22 @@ def _locale_dirs() -> list[Path]:
     dirs = [base / 'locale']
     for path in map(Path, settings.LOCALE_PATHS):
         path = path.resolve()
-        if path.is_relative_to(base) and path not in dirs and not _ignored(path.relative_to(base)):
+        if path.is_relative_to(base) and path not in dirs and not _skipped(path.relative_to(base)):
             dirs.append(path)
     return dirs
 
 
-def _ignored(path: Path) -> bool:
-    return any(fnmatchcase(part, it) for part in path.parts for it in [*IGNORE_PATTERNS, '.*'])
+def _skipped(path: Path) -> bool:
+    """
+    Whether a directory (relative to BASE_DIR) holds no code of the project: under a hidden
+    directory or `node_modules`, or under a directory of TOP_IGNORED at the top of BASE_DIR
+    that is not a Python package.
+    """
+    if any(part.startswith('.') or part in IGNORE_PATTERNS for part in path.parts):
+        return True
+    return bool(path.parts) and (
+        path.parts[0] in TOP_IGNORED and not (_base_dir() / path.parts[0] / '__init__.py').is_file()
+    )
 
 
 def _catalogs(language: str) -> list[Path]:
@@ -211,7 +227,7 @@ def _make(languages: list[str], ignore_patterns: list[str]):
     (base / 'locale').mkdir(exist_ok=True)
     with contextlib.chdir(base):
         call_command(
-            'makemessages',
+            _MakeMessages(),
             locale=[to_locale(it) for it in languages],
             domain='django',
             ignore_patterns=ignore_patterns,
