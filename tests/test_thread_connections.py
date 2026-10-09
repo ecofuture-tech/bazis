@@ -24,6 +24,7 @@ The garbage collector is disabled in these tests: a connection is closed only by
 
 import gc
 import threading
+import time
 import warnings
 
 from django.db import connection, connections
@@ -168,3 +169,41 @@ def test_endpoint_closes_an_obsolete_connection(sample_app, opened_in_threads, m
             assert pids
             assert opened_in_threads.live(pids) == []
         assert len(opened_in_threads.pids) >= 2
+
+
+@pytest.mark.django_db(transaction=True)
+def test_plain_route_reconnects_after_its_connection_broke(opened_in_threads):
+    """
+    A plain sync FastAPI route, outside the route sets, gets the checks of the connection
+    of its worker on every request: once the connection broke, the next request on that
+    worker checks it again (`CONN_HEALTH_CHECKS`) and reconnects.
+    """
+    from bazis.core.app_factory import _create_app_base, _initialize_app
+
+    app = _create_app_base()
+    _initialize_app(app)
+
+    @app.get('/plain-connection/')
+    def plain_connection():
+        with connections['default'].cursor() as cursor:
+            cursor.execute('SELECT pg_backend_pid()')
+            return cursor.fetchone()[0]
+
+    with TestClient(app) as client:
+        first = client.get('/plain-connection/').json()
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT pg_terminate_backend(%s)', [first])
+        for _ in range(100):
+            if not opened_in_threads.live([first]):
+                break
+            time.sleep(0.05)
+
+        response = client.get('/plain-connection/')
+        assert response.status_code == 200
+        assert response.json() != first
+        pids = list(opened_in_threads.pids)
+        assert opened_in_threads.live(pids) == [response.json()]
+
+    opened_in_threads.join()
+    assert opened_in_threads.live(opened_in_threads.pids) == []
+    assert_no_unclosed_connection()

@@ -111,6 +111,7 @@ def _initialize_app(app): # noqa: C901
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import RedirectResponse, Response
 
+    from starlette.concurrency import run_in_threadpool
     from starlette.exceptions import HTTPException
     from starlette.middleware.sessions import SessionMiddleware
     from starlette.responses import JSONResponse
@@ -119,6 +120,7 @@ def _initialize_app(app): # noqa: C901
 
     from bazis.core.i18n import LanguageMiddleware, expand_lang
     from bazis.core.utils.functools import get_attr
+    from bazis.core.utils.orm import close_old_connections
 
     from .errors import JsonApiBazisException, SchemaError, SchemaErrors, SchemaErrorSource
 
@@ -196,6 +198,38 @@ def _initialize_app(app): # noqa: C901
             (settings.ADMIN_HOST_URL,),
             'BS_ADMIN_HOST_URL',
         )
+
+    class CloseOldConnectionsMiddleware:
+        """
+        Calls `close_old_connections` in a worker thread before and after every request,
+        as Django does on `request_started` / `request_finished`: the connection of the
+        worker, which the next sync call of the request takes (AnyIO reuses the last idle
+        worker), is closed past `CONN_MAX_AGE` or after an error that broke it, and checked
+        again before its next use (`CONN_HEALTH_CHECKS`). The endpoints of the route sets
+        do it in their own thread too; this covers every route, such as the plain sync
+        FastAPI routes of the packages. The connection of a worker that ends is closed by
+        `close_with_thread`.
+        """
+
+        def __init__(self, app) -> None:
+            """
+            Initializes the CloseOldConnectionsMiddleware with the given application
+            instance.
+            """
+            self.app = app
+
+        async def __call__(self, scope, receive, send) -> None:
+            """
+            Executes the middleware, ensuring old connections are closed before and after
+            handling the request.
+            """
+            await run_in_threadpool(close_old_connections)
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                await run_in_threadpool(close_old_connections)
+
+    app.add_middleware(CloseOldConnectionsMiddleware)
 
     app.add_middleware(LanguageMiddleware)
 
