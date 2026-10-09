@@ -26,7 +26,7 @@ import inspect
 import re
 import sys
 import tomllib
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from importlib import import_module, metadata, resources
 from importlib.util import find_spec
 from pathlib import Path, PurePath
@@ -331,6 +331,21 @@ def check_messages(deploy: bool = False, databases: Sequence[str] = ()) -> list[
     """
     from django.core import checks
 
+    # With databases, Django runs the checks tagged `database` against them and gives
+    # them to the checks of the models that depend on a database (`Model.check`: long
+    # column names, indexes, constraints, the checks of the fields by the backend), as
+    # `migrate` and `check --database` do; without (`None`), it skips the `database` checks
+    # and gives the models every alias, as `check` does.
+    return message_dicts(
+        checks.run_checks(include_deployment_checks=deploy, databases=list(databases) or None)
+    )
+
+
+def message_dicts(messages: Iterable) -> list[dict]:
+    """
+    The Django check messages as dictionaries (`id`, `level`, `message`, `hint`, `object`),
+    without the silenced ones (`SILENCED_SYSTEM_CHECKS`).
+    """
     return [
         {
             'id': message.id,
@@ -339,10 +354,7 @@ def check_messages(deploy: bool = False, databases: Sequence[str] = ()) -> list[
             'hint': message.hint,
             'object': str(message.obj) if message.obj is not None else None,
         }
-        # without databases Django gives the other checks every alias (`None`), as `check`
-        for message in checks.run_checks(
-            include_deployment_checks=deploy, databases=list(databases) or None
-        )
+        for message in messages
         if not message.is_silenced()
     ]
 

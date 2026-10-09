@@ -15,8 +15,10 @@ project needs, use them the way they are meant to be used and check the result.
   with an error if any check fails with an error. `--deploy` adds the deployment checks.
   The database checks (Django tag `database`: they compare the project with the data of
   its database) run against the database `default` when it can be reached and are skipped
-  with the info `bazis.database` when it cannot; `--database` (repeatable) names the
-  databases, and one that cannot be reached is an error (`bazis.database`).
+  with the info `bazis.database` when it cannot (PostgreSQL is probed with a connect
+  timeout of 5 seconds; `SILENCED_SYSTEM_CHECKS` silences the info); `--database`
+  (repeatable) names the databases, and one that cannot be reached is an error
+  (`bazis.database`).
 - `bazis.core.introspect` is the Python API of the same data.
 - The OpenAPI schema (`/api/openapi.json`) carries the same facts about each operation of a
   route class in the extension `x-bazis` (`resource`, `route_set`, `action`, `kind`; see

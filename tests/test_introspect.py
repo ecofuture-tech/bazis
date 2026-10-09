@@ -13,11 +13,12 @@
 # limitations under the License.
 
 import json
+import time
 from io import StringIO
 
 from django.core import checks
 from django.core.management import CommandError, call_command
-from django.db import OperationalError, connections
+from django.db import connections
 
 import pytest
 
@@ -133,16 +134,22 @@ def test_doctor_command(settings, deploy):
 @pytest.fixture
 def database_check():
     """
-    A database check (tag `database`) that reports the databases it is run against, as the
-    checks of the declarations of bazis-permit and bazis-statusy do.
+    Registers a database check (tag `database`) that reports the databases it is run
+    against, as the checks of the declarations of bazis-permit and bazis-statusy do, with
+    the level given (a warning by default).
     """
+    registered = []
 
-    def check(app_configs, databases=None, **kwargs):
-        return [checks.Warning(f'checked {",".join(databases or ())}', id='tests.W001')]
+    def register(level=checks.Warning):
+        def check(app_configs, databases=None, **kwargs):
+            return [level(f'checked {",".join(databases or ())}', id='tests.W001')]
 
-    checks.register(check, checks.Tags.database)
-    yield
-    checks.registry.registry.registered_checks.discard(check)
+        checks.register(check, checks.Tags.database)
+        registered.append(check)
+
+    yield register
+    for check in registered:
+        checks.registry.registry.registered_checks.discard(check)
 
 
 def doctor(*args) -> tuple[list[dict], bool]:
@@ -156,46 +163,99 @@ def doctor(*args) -> tuple[list[dict], bool]:
     return json.loads(out.getvalue()), failed
 
 
-def unreachable(monkeypatch):
-    def fail():
-        raise OperationalError('connection refused')
+def checked(messages: list[dict]) -> list[str]:
+    return [it['message'] for it in messages if it['id'] == 'tests.W001']
 
-    monkeypatch.setattr(connections['default'], 'ensure_connection', fail)
+
+def unreachable(monkeypatch, host='127.0.0.1', port='1'):
+    """
+    The database `default` at an address where nothing answers, for the probe of the
+    doctor (a connection of its own: the open connection of the test is not changed).
+    """
+    settings_dict = connections['default'].settings_dict
+    monkeypatch.setitem(settings_dict, 'HOST', host)
+    monkeypatch.setitem(settings_dict, 'PORT', port)
 
 
 def test_check_messages_databases(database_check):
-    assert 'tests.W001' not in {it['id'] for it in introspect.check_messages()}
-    messages = introspect.check_messages(databases=['default'])
-    assert [it['message'] for it in messages if it['id'] == 'tests.W001'] == ['checked default']
+    database_check()
+    assert checked(introspect.check_messages()) == []
+    assert checked(introspect.check_messages(databases=['default'])) == ['checked default']
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('args', [(), ('--database', 'default')])
 def test_doctor_runs_the_database_checks(database_check, args):
-    messages, _ = doctor(*args)
-    ids = {it['id'] for it in messages}
-    assert 'bazis.database' not in ids
-    assert [it['message'] for it in messages if it['id'] == 'tests.W001'] == ['checked default']
-
-
-def test_doctor_skips_the_database_checks_without_the_database(database_check, monkeypatch):
-    unreachable(monkeypatch)
-    messages, failed = doctor()
-    ids = {it['id'] for it in messages}
-    assert 'tests.W001' not in ids
-    note = next(it for it in messages if it['id'] == 'bazis.database')
-    assert note['level'] == 'info'
-    assert 'The database default cannot be reached' in note['message']
-    assert 'connection refused' in note['message']
+    database_check()
+    messages, failed = doctor(*args)
+    assert 'bazis.database' not in {it['id'] for it in messages}
+    assert checked(messages) == ['checked default']
     assert not failed
 
 
+@pytest.mark.django_db
+def test_doctor_fails_on_an_error_of_a_database_check(database_check):
+    database_check(checks.Error)
+    messages, failed = doctor()
+    assert [it['level'] for it in messages if it['id'] == 'tests.W001'] == ['error']
+    assert failed
+
+
+@pytest.mark.django_db
+def test_doctor_skips_the_database_checks_without_the_database(database_check, monkeypatch):
+    database_check()
+    unreachable(monkeypatch)
+    messages, failed = doctor()
+    assert checked(messages) == []
+    note = next(it for it in messages if it['id'] == 'bazis.database')
+    assert note['level'] == 'info'
+    assert 'The database default cannot be reached' in note['message']
+    assert not failed
+
+
+@pytest.mark.django_db
+def test_doctor_does_not_wait_for_an_unroutable_database(monkeypatch):
+    # a private address that no host answers: the probe gives up after PROBE_TIMEOUT
+    unreachable(monkeypatch, host='10.255.255.1', port='5432')
+    started = time.monotonic()
+    messages, failed = doctor()
+    assert time.monotonic() - started < 15
+    assert 'bazis.database' in {it['id'] for it in messages}
+    assert not failed
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('silenced', [False, True])
+def test_the_info_of_the_database_can_be_silenced(monkeypatch, settings, silenced):
+    if silenced:
+        settings.SILENCED_SYSTEM_CHECKS = ['bazis.database']
+    unreachable(monkeypatch)
+    messages, failed = doctor()
+    assert ('bazis.database' in {it['id'] for it in messages}) is not silenced
+    assert not failed
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize('alias', ['default', 'no_such_database'])
 def test_doctor_fails_without_a_database_given(database_check, monkeypatch, alias):
+    database_check()
     unreachable(monkeypatch)
     messages, failed = doctor('--database', alias)
-    assert 'tests.W001' not in {it['id'] for it in messages}
+    assert checked(messages) == []
     note = next(it for it in messages if it['id'] == 'bazis.database')
     assert note['level'] == 'error'
     assert f'The database {alias} cannot be reached' in note['message']
+    assert failed
+
+
+@pytest.mark.django_db
+def test_doctor_with_databases_reached_and_not(database_check):
+    database_check()
+    messages, failed = doctor('--database', 'default', '--database', 'no_such_database')
+    # the database checks run against the database reached, the other one is an error
+    assert checked(messages) == ['checked default']
+    notes = [it for it in messages if it['id'] == 'bazis.database']
+    assert [(it['level'], 'no_such_database' in it['message']) for it in notes] == [
+        ('error', True)
+    ]
     assert failed

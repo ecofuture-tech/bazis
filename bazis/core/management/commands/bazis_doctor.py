@@ -14,6 +14,7 @@
 
 import json
 
+from django.core.checks import CheckMessage, Error, Info
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
 
@@ -66,8 +67,10 @@ class Command(BaseCommand):
                 self.stdout.write(json.dumps([problem], ensure_ascii=False, indent=2))
             raise CommandError(f'The application cannot be loaded: {err!r}') from err
 
-        reachable, messages = _reachable(databases)
-        messages += introspect.check_messages(deploy, reachable)
+        reachable, problems = _reachable(databases)
+        messages = introspect.message_dicts(problems) + introspect.check_messages(
+            deploy, reachable
+        )
 
         if as_json:
             self.stdout.write(json.dumps(messages, ensure_ascii=False, indent=2))
@@ -80,35 +83,60 @@ class Command(BaseCommand):
             raise CommandError('The project has errors.')
 
 
-def _reachable(databases: list[str] | None) -> tuple[list[str], list[dict]]:
+#: the seconds the doctor waits for a PostgreSQL database to answer: an unreachable host
+#: must not hang it (libpq waits for the connection without a limit by default)
+PROBE_TIMEOUT = 5
+
+
+def _reachable(databases: list[str] | None) -> tuple[list[str], list[CheckMessage]]:
     """
-    The databases the database checks run against, and a message for each one that cannot
-    be reached: an error for one given with `--database`, an info for `default` checked by
-    default (a project checked without its database, such as before it is created).
+    The databases the database checks run against, and a message `bazis.database` for each
+    one that cannot be reached: an error for one given with `--database`, an info for
+    `default` checked by default (a project checked without its database, such as before it
+    is created). Silenced by `SILENCED_SYSTEM_CHECKS` like the other checks.
     """
     reachable, messages = [], []
     for alias in databases or [DEFAULT_DB_ALIAS]:
         try:
-            connections[alias].ensure_connection()
+            _probe(alias)
         except Exception as err:
+            level = Error if databases else Info
             messages.append(
-                {
-                    'id': 'bazis.database',
-                    'level': 'error' if databases else 'info',
-                    'message': (
-                        f'The database {alias} cannot be reached, its database checks are '
-                        f'skipped: {" ".join(str(err).split()) or type(err).__name__}'
-                    ),
-                    'hint': (
+                level(
+                    f'The database {alias} cannot be reached, its database checks are '
+                    f'skipped: {" ".join(str(err).split()) or type(err).__name__}',
+                    hint=(
                         'The database checks compare the project with its database (such as '
                         'the declared roles and workflows); run them with the database up.'
                     ),
-                    'object': None,
-                }
+                    id='bazis.database',
+                )
             )
         else:
             reachable.append(alias)
     return reachable, messages
+
+
+def _probe(alias: str) -> None:
+    """
+    Connects to the database, or raises. PostgreSQL is probed by a connection of its own
+    with a connect timeout of at most `PROBE_TIMEOUT` (without a pool); the connections of
+    the project are not changed.
+    """
+    connection = connections[alias]
+    if connection.vendor != 'postgresql':
+        connection.ensure_connection()
+        return
+    options = {**connection.settings_dict.get('OPTIONS', {})}
+    options.pop('pool', None)
+    options['connect_timeout'] = min(
+        int(options.get('connect_timeout') or PROBE_TIMEOUT), PROBE_TIMEOUT
+    )
+    probe = connection.__class__({**connection.settings_dict, 'OPTIONS': options}, alias)
+    try:
+        probe.ensure_connection()
+    finally:
+        probe.close()
 
 
 def _message_text(message: dict) -> str:
