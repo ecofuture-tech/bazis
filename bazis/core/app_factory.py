@@ -201,8 +201,14 @@ def _initialize_app(app): # noqa: C901
 
     class CloseOldConnectionsMiddleware:
         """
-        Middleware that checks and closes dropped connections to maintain database
-        connection integrity.
+        Calls `close_old_connections` in a worker thread before and after every request,
+        as Django does on `request_started` / `request_finished`: the connection of the
+        worker, which the next sync call of the request takes (AnyIO reuses the last idle
+        worker), is closed past `CONN_MAX_AGE` or after an error that broke it, and checked
+        again before its next use (`CONN_HEALTH_CHECKS`). The endpoints of the route sets
+        do it in their own thread too; this covers every route, such as the plain sync
+        FastAPI routes of the packages. The connection of a worker that ends is closed by
+        `close_with_thread`.
         """
 
         def __init__(self, app) -> None:

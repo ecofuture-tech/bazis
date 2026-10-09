@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from django.apps import apps
+from django.db.backends.signals import connection_created
 
 from bazis.core.utils.apps import BaseConfig
 
@@ -32,5 +33,7 @@ class BazisCoreConfig(BaseConfig):
         super().ready()
         from bazis.core import checks  # noqa: F401  registers the system checks
         from bazis.core.item_validation import connect_m2m
+        from bazis.core.utils.orm import close_with_thread
 
         connect_m2m(apps.get_models())
+        connection_created.connect(close_with_thread, dispatch_uid='bazis.core.close_with_thread')
