@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-09 12:00+0000\n"
+"POT-Creation-Date: 2026-10-09 20:13+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,7 +16,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: app_factory.py:395 routes_abstract/jsonapi/route_base.py:817
+#: app_factory.py:401 routes_abstract/jsonapi/route_base.py:817
 #: routes_abstract/jsonapi/route_base.py:831
 #: routes_abstract/jsonapi/route_base.py:849
 msgid "Item not found"
@@ -290,7 +290,7 @@ msgstr "Пустое"
 msgid "Not blank"
 msgstr "Не пустое"
 
-#: services/filtering.py:77 services/searching.py:68 services/sorting.py:69
+#: services/filtering.py:77 services/searching.py:68 services/sorting.py:83
 msgid "Invalid filter"
 msgstr "Недопустимый фильтр"
 
@@ -298,37 +298,53 @@ msgstr "Недопустимый фильтр"
 msgid "Pagination"
 msgstr "Пагинация"
 
-#: services/sorting.py:66
+#: services/sorting.py:80
 #, python-format
 msgid "Invalid sorting parameters: `%s`"
 msgstr "Недопустимые параметры сортировки: `%s`"
 
-#: utils/query_complex.py:121
+#: utils/geo.py:56
+#, python-brace-format
+msgid "A point is '<longitude>,<latitude>', not '{value}'"
+msgstr "Точка задаётся как '<долгота>,<широта>', а не '{value}'"
+
+#: utils/geo.py:61
+#, python-brace-format
+msgid ""
+"The point {value} is out of range: longitude -180..180, latitude -90..90"
+msgstr "Точка {value} вне диапазона: долгота -180..180, широта -90..90"
+
+#: utils/geo.py:76
+#, python-brace-format
+msgid "A distance is a number of meters or '<number>km', not '{value}'"
+msgstr "Расстояние задаётся числом метров или '<число>km', а не '{value}'"
+
+#: utils/query_complex.py:122
 #, python-brace-format
 msgid "Unknown filter field '{key}' of {model}"
 msgstr "Неизвестное поле фильтра '{key}' у {model}"
 
-#: utils/query_complex.py:281
+#: utils/query_complex.py:291
 #, python-brace-format
 msgid "Unknown sort field '{key}' of {model}"
 msgstr "Неизвестное поле сортировки '{key}' у {model}"
 
-#: utils/query_complex.py:995
+#: utils/query_complex.py:1005
 #, python-brace-format
 msgid "The filter by objects of '{key}' takes no lookup"
 msgstr "Фильтр по объектам '{key}' не принимает суффикс"
 
-#: utils/query_complex.py:1006
+#: utils/query_complex.py:1016
 #, python-brace-format
 msgid "The filter '{key}' takes no lookup"
 msgstr "Фильтр '{key}' не принимает суффикс"
 
-#: utils/query_complex.py:1051
+#: utils/query_complex.py:1063
 #, python-brace-format
 msgid "Unknown filter field '{key}': not a model related to {model}"
 msgstr "Неизвестное поле фильтра '{key}': модель не связана с {model}"
 
-#: utils/query_complex.py:1136
+#: utils/query_complex.py:1148
 #, python-brace-format
 msgid ""
 "The filter lookup '{lookup}' is not supported for the field '{field}'; "
@@ -337,14 +353,22 @@ msgstr ""
 "Суффикс фильтра '{lookup}' не поддерживается для поля '{field}'; "
 "поддерживаемые суффиксы: {supported}"
 
-#: utils/query_complex.py:1141
+#: utils/query_complex.py:1153
 #, python-brace-format
 msgid ""
 "The filter field '{field}' requires a lookup; supported lookups: {supported}"
 msgstr ""
 "Поле фильтра '{field}' требует суффикс; поддерживаемые суффиксы: {supported}"
 
-#: utils/query_complex.py:1345
+#: utils/query_complex.py:1217
+#, python-brace-format
+msgid ""
+"The filter 'near' is '<longitude>,<latitude>[,<distance>]', not '{value}'"
+msgstr ""
+"Фильтр 'near' задаётся как '<долгота>,<широта>[,<расстояние>]', а не "
+"'{value}'"
+
+#: utils/query_complex.py:1331
 #, python-brace-format
 msgid "The search is not available for {model}"
 msgstr "Поиск недоступен для {model}"

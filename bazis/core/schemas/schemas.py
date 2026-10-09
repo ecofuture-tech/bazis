@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import re
 from collections.abc import Iterable
 from itertools import chain
 from typing import Any, TypeVar
 
+from django.contrib.gis.db.models import GeometryField
+from django.contrib.gis.geos import GEOSGeometry
 from django.db.models import Q, QuerySet
 
 from pydantic import (
@@ -46,6 +49,18 @@ JsonApiMetaT = TypeVar('JsonApiMetaT')
 
 #: the attribute of a validated included item that keeps its index in the request document
 INCLUDED_INDEX_ATTR = '_bs_document_index'
+
+
+def _attribute_value(model: type[InitialBase], name: str, value: Any) -> Any:
+    """
+    The value of an attribute of a request for the field of the model: a GeoJSON object
+    (the schema of a geometry field) is a GEOS geometry (WGS 84 unless it names its SRID).
+    """
+    if isinstance(value, dict) and isinstance(
+        model.get_fields_info().attributes.get(name), GeometryField
+    ):
+        return GEOSGeometry(json.dumps(value))
+    return value
 
 
 def included_document_index(include_data: BaseModel, default: int) -> int:
@@ -111,7 +126,7 @@ class JsonApiDataSchema(BaseModel):
         """
         for f_name, val in self.attributes.model_dump(exclude_unset=True).items():
             if self.check_restrict_json(f_name, val):
-                setattr(item, f_name, val)
+                setattr(item, f_name, _attribute_value(type(item), f_name, val))
         # dependencies are set depending on their type
         if self.relationships:
             for f_name, val in self.relationships.model_dump(exclude_unset=True).items():
@@ -141,7 +156,7 @@ class JsonApiDataSchema(BaseModel):
         if self.attributes:
             for f_name, val in self.attributes.model_dump(exclude_unset=True).items():
                 if self.check_restrict_json(f_name, val):
-                    fields[f_name] = val
+                    fields[f_name] = _attribute_value(model, f_name, val)
         # add id
         fields['id'] = self.id
 

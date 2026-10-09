@@ -32,7 +32,7 @@ from typing import Union
 from urllib.parse import unquote, urlencode
 
 from django.contrib.gis.db.models import PointField
-from django.contrib.gis.geos import GEOSGeometry, Polygon
+from django.contrib.gis.geos import Polygon
 from django.contrib.postgres.fields import ArrayField, RangeField
 from django.db import models
 from django.db.models import Exists, F, Q, QuerySet, Subquery
@@ -45,6 +45,7 @@ from translated_fields import TranslatedField
 
 from bazis.core.models_abstract import InitialBase
 from bazis.core.utils.functools import get_attr
+from bazis.core.utils.geo import parse_distance, parse_point, point_within
 from bazis.core.utils.model_meta import FieldsInfo, RelationInfo
 from bazis.core.utils.orm import apply_calc_queryset, calc_cached_property, translated_column
 
@@ -1193,58 +1194,32 @@ class QueryToOrm:
 
     def _func_geo(self, value, params, field):
         """
-        Applies geographic filters to the specified field based on the given value and parameters.
+        The filters of a point field (`bazis.core.utils.geo`, distances in meters on the
+        sphere):
 
-                Supported filters:
-                - point=49.124,55.76480
-                - point__near=49.124,55.76480[,100]
-                - point__in_bbox=160.6,-55.95,-170,-25.89
+        - `point=<lon>,<lat>`: within 10 m of the point;
+        - `point__near=<lon>,<lat>[,<distance>]`: within the distance of the point
+          (`500`, `500m`, `2.5km`; 100 m by default), `ST_DWithin`;
+        - `point__in_bbox=<lon min>,<lat min>,<lon max>,<lat max>`: inside the box.
 
-                :param value: The geographic value to filter by.
-                :param params: List of parameters derived from the lookup key.
-                :param field: The geographic model field to apply the filter to.
-                :return: A Q object representing the geographic filter condition.
+        A malformed value raises ValueError (400 ERR_FILTER).
         """
-        # TODO: implement full geojson support, handle finding the nearest object,
-        # inclusion in the object, etc.
-
-        def point_near(lon, lat, distance=10):
-            """
-            Creates a geo-point and searches for objects within a specified radius from the target point.
-
-            :param lon: longitude of the target point.
-            :param lat: latitude of the target point.
-            :param distance: radius in meters for the search (default is 10 meters).
-            :return: a q object representing the geographic filter condition.
-            """
-            geo_point = GEOSGeometry(f'POINT({lon} {lat})', srid=4326)
-            # search for objects within n-meters radius from the target
-            return Q(**{f'{field.name}__distance_lte': (geo_point, distance)})
-
-        def point_in_bbox(bbox):
-            """
-            Creates a bounding box polygon and searches for objects contained within the specified bounding box.
-
-            :param bbox: List of coordinates defining the bounding box.
-            :return: A Q object representing the geographic filter condition.
-            """
-            bbox_polygon = Polygon.from_bbox(bbox)
-            return Q(**{f'{field.name}__contained': bbox_polygon})
-
-        if value:
-            if 'in_bbox' in params:
-                return point_in_bbox(value.split(','))
-            elif 'near' in params:
-                lon, lat, *p = value.split(',')
-                if p:
-                    distance = int(p[0])
-                else:
-                    distance = 100
-                return point_near(lon, lat, distance)
-            else:
-                lon, lat = value.split(',')
-                return point_near(lon, lat, 10)
-        return Q()
+        if not value:
+            return Q()
+        if 'in_bbox' in params:
+            return Q(**{f'{field.name}__contained': Polygon.from_bbox(value.split(','))})
+        if 'near' not in params:
+            return point_within(field, parse_point(value), 10)
+        parts = value.split(',')
+        if len(parts) not in (2, 3):
+            raise ValueError(
+                format_lazy(
+                    _("The filter 'near' is '<longitude>,<latitude>[,<distance>]', not '{value}'"),
+                    value=value,
+                )
+            )
+        meters = parse_distance(parts[2]) if len(parts) == 3 else 100
+        return point_within(field, parse_point(','.join(parts[:2])), meters)
 
     def _func_overlap(self, value, params, field):
         """

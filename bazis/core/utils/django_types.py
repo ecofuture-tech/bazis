@@ -58,6 +58,8 @@ except ImportError:
 
 try:
     from django.contrib.gis.db.models.fields import GeometryField
+    from django.contrib.gis.gdal import GDALException
+    from django.contrib.gis.geos import GEOSException
     from django.contrib.gis.geos.geometry import GEOSGeometry
 except ImportError:
     GeometryField = None
@@ -234,14 +236,17 @@ class GeoJson(BaseModel):
             return json.loads(data.geojson)
         elif isinstance(data, str):
             try:
-                geojson_obj = json.loads(data)
-                return geojson_obj
+                data = json.loads(data)
             except json.JSONDecodeError:
                 raise ValueError('Invalid GeoJSON string') from None
-        elif isinstance(data, dict):
-            return data
-        else:
+        if not isinstance(data, dict):
             raise ValueError('Invalid type for GeoJson, expected str or dict representing GeoJSON')
+        # a geometry of a request is written to the field as a GEOS geometry
+        try:
+            GEOSGeometry(json.dumps(data))
+        except (GDALException, GEOSException, ValueError, TypeError):
+            raise ValueError('Invalid GeoJSON geometry') from None
+        return data
 
 
 class EmailEmptyAllowedStr(EmailStr):
