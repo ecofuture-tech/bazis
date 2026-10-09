@@ -32,7 +32,7 @@ from visibility.models import Folder, Label, Note, Tag
 from visibility.routes import NoteBriefRouteSet, NoteRouteSet, TagRouteSet
 
 from bazis.core.checks import check_filters_strict, check_search_fields
-from bazis.core.utils.query_complex import QueryScope, QueryToOrm
+from bazis.core.utils.query_complex import QueryScope, QueryToOrm, route_search_fields
 
 from tests import factories
 
@@ -301,6 +301,23 @@ def test_search_field_through_a_relation_is_checked_to_the_end(sample_app, monke
     warnings = [it for it in check_search_fields(None) if it.id == 'bazis.W007']
     assert [it.obj for it in warnings] == ['visibility.routes.NoteRouteSet']
     assert "'tag__nonexistent'" in warnings[0].msg
+
+
+def test_route_search_fields(monkeypatch):
+    """
+    The search fields a route searches (the ones W007 does not report), as declared: with
+    their lookup prefix, through a relation only into the LIST schema of the default route
+    of the related model.
+    """
+    assert route_search_fields(NoteRouteSet) == ['name', 'tag__name']
+    monkeypatch.setattr(
+        NoteRouteSet, 'search_fields', ['^name', 'folder__name', 'tag__nonexistent', 'missing']
+    )
+    assert route_search_fields(NoteRouteSet) == ['^name', 'folder__name']
+    monkeypatch.setattr(NoteBriefRouteSet, 'search_fields', ['name'])
+    assert route_search_fields(NoteBriefRouteSet) == []
+    monkeypatch.setattr(NoteBriefRouteSet, 'search_fields', [])
+    assert route_search_fields(NoteBriefRouteSet) == []
 
 
 @pytest.mark.django_db(transaction=True)

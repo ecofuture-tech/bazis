@@ -82,10 +82,12 @@ class NoteBriefRouteSet(JsonapiRouteBase):
     """
     A projection of the notes without their name and label, as a calendar shows the
     occupancy of the rooms without the topics of the bookings of the others: the filter,
-    the sorting and the search of its requests do not reach them.
+    the sorting and the search of its requests do not reach them. Read-only: it has only
+    the actions it lists.
     """
 
     model = apps.get_model('visibility.Note')
+    actions = ['action_list', 'action_retrieve', 'action_schema_list', 'action_schema_retrieve']
 
     fields = {
         None: SchemaFields(origin={'folder': None, 'tag': None, 'tags': None}),
