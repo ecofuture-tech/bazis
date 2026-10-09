@@ -81,10 +81,12 @@ never those of the installed packages) are made, filled and compiled by
 `.po` files:
 
 - `make`: makemessages from BASE_DIR for the languages of `LANGUAGES` but English
-  (`-l ru` to choose), ignoring `.venv`, `venv`, `.scratch`, `node_modules`, `frontend`,
-  `static`, `media`, `build`, `dist`, the hidden directories, `MEDIA_ROOT` and
-  `STATIC_ROOT` (`-i <glob>` adds one), without the obsolete (`#~`) entries; then prints the
-  status;
+  (`-l ru` to choose), without the obsolete (`#~`) entries, ignoring the hidden
+  directories (`.venv`, `.scratch`) and `node_modules` anywhere, `MEDIA_ROOT`,
+  `STATIC_ROOT`, and `venv`, `frontend`, `static`, `media`, `build`, `dist` at the top of
+  BASE_DIR unless they are Python packages (an app named `media` is translated, as a
+  directory of such a name deeper in the tree); `-i <glob>` adds a pattern of
+  makemessages; then prints the status;
 - `status`: JSON by language: `catalogs`, `total`, `translated`, `untranslated` and `fuzzy`
   (each entry `{"msgid", "msgctxt"?, "msgid_plural"?}`, a fuzzy one with the `msgstr`
   gettext guessed after its source changed);
@@ -626,7 +628,10 @@ class Site(DtMixin, UuidMixin, JsonApiMixin):
 ```
 
 The API shows it as GeoJSON (`{"type": "Point", "coordinates": [lon, lat]}`) and takes it so
-on a write. On a route whose LIST schema has `location`:
+on a write: always longitude, latitude of WGS 84 (RFC 7946; a `crs` member is refused), of
+the type of the field (a point for a `PointField`) and of its dimension (no third
+coordinate on a 2D field), in range (-180..180, -90..90); anything else is 422
+`ERR_VALIDATE` at the attribute. On a route whose LIST schema has `location`:
 
 - `filter=location__near=37.62,55.75,5km`: within 5 km (`500` and `500m` are meters; 100 m
   without a distance); `filter=location=37.62,55.75`: within 10 m;
