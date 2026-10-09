@@ -225,7 +225,10 @@ def check_translation_conflicts(app_configs, **kwargs):
                         f'packages: {texts}; the first one wins.',
                         hint=(
                             f'Translate "{msgid}" in the locale of the project '
-                            f'({project_locale}), or upgrade the packages.'
+                            f'({project_locale}): declare it with gettext_noop in a module '
+                            'of the project (translations.py), so that `bazis_messages make` '
+                            'keeps it, and translate it with `bazis_messages apply`; or '
+                            'upgrade the packages.'
                         ),
                         id='bazis.W004',
                     )
@@ -267,7 +270,11 @@ def check_translations_of_languages(app_configs, **kwargs):
                 Warning(
                     f'The language {language} of LANGUAGES has no translation of texts of the '
                     f'Bazis packages {", ".join(untranslated)}: they stay in English.',
-                    hint='Translate their msgids in the locale of the project, or remove the language.',
+                    hint=(
+                        'Translate their msgids in the locale of the project (declared with '
+                        'gettext_noop in a module of the project, so that `bazis_messages '
+                        'make` keeps them), or remove the language.'
+                    ),
                     id='bazis.W005',
                 )
             )

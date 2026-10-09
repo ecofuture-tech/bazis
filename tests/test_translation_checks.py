@@ -107,3 +107,34 @@ def test_a_language_the_packages_are_not_translated_into(catalogs, monkeypatch):
     monkeypatch.setattr(trans_real, '_translations', {})
 
     assert checks.check_translations_of_languages(None) == []
+
+
+def test_a_package_msgid_declared_by_the_project_is_kept_and_wins(catalogs, tmp_path):
+    """
+    The recipe of the guide and of the hint of W004: the project declares the msgid of the
+    packages with `gettext_noop` in a module of its own, so that `bazis_messages make` (which
+    drops the entries that are not in the code) keeps it, and translates it with `apply`.
+    """
+    import shutil
+
+    from .test_bazis_messages import run, write
+
+    if shutil.which('xgettext') is None:
+        pytest.skip('GNU gettext is not installed')
+    project = tmp_path / 'project'
+    (project / 'shop').mkdir(parents=True)
+    (project / 'shop' / '__init__.py').write_text('')
+    (project / 'shop' / 'translations.py').write_text(
+        'from django.utils.translation import gettext_noop\n\n'
+        "PACKAGE_MSGIDS = [gettext_noop('Fake name')]\n"
+    )
+    assert run('make')['ru']['untranslated'] == [{'msgid': 'Fake name'}]
+    applied = run('apply', write(tmp_path / 'ru.json', {'ru': {'Fake name': 'Имя'}}), '--check')
+    assert applied['ru'] == {'applied': 1, 'unknown': [], 'untranslated': 0, 'fuzzy': 0}
+
+    # made again, the declared msgid stays translated
+    status = run('make')
+    assert status['ru']['translated'] == 1 and status['ru']['untranslated'] == []
+    assert 'msgstr "Имя"' in (project / 'locale' / 'ru' / 'LC_MESSAGES' / 'django.po').read_text()
+    # the catalog of the project wins: no W004
+    assert checks.check_translation_conflicts(None) == []

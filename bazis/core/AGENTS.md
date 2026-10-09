@@ -70,9 +70,23 @@ Translations: the core puts into `LOCALE_PATHS` the `locale` directory of the pr
 libraries that are not apps are not included. When two catalogs translate the same msgid,
 the first one wins, in every process: the list depends only on the settings
 (`bazis_doctor` warns when two Bazis packages differ, `bazis.W004`). To change a
-translation of a package, translate the msgid in the project's `locale`, or give the field
-its own title (`verbose_name` of the model field, or `SchemaField(title=...)` in `fields` of
-the route). Write the msgids in English (`gettext_lazy`): English needs no catalog, every
+translation of a package (also to settle a `bazis.W004`), translate the msgid in the
+project's `locale`, or give the field its own title (`verbose_name` of the model field, or
+`SchemaField(title=...)` in `fields` of the route). A msgid of a package is not in the code
+of the project, and `bazis_messages make` (below) drops the entries that are not: declare
+it in a module of the project, `<project>/translations.py`, with `gettext_noop` (the text is
+not translated there, makemessages extracts it), then translate it through `bazis_messages`
+like the other texts; the catalog of the project comes first and wins:
+
+```python
+from django.utils.translation import gettext_noop
+
+# the msgids of the packages that the project translates itself (bazis.W004)
+PACKAGE_MSGIDS = [
+    gettext_noop('Name'),
+]
+```
+ Write the msgids in English (`gettext_lazy`): English needs no catalog, every
 other language of `LANGUAGES` does (`bazis.W005` lists the Bazis packages left untranslated).
 
 The catalogs of the project (`<BASE_DIR>/locale` and the `locale` directories of its apps,
