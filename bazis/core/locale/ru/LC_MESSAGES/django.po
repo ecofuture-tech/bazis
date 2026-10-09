@@ -7,194 +7,289 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-03-29 00:27+0300\n"
+"POT-Creation-Date: 2026-10-08 22:30+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
-"Language: \n"
+"Language: ru\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: conf.py:109
+#: app_factory.py:395 routes_abstract/jsonapi/route_base.py:752
+#: routes_abstract/jsonapi/route_base.py:766
+#: routes_abstract/jsonapi/route_base.py:784
+msgid "Item not found"
+msgstr "Объект не найден"
+
+#: conf.py:157
 msgid "Application port"
 msgstr "Порт приложения"
 
-#: conf.py:110
-#, fuzzy
-#| msgid "Application port"
+#: conf.py:158
 msgid "Admin port"
-msgstr "Порт приложения"
+msgstr "Порт админки"
 
-#: conf.py:120
-msgid "Secret key"
-msgstr "Секретный ключ"
-
-#: conf.py:141
-msgid "Maximum request body size in bytes"
-msgstr "Максимальный размер тела запроса в байтах"
-
-#: conf.py:143
-msgid "Trusted schemes"
-msgstr "Доверенные схемы"
-
-#: conf.py:147
-msgid "Default number of results in the list"
-msgstr "Кол-во результатов в списке по умолчанию"
-
-#: conf.py:150
-msgid "Maximum number of results in the list"
-msgstr "Максимальное кол-во результатов в списке"
-
-#: conf.py:153
-msgid "Default cache instance for storing CONSTANCE"
-msgstr "Дефолтный инстанс кэша для хранения CONSTANCE"
-
-#: conf.py:164
-msgid "Path to the GDAL library"
-msgstr "Путь к библиотеке GDAL"
-
-#: conf.py:165
-msgid "Path to the GEOS library"
-msgstr "Путь к библиотеке GEOS"
-
-#: conf.py:167
-msgid "Decimal rounding"
-msgstr "Округление Decimal"
-
-#: conf.py:169
-msgid "Directories to reload on change"
-msgstr ""
-
-#: conf.py:170
-msgid "Use $ref in OpenAPI schema"
+#: conf.py:171
+msgid "User model"
 msgstr ""
 
 #: conf.py:173
+msgid "Authentication backends"
+msgstr ""
+
+#: conf.py:177
+msgid "Secret key"
+msgstr "Секретный ключ"
+
+#: conf.py:180
+msgid "Media URL"
+msgstr ""
+
+#: conf.py:181
+msgid "Admin path"
+msgstr "Путь админки"
+
+#: conf.py:201
+msgid "Maximum request body size in bytes"
+msgstr "Максимальный размер тела запроса в байтах"
+
+#: conf.py:204
+msgid "Trusted schemes"
+msgstr "Доверенные схемы"
+
+#: conf.py:208
+msgid "Default number of results in the list"
+msgstr "Кол-во результатов в списке по умолчанию"
+
+#: conf.py:211
+msgid "Maximum number of results in the list"
+msgstr "Максимальное кол-во результатов в списке"
+
+#: conf.py:214
+msgid "Default cache instance for storing CONSTANCE"
+msgstr "Дефолтный инстанс кэша для хранения CONSTANCE"
+
+#: conf.py:225
+msgid "Path to the GDAL library"
+msgstr "Путь к библиотеке GDAL"
+
+#: conf.py:226
+msgid "Path to the GEOS library"
+msgstr "Путь к библиотеке GEOS"
+
+#: conf.py:228
+msgid "Decimal rounding"
+msgstr "Округление Decimal"
+
+#: conf.py:230
+msgid "Directories to reload on change"
+msgstr ""
+
+#: conf.py:231
+msgid "Use $ref in OpenAPI schema"
+msgstr ""
+
+#: conf.py:234
+msgid ""
+"Lifetime of unused generated schemas in the cache, seconds (0 - unlimited)"
+msgstr ""
+
+#: conf.py:243
 msgid "Mail server backend"
 msgstr ""
 
-#: conf.py:176
+#: conf.py:247
 msgid "Mail server IP address"
 msgstr ""
 
-#: conf.py:179
+#: conf.py:252
 msgid "Mail server port number"
 msgstr ""
 
-#: conf.py:182
+#: conf.py:257
 msgid "Mail server user login"
 msgstr ""
 
-#: conf.py:185
+#: conf.py:262
 msgid "Mail server user password"
 msgstr ""
 
-#: conf.py:188
+#: conf.py:267
 msgid "Mail server use TLS"
 msgstr ""
 
-#: conf.py:191
+#: conf.py:272
 msgid "Mail server use SSL"
 msgstr ""
 
-#: conf.py:194
+#: conf.py:277
 msgid "Default outgoing email address"
 msgstr ""
 
-#: conf.py:196
+#: conf.py:280
 msgid "Export settings"
 msgstr ""
 
-#: configure.py:136
+#: conf.py:281
+msgid "Maximum IDs in list route"
+msgstr ""
+
+#: conf.py:285
+msgid "Filter, sort and search only by the fields of the route"
+msgstr ""
+
+#: configure.py:330
 msgid "System time zone for generating agent report"
 msgstr "Часовой пояс системы для формирования отчета агента"
 
-#: errors.py:22
+#: errors.py:45
 msgid "Request error"
-msgstr "Request error"
+msgstr "Ошибка запроса"
 
-#: errors.py:49
+#: errors.py:74
 msgid "Permission denied: check token"
-msgstr "Permission denied: check token"
+msgstr "Доступ запрещён: проверьте токен"
 
-#: errors.py:60
+#: errors.py:87
 msgid "Permission denied: check access"
-msgstr "Permission denied: check access"
+msgstr "Доступ запрещён: проверьте права доступа"
 
-#: errors.py:71 errors.py:82
+#: errors.py:98 errors.py:111
 msgid "Validation error"
-msgstr "Validation error"
+msgstr "Ошибка валидации"
 
-#: models_abstract.py:334
+#: models_abstract.py:560
 msgid "Creation time"
 msgstr "Время добавления"
 
-#: models_abstract.py:335
+#: models_abstract.py:561
 msgid "Update time"
 msgstr "Время обновления"
 
-#: models_abstract.py:385
+#: models_abstract.py:616
 msgid "Unique object number"
 msgstr "Уникальный номер объекта"
 
-#: models_abstract.py:388
+#: models_abstract.py:619
 msgid ""
-"This field is generated at the DB level according to the uniqueness "
-"principle specified in the model. It may not be unique across the entire "
-"table, as, for example, in the case of uniqueness only for a given type. The "
-"field should not be used directly, instead, you should use :py:attr:`~number`"
+"This field is generated at the DB level according to the uniqueness principle"
+" specified in the model. It may not be unique across the entire table, as, "
+"for example, in the case of uniqueness only for a given type. The field "
+"should not be used directly, instead, you should use :py:attr:`~number`"
 msgstr ""
 "Данное поле генерируется на уровне БД по заданному в модели принципу "
 "уникализации. Оно может не быть уникальным по всей таблице, как, например, "
 "для случая уникализации только для заданного типа. Поле не должно "
 "использоваться напрямую, вместо него следует использовать :py:attr:`~number`"
 
-#: models_abstract.py:447
+#: models_abstract.py:682
 msgid "Proxy-type of document"
 msgstr "Proxy-тип документа"
 
-#: schemas.py:95
+#: routes_abstract/jsonapi/route_base.py:869
+#, python-brace-format
+msgid "The relationship {name} cannot be changed"
+msgstr "Связь {name} нельзя изменить"
+
+#: routes_abstract/jsonapi/route_base.py:873
+msgid "Relationship is read-only"
+msgstr "Связь только для чтения"
+
+#: routes_abstract/jsonapi/route_base.py:951
+#, python-brace-format
+msgid "No access to the related object of {name}"
+msgstr "Нет доступа к связанному объекту {name}"
+
+#: routes_abstract/jsonapi/route_base.py:955
+msgid "Access denied"
+msgstr "Доступ запрещён"
+
+#: routes_abstract/jsonapi/route_base.py:1087
+msgid "Data type is invalid"
+msgstr "Недопустимый тип данных"
+
+#: routes_abstract/jsonapi/route_base.py:1094
+msgid "Data conflict"
+msgstr "Конфликт данных"
+
+#: routes_abstract/jsonapi/route_base.py:1172
+#, python-brace-format
+msgid "The object does not exist. Type: {type}. ID: {id}"
+msgstr "Объект не существует. Тип: {type}. ID: {id}"
+
+#: routes_abstract/jsonapi/route_base.py:1242
+#, python-brace-format
+msgid "{model} is not JSON:API compliant"
+msgstr "{model} не является ресурсом JSON:API"
+
+#: routes_abstract/jsonapi/route_base.py:1246
+#, python-brace-format
+msgid ""
+"Cannot delete object because it has related objects in non-JSON:API models. "
+"(count: {count})"
+msgstr ""
+"Нельзя удалить объект: на него ссылаются объекты моделей вне JSON:API "
+"(количество: {count})"
+
+#: routes_abstract/jsonapi/route_base.py:1265
+msgid "Error deleting protected model"
+msgstr "Ошибка удаления защищённого объекта"
+
+#: routes_abstract/jsonapi/route_base.py:1268
+#, python-brace-format
+msgid ""
+"Cannot delete object because it has protected related objects of type {model}"
+" (count: {count})"
+msgstr ""
+"Нельзя удалить объект: на него ссылаются защищённые объекты типа {model} "
+"(количество: {count})"
+
+#: schemas/enums.py:30
 msgid "Optional"
 msgstr "Опциональное"
 
-#: schemas.py:96
+#: schemas/enums.py:31
 msgid "Required"
 msgstr "Требуется"
 
-#: schemas.py:105
+#: schemas/enums.py:42
 msgid "Enabled"
 msgstr "Включено"
 
-#: schemas.py:106
+#: schemas/enums.py:43
 msgid "Read-only"
 msgstr "Только чтение"
 
-#: schemas.py:107
+#: schemas/enums.py:44
 msgid "Write-only"
 msgstr "Только запись"
 
-#: schemas.py:108
+#: schemas/enums.py:45
 msgid "Disabled"
 msgstr "Отключено"
 
-#: schemas.py:118
+#: schemas/enums.py:57
 msgid "Not null"
 msgstr "Не null"
 
-#: schemas.py:127
+#: schemas/enums.py:68
 msgid "Blank"
 msgstr "Пустое"
 
-#: schemas.py:128
+#: schemas/enums.py:69
 msgid "Not blank"
 msgstr "Не пустое"
 
-#: services/pagination.py:150
+#: services/filtering.py:77 services/searching.py:68 services/sorting.py:69
+msgid "Invalid filter"
+msgstr "Недопустимый фильтр"
+
+#: services/pagination.py:186
 msgid "Pagination"
 msgstr "Пагинация"
 
-#: services/sorting.py:38
+#: services/sorting.py:66
 #, python-format
 msgid "Invalid sorting parameters: `%s`"
 msgstr "Недопустимые параметры сортировки: `%s`"

@@ -22,6 +22,7 @@ from django.db import transaction
 from django.db.models import QuerySet
 from django.db.models.deletion import PROTECT, ProtectedError
 from django.db.utils import IntegrityError
+from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 
 from fastapi import Body, Depends, HTTPException, Request
@@ -411,6 +412,9 @@ class JsonapiRouteBase(InitialRouteBase):
                 traceback.print_exc()
                 # intercepts validation exception and generates its own exception
                 raise JsonApiRequestValidationError(e.errors()) from e
+            except JsonApiHttpException:
+                # already a JSON:API error: keep its code (JsonApi403Exception: ERR_FORBIDDEN)
+                raise
             except HTTPException as e:
                 # intercepts the general exception and generates its own exception
                 raise JsonApiHttpException(
@@ -748,7 +752,7 @@ class JsonapiRouteBase(InitialRouteBase):
         try:
             item_id = self.model._meta.pk.to_python(item_id)
         except DjangoValidationError:
-            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail='Item not found') from None
+            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=_('Item not found')) from None
         if with_lock:
             qs = self.get_queryset().select_for_update(no_key=True)
         else:
@@ -762,7 +766,7 @@ class JsonapiRouteBase(InitialRouteBase):
         """
         item = self.get_queryset_for_item(item_id).first()
         if not item:
-            raise HTTPException(status_code=404, detail='Item not found')
+            raise HTTPException(status_code=404, detail=_('Item not found'))
         return item
 
     def set_item(
@@ -780,7 +784,7 @@ class JsonapiRouteBase(InitialRouteBase):
             return self.item
         self.item = qs.first()
         if not self.item:
-            raise HTTPException(status_code=404, detail='Item not found')
+            raise HTTPException(status_code=404, detail=_('Item not found'))
         self.item.only_fields = only_fields
         return self.item
 
@@ -864,10 +868,12 @@ class JsonapiRouteBase(InitialRouteBase):
         if relationships is None or related_field_name not in relationships.model_fields_set:
             raise JsonApiBazisException(
                 JsonApiBazisError(
-                    detail=f'The relationship {related_field_name} cannot be changed',
+                    detail=format_lazy(
+                        _('The relationship {name} cannot be changed'), name=related_field_name
+                    ),
                     loc=('path', 'related_field_name'),
                     code='ERR_RELATIONSHIP_READONLY',
-                    title='Relationship is read-only',
+                    title=_('Relationship is read-only'),
                     status=403,
                 ),
                 status=403,
@@ -944,10 +950,12 @@ class JsonapiRouteBase(InitialRouteBase):
             if ids - {str(pk) for pk in allowed.values_list('pk', flat=True)}:
                 raise JsonApiBazisException(
                     JsonApiBazisError(
-                        detail=f'No access to the related object of {f_name}',
+                        detail=format_lazy(
+                            _('No access to the related object of {name}'), name=f_name
+                        ),
                         loc=('body', 'data', 'relationships', f_name),
                         code='ERR_RELATION_ACCESS',
-                        title='Access denied',
+                        title=_('Access denied'),
                         status=403,
                     ),
                     status=403,
@@ -1079,14 +1087,14 @@ class JsonapiRouteBase(InitialRouteBase):
         try:
             item = data.build_for()
         except ValueError:
-            raise HTTPException(status_code=400, detail='Data type is invalid') from None
+            raise HTTPException(status_code=400, detail=_('Data type is invalid')) from None
 
         with defer_validate_item(user=self._write_user(), savepoint=False) as scope:
             self.hook_before_create(item)
             try:
                 data.create_for(item)
             except IntegrityError:
-                raise HTTPException(status_code=409, detail='Data conflict') from None
+                raise HTTPException(status_code=409, detail=_('Data conflict')) from None
             scope.mark(
                 item,
                 'create',
@@ -1163,7 +1171,11 @@ class JsonapiRouteBase(InitialRouteBase):
                     except KeyError:
                         raise HTTPException(
                             status_code=400,
-                            detail=f'Object does`t exist. Type: {include_data.type}. ID: {include_data.id})',
+                            detail=format_lazy(
+                                _('The object does not exist. Type: {type}. ID: {id}'),
+                                type=include_data.type,
+                                id=include_data.id,
+                            ),
                         ) from None
                     self.item_update(include, include_data)
                     # the errors of its validation point to it
@@ -1229,8 +1241,16 @@ class JsonapiRouteBase(InitialRouteBase):
                     errors=[
                         JsonApiBazisError(
                             code='MODEL_NOT_JSONAPI',
-                            title=f'{model_name} is not JSON:API compliant',
-                            detail=f'Cannot delete object because it has related objects in non-JSON:API models. (count: {count})',
+                            title=format_lazy(
+                                _('{model} is not JSON:API compliant'), model=model_name
+                            ),
+                            detail=format_lazy(
+                                _(
+                                    'Cannot delete object because it has related objects in '
+                                    'non-JSON:API models. (count: {count})'
+                                ),
+                                count=count,
+                            ),
                             meta_data={
                                 'type': model_name,
                                 'count': count,
@@ -1245,8 +1265,15 @@ class JsonapiRouteBase(InitialRouteBase):
                     errors=[
                         JsonApiBazisError(
                             code='MODEL_PROTECTED_RELATION',
-                            title='Error deleting protected model',
-                            detail=f'Cannot delete object because it has protected related objects of type {model_name} (count: {count})',
+                            title=_('Error deleting protected model'),
+                            detail=format_lazy(
+                                _(
+                                    'Cannot delete object because it has protected related '
+                                    'objects of type {model} (count: {count})'
+                                ),
+                                model=model_name,
+                                count=count,
+                            ),
                             meta_data={
                                 'type': model_name,
                                 'count': count,

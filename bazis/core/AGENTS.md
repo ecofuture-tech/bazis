@@ -114,7 +114,8 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   class Booking(DtMixin, UuidMixin, JsonApiMixin):
       def validate_item(self, changes):
           if changes.is_new or changes.fields & {'room', 'dt_start', 'dt_end'}:
-              Room.objects.select_for_update().get(pk=self.room_id)  # serializes the rooms
+              # serializes the bookings of the room until the commit of the request
+              Room.objects.select_for_update().get(pk=self.room_id)
               if Booking.objects.filter(room=self.room_id, dt_start__lt=self.dt_end,
                                         dt_end__gt=self.dt_start).exclude(pk=self.pk).exists():
                   raise ValidationError({'room': _('The room is booked at this time')})
@@ -210,11 +211,9 @@ class OrderRouteSet(JsonapiRouteBase):
   class of the model (abstract ones never), unless one declares `default_route = True` in
   its class body (not inherited). With several route sets of a model that restrict its
   objects differently, declare it (`bazis_doctor` warns, `bazis.W003`).
-- Logic around writes: override `hook_before_create`, `hook_after_create`,
-  `hook_before_update`, `hook_after_update` (and `hook_before/after_relationships_change`
-  for the relationships endpoints). They run inside the transaction. They are for the side
-  effects of the writes of the route; a rule about the item (an invariant) belongs in
-  `validate_item` of the model (see Models), which no way of writing bypasses.
+- Logic around writes: the hooks of the route (below). They are for the side effects of
+  the writes of the route; a rule about the item (an invariant) belongs in `validate_item`
+  of the model (see Models), which no way of writing bypasses.
 - Custom routes: `@http_get('/{item_id}/card/', kind=RouteKind.ITEM)` (decorators from
   `bazis.core.routes_abstract.initial`, `RouteKind` from `bazis.core.schemas.enums`). Every
   operation of a route class has the OpenAPI extension
@@ -235,7 +234,102 @@ class OrderRouteSet(JsonapiRouteBase):
   context there). Document only what the route can really return.
 - Register: `router = BazisRouter(tags=['CRM'])`, `router.register(OrderRouteSet.as_router())`
   in `<app>/router.py`; the root router (`BazisRouter(prefix='/api/v1')`) registers the app
-  routers by module name: `router.register('crm.router')`.
+  routers by module name: `router.register('crm.router')` (its `router`). `register` also
+  takes a router object (`router.register(files_router)`, a `BazisRouter`); the prefix of
+  `as_router()` is `get_url_prefix()` of the route class.
+
+### Fields of a route
+
+`fields = {<action or None>: SchemaFields(...)}` (`None`: every action). By default a schema
+has the attributes and the forward relations of the model. `origin={...}` replaces them
+with the listed fields (a projection), `include={...}` adds fields (reverse relations,
+calculated fields, a `SchemaField` that overrides one), `exclude={...}` removes fields and
+wins over `include`. The entries of an action are read along the MRO of the route, the
+parent classes first, and in each class its `None` entry, then its entry of the action:
+`include` and `exclude` add up, the last `origin` wins (the action entry of the route,
+else its `None` entry, else the entries of the parents; so a `None` entry of a child
+overrides an action entry of its parent). `is_inherit=False` on the entry of an action
+leaves out the `None` entry of the same class only.
+
+### Writes of a route: hooks and their order
+
+A request runs in one transaction: an exception anywhere rolls all its writes back.
+
+- create (`POST /`): the item is built from the attributes and the to-one relations, not
+  saved → `hook_before_create(item)` → the item is saved, then its to-many relations →
+  `hook_after_create(item)` → the `included` items, each the same way → `validate_item` of
+  every item written.
+- update (`PATCH /{item_id}/`): `hook_before_update(item)` sees the values in the database
+  (the data of the request is not applied and not passed) → the data is applied and saved
+  → `hook_after_update(item)` sees the new values → the `included` items → `validate_item`.
+- the relationships endpoints: `hook_before_relationships_change(item, data,
+  related_field_name, action)` (`action`: `add`, `set`, `remove`) → the change →
+  `hook_after_relationships_change(...)` → `validate_item`. The create and update hooks do
+  not run. Delete has no hooks.
+- The hooks see an item that is not validated yet: `validate_item` runs once per item at
+  the end of the request, with the writes of the hooks. A hook that needs a valid item
+  (before a transit of bazis-statusy, whose validators would answer first, or before a
+  notification) validates the writes so far: `with defer_validate_item() as scope:
+  scope.validate()` (`bazis.core.item_validation`); what is written after it is validated
+  again at the end.
+- The old and the new values: read the old ones in `hook_before_update`, or use
+  `changes.fields` in `validate_item`.
+- The packages override hooks too (bazis-author sets `author` in `hook_before_create`,
+  bazis-users and bazis-permit check in theirs): an override calls `super()`.
+
+### Errors
+
+- A rule about an item: raise a Django `ValidationError({'<field>': message})` in
+  `validate_item`: 422 `ERR_ITEM_INVALID`, pointer `/data/attributes/<field>` or
+  `/data/relationships/<field>` (`/data` without a field). A Django `ValidationError`
+  raised anywhere else (a hook, a route) is a 500. The routes do not call `full_clean()`:
+  `Model.clean()` and the `validators` of the fields do not run on the API.
+- From a hook or a custom route: `raise JsonApiBazisException([JsonApiBazisError(message,
+  loc=('body', 'data', 'attributes', '<field>'), code='ERR_...')], status=422)`
+  (`bazis.core.errors`). The status of the response is the status of the exception (400
+  by default); each error keeps its own (422 by default). `loc` is the source of the error:
+  starting with `path`, the parameter `/<rest>`; otherwise the pointer, joined with `/`,
+  without a leading `body` (`('attributes', f)` is `/attributes/f`, not a pointer into
+  the document).
+- What the application answers: `JsonApiBazisException` with its status and errors; the
+  errors of the request schemas 422 `ERR_VALIDATE` (the title is the Pydantic error type,
+  the detail its English message); an `item_id` that cannot be a key 404; a
+  `JsonApiHttpException` (`JsonApi403Exception` is `ERR_FORBIDDEN`) its status, `code`
+  and `detail`; another `HTTPException` (an unknown path 404, a wrong method 405) its
+  status and `detail`, with `ERR_REQUEST` when a route raised it; a query error 400
+  `ERR_FILTER`; any
+  other exception 500 (the traceback in `detail` only with DEBUG), also an
+  `IntegrityError` of a constraint checked at the commit (a foreign key to a missing
+  object).
+- Known defect, fixed in 2.11.0: up to 2.10 the errors of the request schemas
+  (`ERR_VALIDATE`) point to `/attributes/<field>` and `/relationships/<field>`, without
+  `/data` and also for an included item, while the other errors of the core point into
+  the document (`/data/...`, `/included/<index>/...`). The contract is the pointer into
+  the document; until 2.11.0 a client that maps errors to the fields also reads the old
+  form.
+- The titles and the fixed details of the errors of the core follow the language of the
+  request (`ru` is translated); the Pydantic messages and the diagnostics of `ERR_FILTER`
+  are English.
+
+### Several route sets of a model, read-only routes
+
+- A second route set of a model (a projection, a public calendar) needs its own URL:
+  override the classmethod `get_url_prefix()` (by default the resource path of the model,
+  `/<app>/<model>`), e.g. `return '/rooms/occupancy'`, and mark the main one
+  `default_route = True` (`bazis.W003`). Its own list and items are its `get_queryset`;
+  the relationships, `included` and filters of the other routes use the `restrict_queryset`
+  of the default route.
+- A read-only route lists its actions: `actions = ['action_list', 'action_retrieve',
+  'action_schema_list', 'action_schema_retrieve']` (or `as_router(actions=[...])`). The
+  writes are `action_create`, `action_update`, `action_destroy`, `action_post_relationships`,
+  `action_update_relationships`, `action_delete_relationships` and their schemas
+  `action_schema_create`, `action_schema_update`; the other actions are `action_list_id`
+  (`/_id/`), `get_route_filter_fields` and `action_dict_data` (`/{item_id}/dict_data/`).
+- Known defects, being fixed: `action_dict_data` answers all the attributes of the model,
+  whatever the `fields` of the route (keep it out of a projection by listing the actions);
+  on a proxy model the core adds `action_create` and `action_update` to the
+  `actions_exclude` list the route class inherits, which can change the routes of the
+  parent and sibling classes (give such a route its own `actions_exclude` list).
 
 ## API conventions
 
@@ -252,8 +346,10 @@ class OrderRouteSet(JsonapiRouteBase):
   `restrict_queryset` for `view` with the user of the route), where the key goes on with
   the fields of the LIST schema of that route (a model without a route: only `id`/`pk`,
   `exists`, `isnull`). `sort` goes through to-one relations only (an invisible object sorts
-  as null; a relation itself sorts by the key of the related object); the search uses only the `search_fields` of the route that are fields of its
-  LIST schema (`bazis.W007` warns), a route without them has no search. Anything else is
+  as null; a relation itself sorts by the key of the related object); the search uses only
+  the `search_fields` of the route that are fields of its LIST schema (`bazis.W007` warns
+  about the others; `route_search_fields(route_cls)` of `bazis.core.utils.query_complex`
+  lists the ones searched), a route without them has no search. Anything else is
   400 `ERR_FILTER` (pointer `/query/filter`, `/query/sort` or `/query/search`), the same
   answer as for a field that does not exist: to filter, sort or search by a field, show it
   in the LIST schema of the route. `filters_aliases` of the route are not checked (the
@@ -283,7 +379,7 @@ class OrderRouteSet(JsonapiRouteBase):
 - `sort=-dt_created,number,customer__name`, `page[limit]` / `page[offset]`
   (`BAZIS_API_PAGINATION_PAGE_SIZE_MAX` caps the limit), `include=customer,items`,
   `fields[crm.order]=number,customer` (sparse fieldsets).
-- Errors are JSON:API error objects; validation errors are 422.
+- Errors are JSON:API error objects (see Errors).
 
 ## Rules
 

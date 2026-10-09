@@ -26,7 +26,7 @@ use_when = "an invariant of an item (no overlap, a limit, a consistency of field
 [[extension_points]]
 name = "defer_validate_item"
 import = "bazis.core.item_validation.defer_validate_item"
-use_when = "several writes of an item in a script, a command or a task validated once at the end, with the user who makes them"
+use_when = "several writes of an item in a script, a command or a task validated once at the end, with the user who makes them; in a hook of a route, `with defer_validate_item() as scope: scope.validate()` validates the writes so far (the route validates at the end of the request, after its hooks)"
 
 [[extension_points]]
 name = "ValidateItemAdminMixin"
@@ -52,6 +52,11 @@ use_when = "include or exclude fields of a route, per action (CrudApiAction)"
 name = "JsonapiRouteBase.query_fields"
 import = "bazis.core.routes_abstract.jsonapi.JsonapiRouteBase"
 use_when = "a package changes the LIST schema of a route per user: override the classmethod query_fields(user=None, **kwargs) so that the filter, sort and search of a request reach only the fields that user sees (QueryScope)"
+
+[[extension_points]]
+name = "route_search_fields"
+import = "bazis.core.utils.query_complex.route_search_fields"
+use_when = "a tool (a client generator, the contract of bazis-front) needs the search fields a route searches: its search_fields, as declared, that its LIST schema reaches (no queries)"
 
 [[extension_points]]
 name = "calc_property"
@@ -117,6 +122,21 @@ text = "a verbose_name of a model or field composed with an f-string at import i
 
 [[pitfalls]]
 text = "an invariant of an item kept only in the hooks of a route (hook_before_create, hook_after_update) is bypassed by the relationships endpoints, the transits, the admin and save(): put it in JsonApiMixin.validate_item"
+
+[[pitfalls]]
+text = "the hooks of a route (hook_after_create, hook_after_update, the relationships hooks) see the item before validate_item, which runs at the end of the request: a hook that needs a valid item (before a transit of bazis-statusy or a notification) calls `with defer_validate_item() as scope: scope.validate()` first"
+
+[[pitfalls]]
+text = "hook_before_update sees the values in the database, not the data of the request: compare the old and the new values in hook_after_update or with changes.fields in validate_item"
+
+[[pitfalls]]
+text = "a Django ValidationError is 422 only from validate_item: raised in a hook or a route it is a 500, and the routes never call full_clean() (Model.clean() and the validators of the fields do not run); from a hook raise JsonApiBazisException([JsonApiBazisError(message, loc=('body', 'data', 'attributes', name))], status=422): without status= the response is 400, and loc=('attributes', name) points to /attributes/<name>"
+
+[[pitfalls]]
+text = "known defect fixed in 2.11.0: up to 2.10 the errors of the request schemas (ERR_VALIDATE) point to /attributes/<field> without /data (also for an included item), the other errors into the document (/data/attributes/<field>, /included/<index>/...); the contract is the pointer into the document, a client reads the old form too until 2.11.0"
+
+[[pitfalls]]
+text = "a second route set of a model needs its own get_url_prefix() (by default the resource path of the model, the URL of the first one); a read-only route lists its actions; known defect being fixed: action_dict_data (/{item_id}/dict_data/) answers all the attributes of the model whatever the fields of the route, so a projection that does not list its actions exposes them"
 
 [[pitfalls]]
 text = "QuerySet.update(), bulk_create(), bulk_update(), a reverse foreign key manager with bulk=True outside the routes, Through.objects.create(), loaddata and deserialization (raw), raw SQL and deletion do not call validate_item; a failed validation of a many-to-many add()/remove()/clear() inside a transaction requires rolling that transaction back (no savepoint)"

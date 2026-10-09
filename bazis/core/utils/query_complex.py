@@ -263,6 +263,27 @@ class QueryScope:
         return Subquery(qs.annotate(_order=inner).values('_order')[:1])
 
 
+def route_search_fields(route_cls) -> list[str]:
+    """
+    The search fields of a JSON:API route class that `search` (and `$search`) uses: its
+    `search_fields` as declared (with their lookup prefix, `^name`), those the LIST schema
+    of the route class itself reaches (through a relation, the LIST schema of the default
+    route of the related model). Empty for a route class without them: a search there is
+    400 `ERR_FILTER`. The others are left out of the search (`bazis.W007` reports them).
+    Read from the classes, without queries; a package that narrows the LIST schema per
+    user (bazis-permit) can narrow the search of a request further.
+
+    Tags: RAG, EXPORT
+    """
+    scope = QueryScope.for_route(route_cls, schema=True)
+    names = [str(field) for field in route_cls.search_fields or ()]
+    return [
+        name
+        for name in names
+        if scope.reaches(route_cls.model, name[1:] if name[:1] in LOOKUP_PREFIXES else name)
+    ]
+
+
 class _AliasPart(str):
     """A name that a filters alias at the start of a filter key gives: not scoped."""
 
