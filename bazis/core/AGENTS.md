@@ -262,6 +262,14 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   a create that locks the same parent first and then the item — lock the parent first in
   both, or keep the item action from locking the parent, otherwise the two may deadlock
   (PostgreSQL aborts one of them with a 500).
+- Declarations in the code (for package authors): `bazis.core.declare` holds what
+  bazis-permit (`roles.py`), bazis-statusy (`workflow.py`) and bazis-bg (`schedules.py`)
+  share to apply `<app>/<module>.py` on `migrate`: `discover` the modules,
+  `apply_after_migrate` (after all migrations, in a transaction under the shared advisory
+  `lock`), `ManagedSync` (create, update, or take over an unmarked object of the same `slug`
+  with a warning; the model has a unique `slug` and a `managed` flag), `managed_orphans`
+  (the managed objects no longer declared; each package decides their fate), and
+  `ManagedAdminMixin` (`bazis.core.admin_abstract`, declared objects read-only).
 - Calculated fields: `@calc_property([...], as_filter=False)` from `bazis.core.utils.orm`
   declares what the query of the routes fetches for the property in the same pass; the
   values come to the item as attributes named by `alias` (else `source`):

@@ -18,7 +18,7 @@ Request rate limits of routes: a fixed window counted in the default cache (Redi
 `throttle(rate)` is a FastAPI dependency (`dependencies=[throttle('5/minute')]` of a route
 or of an `http_*` decorator). On a route of a route class it counts the requests of the
 user of the route (`self.inject.user` of bazis-users) or of the IP address of an anonymous
-one; the actions declared `public=True` get `BAZIS_THROTTLE_PUBLIC` by IP unless they
+one; the actions declared `public=True` get `BAZIS_THROTTLE_PUBLIC` per user or IP address unless they
 declare their own throttle. Over the limit the request fails with 429 `ERR_THROTTLED` and
 the header `Retry-After` (seconds to the next window).
 

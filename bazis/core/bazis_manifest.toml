@@ -104,6 +104,11 @@ import = "bazis.core.routes_abstract.initial.route_declare"
 use_when = "change kind, public, access_action or dependencies of an inherited route without repeating its decorator: action_transit = route_declare(StatusyRouteSetBase.action_transit, public=True) in the body of the subclass"
 
 [[extension_points]]
+name = "bazis.core.declare"
+import = "bazis.core.declare.ManagedSync"
+use_when = "a package applies declarations in the code (<app>/roles.py, workflow.py, schedules.py) on migrate: discover the modules, apply_after_migrate under the shared lock, ManagedSync creates/updates/takes over the slug objects with a managed flag, managed_orphans lists the ones no longer declared (their fate is the policy of the package); ManagedAdminMixin shows declared objects read-only"
+
+[[extension_points]]
 name = "InitialRouteBase.route_check"
 import = "bazis.core.routes_abstract.initial.InitialRouteBase"
 use_when = "a package refuses requests by the facts of a route (bazis-permit: public, access_action) before its function runs, in its transaction: extend route_check(*args, **kwargs) and call super()"
