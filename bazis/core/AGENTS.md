@@ -255,7 +255,13 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   refused, not graded twice). A write the constraint still refuses (a race the code missed,
   two parallel creates of a unique value) answers 409 `ERR_CONFLICT`, never a 500 (see
   Errors). An action whose item bazis-permit already took (`access_action`) has it in
-  `self.item`; `set_item(item_id, with_lock=True)` takes it again, locked.
+  `self.item`: locked for POST/PUT/PATCH/DELETE (`set_item(item_id, with_lock=True)`
+  returns it without another query), unlocked for GET (`set_item(..., with_lock=True)`
+  reads it again, locked). Take the locks in one order everywhere: such an action holds
+  its item first, so an action that also locks the parent (or another row) must not race
+  a create that locks the same parent first and then the item — lock the parent first in
+  both, or keep the item action from locking the parent, otherwise the two may deadlock
+  (PostgreSQL aborts one of them with a 500).
 - Calculated fields: `@calc_property([...], as_filter=False)` from `bazis.core.utils.orm`
   declares what the query of the routes fetches for the property in the same pass; the
   values come to the item as attributes named by `alias` (else `source`):
