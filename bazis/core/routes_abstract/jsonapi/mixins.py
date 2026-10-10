@@ -106,7 +106,10 @@ class RestrictedQsRouteMixin(JsonapiRouteBase):
         must not raise for them: it returns what a user without authentication may see
         (e.g. `qs.none()`), or falls back to a request-level user of its package. The
         route of the request is `JsonApiMixin.CTX_ROUTE.get()`. An override should accept
-        `**kwargs`.
+        `**kwargs`: the core passes `link=True` when it checks the objects a created or
+        changed item links (`relations_access_check`); an override may return fewer objects
+        then, those the user may link, and a visible object it leaves out is refused with
+        422 `ERR_RELATION_LINK` (an invisible one with 403 `ERR_RELATION_ACCESS`).
         """
         return qs
 

@@ -981,8 +981,11 @@ class JsonapiRouteBase(InitialRouteBase):
         the foreign key of the objects it links and unlinks, so they must be changeable.
         For a changed item only the objects whose link changes are checked; `action` is the
         action of the relationships endpoints (`add`, `remove`, `set`; an update sets the
-        value). The models whose route does not restrict them are not queried. Fails with
-        403 `ERR_RELATION_ACCESS`, pointing to `/data/relationships/<field>`; with
+        value). The models whose route does not restrict them are not queried. The objects
+        are asked for with `link=True`: an override may leave out objects the user sees but
+        may not link (e.g. the files of other users). Fails with 403 `ERR_RELATION_ACCESS`
+        for an object the user cannot see (change), else with 422 `ERR_RELATION_LINK` for
+        an object he sees but may not link, pointing to `/data/relationships/<field>`; with
         `relationship_body` (the relationships endpoints, whose body is the `data` of the
         relationship) to the refused identifier of a to-many relationship, `/data/<index>`,
         else to `/data`. `relation_targets_check = False` turns the check off.
@@ -1035,24 +1038,54 @@ class JsonapiRouteBase(InitialRouteBase):
             if not ids:
                 continue
 
-            allowed = restrict(rel_model.objects.filter(pk__in=ids), access_action, user=user)
+            allowed = restrict(
+                rel_model.objects.filter(pk__in=ids), access_action, user=user, link=True
+            )
             if refused := ids - {str(pk) for pk in allowed.values_list('pk', flat=True)}:
+                # the objects the user may not link: those he cannot see are refused as
+                # such (403), the visible ones he may not link are invalid targets (422)
+                visible = restrict(
+                    rel_model.objects.filter(pk__in=refused), access_action, user=user
+                )
+                hidden = refused - {str(pk) for pk in visible.values_list('pk', flat=True)}
                 if relationship_body:
-                    loc = relationship_body_loc(refused, positions, is_list)
+                    loc = relationship_body_loc(hidden or refused, positions, is_list)
                 else:
                     loc = ('body', 'data', 'relationships', f_name)
-                raise JsonApiBazisException(
-                    JsonApiBazisError(
-                        detail=format_lazy(
-                            _('No access to the related object of {name}'), name=f_name
-                        ),
-                        loc=loc,
-                        code='ERR_RELATION_ACCESS',
-                        title=_('Access denied'),
-                        status=403,
-                    ),
-                    status=403,
-                )
+                raise self._relation_refused(f_name, loc, linkable_only=not hidden)
+
+    @staticmethod
+    def _relation_refused(f_name: str, loc: tuple, linkable_only: bool) -> JsonApiBazisException:
+        """
+        The error of a relationship that links an object `relations_access_check` refuses:
+        403 `ERR_RELATION_ACCESS` for an object the user cannot see (or change, for a
+        reverse relationship), 422 `ERR_RELATION_LINK` if every refused object is one he
+        sees but may not link (`restrict_queryset` with `link=True` leaves it out).
+        """
+        if linkable_only:
+            detail, code, title, status = (
+                _('The related object of {name} cannot be linked'),
+                'ERR_RELATION_LINK',
+                _('Link not allowed'),
+                422,
+            )
+        else:
+            detail, code, title, status = (
+                _('No access to the related object of {name}'),
+                'ERR_RELATION_ACCESS',
+                _('Access denied'),
+                403,
+            )
+        return JsonApiBazisException(
+            JsonApiBazisError(
+                detail=format_lazy(detail, name=f_name),
+                loc=loc,
+                code=code,
+                title=title,
+                status=status,
+            ),
+            status=status,
+        )
 
     def _relation_positions(self, rel_data, rel_model) -> dict[str, int]:
         """

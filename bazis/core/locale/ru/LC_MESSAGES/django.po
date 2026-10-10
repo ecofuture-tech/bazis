@@ -214,6 +214,15 @@ msgstr "Нет доступа к связанному объекту {name}"
 msgid "Access denied"
 msgstr "Доступ запрещён"
 
+#: routes_abstract/jsonapi/route_base.py:1067
+#, python-brace-format
+msgid "The related object of {name} cannot be linked"
+msgstr "Связанный объект {name} нельзя привязать"
+
+#: routes_abstract/jsonapi/route_base.py:1069
+msgid "Link not allowed"
+msgstr "Привязка запрещена"
+
 #: routes_abstract/jsonapi/route_base.py:1198
 msgid "Data type is invalid"
 msgstr "Недопустимый тип данных"

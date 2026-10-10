@@ -210,6 +210,15 @@ msgstr ""
 msgid "Access denied"
 msgstr ""
 
+#: routes_abstract/jsonapi/route_base.py:1067
+#, python-brace-format
+msgid "The related object of {name} cannot be linked"
+msgstr ""
+
+#: routes_abstract/jsonapi/route_base.py:1069
+msgid "Link not allowed"
+msgstr ""
+
 #: routes_abstract/jsonapi/route_base.py:1198
 msgid "Data type is invalid"
 msgstr ""

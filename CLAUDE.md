@@ -90,7 +90,8 @@ Security boundaries that span packages:
   that writes an item in several steps (the transits of bazis-statusy) declares them with
   `defer_validate_item(item, source=...)` so that the item is validated once.
 - A relationship links only the objects the default route of the related model shows
-  (`restrict_queryset`), and `included` shows only those objects
+  (`restrict_queryset`; with `link=True` the ones the user may link), and `included` shows
+  only those objects
   (`JsonapiRouteBase.relations_access_check`, `JsonApiMixin.fields_for_included`): a
   package restricts the objects of its models there, not only in `get_queryset`.
 - Session JWTs (bazis-users) require `exp` and `sub`; on HTTP a token without `exp` (the
