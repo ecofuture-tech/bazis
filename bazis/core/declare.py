@@ -23,7 +23,11 @@ are applied), in a transaction that holds `lock` (concurrent `migrate` runs appl
 after the other). The objects of a model with a unique `slug` and a `managed` flag are
 brought to their declaration by `ManagedSync`: created, updated or taken over (an existing
 object of the slug that is not `managed`, with a warning); `managed_orphans` are the
-managed ones no longer declared, which the package keeps, disables or reports.
+managed ones no longer declared. What happens to them is the policy of each package: the
+roles and groups of bazis-permit (and the transits of bazis-statusy) are kept as they are
+and reported by a database check, as their removal would revoke permissions or history;
+the periodic tasks of bazis-bg are disabled and unmarked (ordinary ones the admin may
+enable again), as an enabled one would keep running.
 `ManagedAdminMixin` (`bazis.core.admin_abstract`) shows the declared objects read-only.
 """
 
