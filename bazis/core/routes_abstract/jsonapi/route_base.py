@@ -139,6 +139,8 @@ class JsonapiRouteBase(InitialRouteBase):
     filters_aliases: dict[str, str] = {}
 
     item: JsonApiMixin | None = None
+    #: the item was taken with `set_item(with_lock=True)`
+    item_locked: bool = False
     schema_defaults: dict[ApiAction, type[BaseModel]] = None
     schema_responses_defaults: dict[ApiAction, type[BaseModel]] = None
     schema_factories: dict[ApiAction, SchemaFactory] = None
@@ -835,17 +837,25 @@ class JsonapiRouteBase(InitialRouteBase):
         self, item_id: str, with_lock: bool = False, is_force: bool = False
     ) -> JsonApiMixin:
         """
-        If the instance is already set, do not override anything. sets the item for the
-        current route context. `with_lock` takes it again, locked (`FOR NO KEY UPDATE`),
-        also when it is already set (bazis-permit takes the item of an action that declares
-        `access_action` before the action runs).
+        Sets the item of the route (404 if it is not found) and returns it. The item the
+        route already holds under the same id is returned as it is, unless `is_force`, or
+        `with_lock` while it was not taken locked: then it is taken again, locked (`FOR NO
+        KEY UPDATE`, until the end of the transaction of the request). bazis-permit takes the
+        item of an action that declares `access_action` before the action runs.
         """
-        qs = self.get_queryset_for_item(item_id, with_lock)
         only_fields = getattr(
-            self.inject, f'fields_{qs.model.get_resource_label().replace(".", "_")}', None
+            self.inject, f'fields_{self.model.get_resource_label().replace(".", "_")}', None
         )
-        if self.item and not is_force and not with_lock and only_fields is None:
+        if (
+            self.item
+            and str(self.item.pk) == str(item_id)
+            and not is_force
+            and (self.item_locked or not with_lock)
+            and only_fields is None
+        ):
             return self.item
+        qs = self.get_queryset_for_item(item_id, with_lock)
+        self.item_locked = with_lock
         self.item = qs.first()
         if not self.item:
             raise HTTPException(status_code=404, detail=_('Item not found'))

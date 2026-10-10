@@ -703,9 +703,12 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
         # set the current route context for the endpoint
         route_ctx.endpoint.route_ctx = route_ctx
 
-        # calculate the route name
-        if not route_ctx.route_params.name:
-            route_ctx.route_params.name = cls.get_name_route(route_ctx.func.__name__)
+        # what the registration of this endpoint adds to the declared parameters of the route:
+        # kept on the endpoint, not in `route_params`, which the subclasses and route_declare
+        # copy (they make their own endpoint)
+        endpoint.registration = {
+            'name': route_ctx.route_params.name or cls.get_name_route(route_ctx.func.__name__)
+        }
 
         # initialize the endpoint
         if route_ctx.endpoint_callbacks:
@@ -743,7 +746,7 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
 
         # the throttles of the route count the user of the route object (cached by FastAPI
         # for the request, the same object the endpoint gets), a public action has the
-        # default one; the context of the class gets its own parameters
+        # default one
         throttles, dependencies = split_throttles(route_ctx.route_params.dependencies)
         if route_ctx.public and not throttles:
             throttles = [Throttle(public_rate)]
@@ -756,9 +759,7 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
                         request, user=getattr(route.inject, 'user', None), scope=throttle_scope
                     )
 
-            route_ctx.route_params = dataclasses.replace(
-                route_ctx.route_params, dependencies=[*dependencies, Depends(throttle_check)]
-            )
+            endpoint.registration['dependencies'] = [*dependencies, Depends(throttle_check)]
 
         # collect Inject dependencies and add a dependency that creates a route instance.
         # In other dependencies, the route will not be available!
@@ -824,11 +825,12 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
         Register the route in the router defined in the class, with the
         `route_openapi_extra` (`x-bazis`) and the `route_responses` of its OpenAPI operation.
         """
-        # a shallow copy: asdict() would turn the dependencies (dataclasses) into dicts
+        # a shallow copy: asdict() would turn the dependencies (dataclasses) into dicts; with
+        # the name and the dependencies of the endpoint of this class (endpoint_make)
         route_params = {
             field.name: getattr(route_ctx.route_params, field.name)
             for field in dataclasses.fields(route_ctx.route_params)
-        }
+        } | route_ctx.endpoint.registration
         route_params['responses'] = {
             **cls.route_responses(route_ctx),
             **(route_params['responses'] or {}),

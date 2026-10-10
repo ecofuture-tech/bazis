@@ -18,6 +18,7 @@ The request rate limits of routes (`bazis.core.throttle`): a fixed window in Red
 `entity.routes.CountryRouteSet`).
 """
 
+import inspect
 from types import SimpleNamespace
 
 from django import forms
@@ -32,7 +33,12 @@ import pytest
 from bazis_test_utils.utils import get_api_client
 
 from bazis.core.errors import JsonApiThrottledException
-from bazis.core.routes_abstract.initial import OPENAPI_EXTENSION
+from bazis.core.routes_abstract.initial import (
+    OPENAPI_EXTENSION,
+    InitialRouteBase,
+    http_get,
+    route_declare,
+)
 from bazis.core.throttle import Throttle, parse_rate, throttle
 
 
@@ -219,6 +225,66 @@ def test_client_address_behind_a_proxy():
     for address in ('198.51.100.7', '198.51.100.8'):
         response = proxy.get('/ping', headers={'X-Forwarded-For': address})
         assert (response.status_code, response.json()) == (200, address)
+
+
+class RegisteredFirst(InitialRouteBase):
+    @http_get('/open/', public=True)
+    def action_open(self, **kwargs):
+        pass
+
+    @http_get('/limited/', dependencies=[throttle('5/minute')])
+    def action_limited(self, **kwargs):
+        pass
+
+
+# the base is registered (its router imported) before the subclasses are made
+REGISTERED_FIRST = RegisteredFirst.as_router()
+
+
+class InheritsRegistered(RegisteredFirst):
+    pass
+
+
+class DeclaresRegistered(RegisteredFirst):
+    action_open = route_declare(RegisteredFirst.action_open, public=False)
+
+
+def registered(route_set) -> dict:
+    return {route.name: route for route in route_set.as_router().routes}
+
+
+def throttle_scopes(route) -> list[str]:
+    return [
+        inspect.getclosurevars(dep.dependency).nonlocals['throttle_scope']
+        for dep in route.dependencies
+        if dep.dependency.__name__ == 'throttle_check'
+    ]
+
+
+def test_subclasses_of_a_registered_route_set():
+    """
+    The registration of a route class keeps its name and its throttle on its own endpoint:
+    a subclass or a route_declare made after the base was registered gets its own name and
+    throttle (its scope), and public=False drops the throttle of a public action.
+    """
+    base = {route.name: route for route in REGISTERED_FIRST.routes}
+    child = registered(InheritsRegistered)
+    declared = registered(DeclaresRegistered)
+
+    name = f'{__name__}.InheritsRegistered'
+    assert throttle_scopes(child['InheritsRegistered_action_open']) == [f'{name}.action_open']
+    assert throttle_scopes(child['InheritsRegistered_action_limited']) == [
+        f'{name}.action_limited'
+    ]
+    assert throttle_scopes(base['RegisteredFirst_action_open']) == [
+        f'{__name__}.RegisteredFirst.action_open'
+    ]
+    assert throttle_scopes(declared['DeclaresRegistered_action_open']) == []
+    assert len(throttle_scopes(declared['DeclaresRegistered_action_limited'])) == 1
+    # the declared parameters are not changed by the registrations
+    assert RegisteredFirst.action_open.route_params.name is None
+    assert RegisteredFirst.action_open.route_params.dependencies is None
+    assert len(RegisteredFirst.action_limited.route_params.dependencies) == 1
 
 
 def test_rates():
