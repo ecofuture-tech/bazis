@@ -982,8 +982,9 @@ class JsonapiRouteBase(InitialRouteBase):
         For a changed item only the objects whose link changes are checked; `action` is the
         action of the relationships endpoints (`add`, `remove`, `set`; an update sets the
         value). The models whose route does not restrict them are not queried. The objects
-        are asked for with `link=True`: an override may leave out objects the user sees but
-        may not link (e.g. the files of other users). Fails with 403 `ERR_RELATION_ACCESS`
+        that get linked are asked for with `link=True` (not the ones a reverse relationship
+        unlinks): an override may leave out objects the user sees but may not link (e.g.
+        the files of other users). Fails with 403 `ERR_RELATION_ACCESS`
         for an object the user cannot see (change), else with 422 `ERR_RELATION_LINK` for
         an object he sees but may not link, pointing to `/data/relationships/<field>`; with
         `relationship_body` (the relationships endpoints, whose body is the `data` of the
@@ -1032,27 +1033,46 @@ class JsonapiRouteBase(InitialRouteBase):
                     ids, unlinked = ids - current, current - ids
 
             if field_info.reverse:
-                ids, access_action = ids | unlinked, CrudAccessAction.CHANGE
+                # the linked objects and the unlinked ones change: they must be changeable,
+                # only the linked ones linkable
+                access_action = CrudAccessAction.CHANGE
+                targets = ((ids, True), (unlinked, False))
             else:
                 access_action = CrudAccessAction.VIEW
-            if not ids:
-                continue
+                targets = ((ids, True),)
 
-            allowed = restrict(
-                rel_model.objects.filter(pk__in=ids), access_action, user=user, link=True
-            )
-            if refused := ids - {str(pk) for pk in allowed.values_list('pk', flat=True)}:
-                # the objects the user may not link: those he cannot see are refused as
-                # such (403), the visible ones he may not link are invalid targets (422)
-                visible = restrict(
-                    rel_model.objects.filter(pk__in=refused), access_action, user=user
+            for target_ids, link in targets:
+                refused, hidden = self._refused_targets(
+                    restrict, rel_model, target_ids, access_action, user, link
                 )
-                hidden = refused - {str(pk) for pk in visible.values_list('pk', flat=True)}
-                if relationship_body:
-                    loc = relationship_body_loc(hidden or refused, positions, is_list)
-                else:
-                    loc = ('body', 'data', 'relationships', f_name)
-                raise self._relation_refused(f_name, loc, linkable_only=not hidden)
+                if refused:
+                    if relationship_body:
+                        loc = relationship_body_loc(hidden or refused, positions, is_list)
+                    else:
+                        loc = ('body', 'data', 'relationships', f_name)
+                    raise self._relation_refused(f_name, loc, linkable_only=not hidden)
+
+    @staticmethod
+    def _refused_targets(
+        restrict, rel_model, ids: set, access_action, user, link: bool
+    ) -> tuple[set, set]:
+        """
+        The keys of `ids` that `restrict` (the `restrict_queryset` of the default route of
+        `rel_model`) refuses, and those of them the user does not see. With `link` the
+        objects are asked for with `link=True` (the objects that get linked): a refused one
+        is looked up again without it, to tell an object he sees but may not link from one
+        he does not see; the success needs one query. Without `link` (the objects a
+        reverse relationship unlinks) every refused object is not seen (changed).
+        """
+        if not ids:
+            return set(), set()
+        kwargs = {'link': True} if link else {}
+        allowed = restrict(rel_model.objects.filter(pk__in=ids), access_action, user=user, **kwargs)
+        refused = ids - {str(pk) for pk in allowed.values_list('pk', flat=True)}
+        if not refused or not link:
+            return refused, refused
+        visible = restrict(rel_model.objects.filter(pk__in=refused), access_action, user=user)
+        return refused, refused - {str(pk) for pk in visible.values_list('pk', flat=True)}
 
     @staticmethod
     def _relation_refused(f_name: str, loc: tuple, linkable_only: bool) -> JsonApiBazisException:

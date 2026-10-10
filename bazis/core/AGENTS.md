@@ -366,7 +366,8 @@ class OrderRouteSet(JsonapiRouteBase):
   relationships endpoints) links only the objects it returns for `view`, a reverse
   relationship only the objects it returns for `change` (their foreign key changes), both
   for the objects whose link changes; otherwise 403 `ERR_RELATION_ACCESS` (pointers: see
-  Errors). The core asks for those objects with `link=True`: an override may return
+  Errors). The core asks for the objects that get linked (not the ones a reverse
+  relationship unlinks) with `link=True`: an override may return
   fewer then, the objects the user may link (e.g. bazis-uploadable: only his own files,
   though he sees more), and a visible object it leaves out is 422 `ERR_RELATION_LINK`
   (same pointers). `included` shows only the visible objects (the

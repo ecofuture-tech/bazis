@@ -434,6 +434,54 @@ def test_visible_target_that_is_not_linkable(sample_app, tags):
     assert response.status_code == 200, response.text
 
 
+@pytest.mark.django_db(transaction=True)
+def test_reverse_relation_asks_link_only_for_the_linked_objects(sample_app, tags, monkeypatch):
+    """
+    A reverse relationship changes the linked and the unlinked objects (`change`), but only
+    the linked ones are asked for with `link=True`: an object the override does not let
+    link (here also `visible2`) is unlinked, not linked anew.
+    """
+    calls = []
+    restrict = TagRouteSet.restrict_queryset.__func__
+
+    def narrower(cls, qs, access_action, user=None, **kwargs):
+        calls.append((access_action, kwargs.get('link', False)))
+        qs = restrict(cls, qs, access_action, user=user, **kwargs)
+        return qs.exclude(name='visible2') if kwargs.get('link') else qs
+
+    monkeypatch.setattr(TagRouteSet, 'restrict_queryset', classmethod(narrower))
+    note, other = Note.objects.create(name='note'), Note.objects.create(name='other')
+    Tag.objects.filter(pk=tags['visible2'].pk).update(note=note)
+    client = get_api_client(sample_app)
+
+    response = relationships_request(
+        client, 'DELETE', note, 'attached_tags', rels('tag', tags['visible2'])
+    )
+    assert response.status_code == 204, response.text
+    assert calls == [(CrudAccessAction.CHANGE, False)]
+
+    calls.clear()
+    response = relationships_request(
+        client, 'POST', other, 'attached_tags', rels('tag', tags['visible2'])
+    )
+    assert response.status_code == 422, response.text
+    error = response.json()['errors'][0]
+    assert (error['code'], error['source']) == ('ERR_RELATION_LINK', {'pointer': '/data/0'})
+    assert calls == [(CrudAccessAction.CHANGE, True), (CrudAccessAction.CHANGE, False)]
+
+    # replacing the tags links one and unlinks another: a query for each
+    Tag.objects.filter(pk=tags['visible2'].pk).update(note=note)
+    calls.clear()
+    response = relationships_request(
+        client, 'PATCH', note, 'attached_tags', rels('tag', tags['visible'])
+    )
+    assert response.status_code == 204, response.text
+    assert calls == [(CrudAccessAction.CHANGE, True), (CrudAccessAction.CHANGE, False)]
+    assert list(note.attached_tags.all()) == [tags['visible']]
+    tags['visible2'].refresh_from_db()
+    assert tags['visible2'].note is None
+
+
 def test_restrict_queryset_without_authentication(tags):
     qs = Tag.objects.all()
     visible = {tags['visible'], tags['visible2'], tags['locked']}
