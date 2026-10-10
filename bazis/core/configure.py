@@ -339,13 +339,14 @@ if SETTINGS_MODULE:
         logger.error(f'Import error: {e}')
     else:
         # Build CONSTANCE_CONFIG from Settings fields marked as dynamic
-        # Fields with json_schema_extra={'dynamic': True} become admin-editable
+        # Fields with json_schema_extra={'dynamic': True} become admin-editable; 'constance_field'
+        # names a field of CONSTANCE_ADDITIONAL_FIELDS that validates the value in the admin
         for field_name, field_info in Settings.model_fields.items():
             if field_info.json_schema_extra and field_info.json_schema_extra.get('dynamic'):
                 CONSTANCE_CONFIG[field_name] = (
                     getattr(_settings, field_name),
                     field_info.title,
-                    field_info.annotation,
+                    field_info.json_schema_extra.get('constance_field') or field_info.annotation,
                 )
 
         # A wildcard set explicitly in the project settings module is kept (see below)

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-10 11:26+0000\n"
+"POT-Creation-Date: 2026-10-10 12:05+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,146 +18,147 @@ msgstr ""
 
 #: app_factory.py:404 routes_abstract/jsonapi/route_base.py:817
 #: routes_abstract/jsonapi/route_base.py:831
-#: routes_abstract/jsonapi/route_base.py:849
+#: routes_abstract/jsonapi/route_base.py:851
 msgid "Item not found"
 msgstr "Объект не найден"
 
-#: app_factory.py:478
+#: app_factory.py:479
 msgid "Conflict"
 msgstr "Конфликт данных"
 
 #: app_factory.py:480
-msgid "The change conflicts with the current data: repeat the request"
-msgstr "Изменение конфликтует с текущими данными: повторите запрос"
+msgid "The change conflicts with the current data"
+msgstr "Изменение конфликтует с текущими данными"
 
-#: conf.py:157
+#: conf.py:158
 msgid "Application port"
 msgstr "Порт приложения"
 
-#: conf.py:158
+#: conf.py:159
 msgid "Admin port"
 msgstr "Порт админки"
 
-#: conf.py:171
+#: conf.py:172
 msgid "User model"
 msgstr ""
 
-#: conf.py:173
+#: conf.py:174
 msgid "Authentication backends"
 msgstr ""
 
-#: conf.py:177
+#: conf.py:178
 msgid "Secret key"
 msgstr "Секретный ключ"
 
-#: conf.py:180
+#: conf.py:181
 msgid "Media URL"
 msgstr ""
 
-#: conf.py:181
+#: conf.py:182
 msgid "Admin path"
 msgstr "Путь админки"
 
-#: conf.py:201
+#: conf.py:202
 msgid "Maximum request body size in bytes"
 msgstr "Максимальный размер тела запроса в байтах"
 
-#: conf.py:204
+#: conf.py:205
 msgid "Trusted schemes"
 msgstr "Доверенные схемы"
 
-#: conf.py:208
+#: conf.py:209
 msgid "Default number of results in the list"
 msgstr "Кол-во результатов в списке по умолчанию"
 
-#: conf.py:211
+#: conf.py:212
 msgid "Maximum number of results in the list"
 msgstr "Максимальное кол-во результатов в списке"
 
-#: conf.py:214
+#: conf.py:215
 msgid "Default cache instance for storing CONSTANCE"
 msgstr "Дефолтный инстанс кэша для хранения CONSTANCE"
 
-#: conf.py:225
+#: conf.py:228
 msgid "Path to the GDAL library"
 msgstr "Путь к библиотеке GDAL"
 
-#: conf.py:226
+#: conf.py:229
 msgid "Path to the GEOS library"
 msgstr "Путь к библиотеке GEOS"
 
-#: conf.py:228
+#: conf.py:231
 msgid "Decimal rounding"
 msgstr "Округление Decimal"
 
-#: conf.py:230
+#: conf.py:233
 msgid "Directories to reload on change"
 msgstr ""
 
-#: conf.py:231
+#: conf.py:234
 msgid "Use $ref in OpenAPI schema"
 msgstr ""
 
-#: conf.py:234
+#: conf.py:237
 msgid ""
 "Lifetime of unused generated schemas in the cache, seconds (0 - unlimited)"
 msgstr ""
 
-#: conf.py:243
+#: conf.py:246
 msgid "Mail server backend"
 msgstr ""
 
-#: conf.py:247
+#: conf.py:250
 msgid "Mail server IP address"
 msgstr ""
 
-#: conf.py:252
+#: conf.py:255
 msgid "Mail server port number"
 msgstr ""
 
-#: conf.py:257
+#: conf.py:260
 msgid "Mail server user login"
 msgstr ""
 
-#: conf.py:262
+#: conf.py:265
 msgid "Mail server user password"
 msgstr ""
 
-#: conf.py:267
+#: conf.py:270
 msgid "Mail server use TLS"
 msgstr ""
 
-#: conf.py:272
+#: conf.py:275
 msgid "Mail server use SSL"
 msgstr ""
 
-#: conf.py:277
+#: conf.py:280
 msgid "Default outgoing email address"
 msgstr ""
 
-#: conf.py:280
+#: conf.py:283
 msgid "Export settings"
 msgstr ""
 
-#: conf.py:281
+#: conf.py:284
 msgid "Maximum IDs in list route"
 msgstr ""
 
-#: conf.py:285
+#: conf.py:288
 msgid "Filter, sort and search only by the fields of the route"
 msgstr ""
 
-#: conf.py:290
+#: conf.py:293
 msgid "Limit the request rate of routes"
 msgstr "Ограничивать частоту запросов к маршрутам"
 
-#: conf.py:294
-msgid "Request rate of the public actions per IP address (empty - unlimited)"
+#: conf.py:297
+msgid ""
+"Request rate of the public actions per user or IP address (empty - unlimited)"
 msgstr ""
-"Частота запросов к публичным действиям с одного IP-адреса (пусто — без "
-"ограничения)"
+"Частота запросов к публичным действиям одного пользователя или IP-адреса "
+"(пусто — без ограничения)"
 
-#: conf.py:299
+#: conf.py:302
 msgid ""
 "Import path of a function (request, ident) exempting a request from the "
 "limits"
@@ -225,48 +226,48 @@ msgstr "Нельзя включить связи: {names}"
 msgid "Invalid include"
 msgstr "Недопустимый параметр include"
 
-#: routes_abstract/jsonapi/route_base.py:927
+#: routes_abstract/jsonapi/route_base.py:929
 #, python-brace-format
 msgid "The relationship {name} cannot be changed"
 msgstr "Связь {name} нельзя изменить"
 
-#: routes_abstract/jsonapi/route_base.py:931
+#: routes_abstract/jsonapi/route_base.py:933
 msgid "Relationship is read-only"
 msgstr "Связь только для чтения"
 
-#: routes_abstract/jsonapi/route_base.py:1047
-#, python-brace-format
-msgid "No access to the related object of {name}"
-msgstr "Нет доступа к связанному объекту {name}"
-
-#: routes_abstract/jsonapi/route_base.py:1051
-msgid "Access denied"
-msgstr "Доступ запрещён"
-
-#: routes_abstract/jsonapi/route_base.py:1067
+#: routes_abstract/jsonapi/route_base.py:1089
 #, python-brace-format
 msgid "The related object of {name} cannot be linked"
 msgstr "Связанный объект {name} нельзя привязать"
 
-#: routes_abstract/jsonapi/route_base.py:1069
+#: routes_abstract/jsonapi/route_base.py:1091
 msgid "Link not allowed"
 msgstr "Привязка запрещена"
 
-#: routes_abstract/jsonapi/route_base.py:1198
+#: routes_abstract/jsonapi/route_base.py:1096
+#, python-brace-format
+msgid "No access to the related object of {name}"
+msgstr "Нет доступа к связанному объекту {name}"
+
+#: routes_abstract/jsonapi/route_base.py:1098
+msgid "Access denied"
+msgstr "Доступ запрещён"
+
+#: routes_abstract/jsonapi/route_base.py:1253
 msgid "Data type is invalid"
 msgstr "Недопустимый тип данных"
 
-#: routes_abstract/jsonapi/route_base.py:1284
+#: routes_abstract/jsonapi/route_base.py:1339
 #, python-brace-format
 msgid "The object does not exist. Type: {type}. ID: {id}"
 msgstr "Объект не существует. Тип: {type}. ID: {id}"
 
-#: routes_abstract/jsonapi/route_base.py:1359
+#: routes_abstract/jsonapi/route_base.py:1414
 #, python-brace-format
 msgid "{model} is not JSON:API compliant"
 msgstr "{model} не является ресурсом JSON:API"
 
-#: routes_abstract/jsonapi/route_base.py:1363
+#: routes_abstract/jsonapi/route_base.py:1418
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has related objects in non-JSON:API models. "
@@ -275,11 +276,11 @@ msgstr ""
 "Нельзя удалить объект: на него ссылаются объекты моделей вне JSON:API "
 "(количество: {count})"
 
-#: routes_abstract/jsonapi/route_base.py:1382
+#: routes_abstract/jsonapi/route_base.py:1437
 msgid "Error deleting protected model"
 msgstr "Ошибка удаления защищённого объекта"
 
-#: routes_abstract/jsonapi/route_base.py:1385
+#: routes_abstract/jsonapi/route_base.py:1440
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has protected related objects of type "

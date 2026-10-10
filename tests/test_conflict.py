@@ -22,6 +22,8 @@ import threading
 from django.db import connections
 from django.test import override_settings
 
+from fastapi.testclient import TestClient
+
 import pytest
 from bazis_test_utils.utils import get_api_client
 from catalog.models import Memo, Step
@@ -44,12 +46,48 @@ def test_unique_violation(sample_app):
     assert response.status_code == 409, response.content
     (error,) = response.json()['errors']
     assert (error['status'], error['code']) == (409, 'ERR_CONFLICT')
+    assert error['detail'] == 'The change conflicts with the current data'
     assert 'meta' not in error
     with override_settings(DEBUG=True):
         (error,) = create(sample_app, 'Norway').json()['errors']
     # the constraint, only with DEBUG
     assert error['meta'] == {'constraint': 'entity_country_name_key'}
     assert Country.objects.filter(name='Norway').count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_other_integrity_errors_stay_500(sample_app):
+    """
+    A foreign key to a missing object (checked at the commit) is not a conflict: 500, as any
+    integrity error but a unique or an exclusion one (keep such rules in validate_item).
+    """
+    client = TestClient(sample_app, raise_server_exceptions=False)
+    response = client.post(
+        '/api/v1/entity/extended_entity/',
+        headers={'Content-Type': 'application/vnd.api+json'},
+        json={
+            'data': {
+                'type': 'entity.extended_entity',
+                'bs:action': 'add',
+                'attributes': {
+                    'extended_name': 'Name',
+                    'extended_description': 'Description',
+                    'extended_is_active': False,
+                    'extended_price': '25.19',
+                    'extended_dt_approved': '2024-01-13T16:54:12Z',
+                },
+                'relationships': {
+                    'parent_entity': {
+                        'data': {
+                            'id': '9b657232-4178-4d7f-8b0c-e8ab16f2b309',
+                            'type': 'entity.parent_entity',
+                        },
+                    },
+                },
+            },
+        },
+    )
+    assert response.status_code == 500, response.content
 
 
 @pytest.mark.django_db(transaction=True)

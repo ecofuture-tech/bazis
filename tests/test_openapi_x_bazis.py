@@ -24,6 +24,7 @@ from bazis.core.routes_abstract.initial import (
     InitialRouteBase,
     http_get,
     http_post,
+    route_declare,
 )
 from bazis.core.schemas.enums import CrudAccessAction, RouteKind
 
@@ -71,6 +72,7 @@ def test_route_set_operations(operations, path, method, action, kind):
         'route_set': PARENT_SET,
         'action': action,
         'kind': kind,
+        'public': False,
     }
     if action == 'action_list_id':
         # the permission the action requires (bazis-permit checks it)
@@ -179,6 +181,7 @@ def test_override_keeps_kind():
             'route_set': f'{__name__}.KindRouteSet',
             'action': 'action_make',
             'kind': 'create',
+            'public': False,
         },
     }
 
@@ -190,3 +193,36 @@ def test_default_kind():
             pass
 
     assert PlainRouteSet.route_meta(PlainRouteSet.action_any)['kind'] == 'other'
+    # public: whether anonymous users may call it, always given
+    assert PlainRouteSet.route_meta(PlainRouteSet.action_any)['public'] is False
+
+
+class DeclaredRouteSet(KindRouteSet):
+    action_make = route_declare(KindRouteSet.action_make, public=True)
+    action_plain = route_declare(
+        KindBase.action_plain, kind=RouteKind.OTHER, access_action=CrudAccessAction.CHANGE
+    )
+
+
+def test_route_declare():
+    """
+    `route_declare` declares an inherited route again with other facts: the path, the
+    function, the callbacks and the other parameters stay, the route of the base is not
+    changed; an unknown fact is refused.
+    """
+    declared = DeclaredRouteSet.action_make
+    base = KindRouteSet.action_make
+    assert declared is not base
+    assert (declared.public, base.public) == (True, None)
+    assert declared.func is base.func
+    assert declared.route_params.path == base.route_params.path == '/'
+    assert declared.route_params.openapi_extra == {'x-other': 1}
+    assert declared.endpoint_callbacks == base.endpoint_callbacks
+    assert declared.kind is RouteKind.CREATE
+    plain = DeclaredRouteSet.action_plain
+    assert (plain.kind, plain.access_action) == (RouteKind.OTHER, CrudAccessAction.CHANGE)
+    assert plain.route_params.path == '/plain/'
+    assert KindBase.action_plain.access_action is None
+
+    with pytest.raises(TypeError):
+        route_declare(base, path='/other/')

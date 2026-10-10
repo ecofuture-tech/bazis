@@ -18,8 +18,9 @@ from zoneinfo import available_timezones
 
 from django.utils.translation import gettext_lazy as _
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from bazis.core.utils.rates import parse_rate
 from bazis.core.utils.schemas import BazisSettings
 
 
@@ -221,6 +222,8 @@ class Settings(BazisSettings):
                 'choices': [(tz, tz) for tz in sorted(available_timezones())],
             },
         ],
+        # a rate of bazis.core.throttle or empty
+        'throttle_rate': ['bazis.core.throttle.RateFormField', {}],
     }
     GDAL_LIBRARY_PATH: str | None = Field(None, title=_('Path to the GDAL library'))
     GEOS_LIBRARY_PATH: str | None = Field(None, title=_('Path to the GEOS library'))
@@ -291,13 +294,23 @@ class Settings(BazisSettings):
     )
     BAZIS_THROTTLE_PUBLIC: str = Field(
         '30/minute',
-        title=_('Request rate of the public actions per IP address (empty - unlimited)'),
-        json_schema_extra={'dynamic': True},
+        title=_('Request rate of the public actions per user or IP address (empty - unlimited)'),
+        json_schema_extra={'dynamic': True, 'constance_field': 'throttle_rate'},
     )
     BAZIS_THROTTLE_EXEMPT: str | None = Field(
         None,
         title=_('Import path of a function (request, ident) exempting a request from the limits'),
     )
+
+    @field_validator('BAZIS_THROTTLE_PUBLIC')
+    @classmethod
+    def throttle_rate_check(cls, value: str) -> str:
+        """
+        A rate of bazis.core.throttle (`'30/minute'`) or empty (unlimited).
+        """
+        if value:
+            parse_rate(value)
+        return value
 
     @model_validator(mode='after')
     def calc_trusted_uri(self):

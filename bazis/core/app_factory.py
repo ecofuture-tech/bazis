@@ -464,8 +464,9 @@ def _initialize_app(app): # noqa: C901
     ) -> JSONResponse:
         """
         A write that a unique or an exclusion constraint refuses (two parallel requests
-        creating the same item, a number taken under a race) is 409 `ERR_CONFLICT`: the
-        request can be repeated. Any other IntegrityError stays a 500.
+        creating the same item, a number taken under a race) is 409 `ERR_CONFLICT`. Any
+        other IntegrityError (not-null, check, foreign key) stays a 500: such rules belong in
+        `validate_item` (422).
         """
         cause = exc.__cause__
         if not isinstance(cause, UniqueViolation | ExclusionViolation):
@@ -476,9 +477,7 @@ def _initialize_app(app): # noqa: C901
                     status=HTTP_409_CONFLICT,
                     code='ERR_CONFLICT',
                     title=str(gettext_lazy('Conflict')),
-                    detail=str(
-                        gettext_lazy('The change conflicts with the current data: repeat the request')
-                    ),
+                    detail=str(gettext_lazy('The change conflicts with the current data')),
                     meta={'constraint': cause.diag.constraint_name} if settings.DEBUG else None,
                 )
             ],

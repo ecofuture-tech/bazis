@@ -253,8 +253,9 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   with_lock=True)` (`SELECT ... FOR NO KEY UPDATE`: parallel calls run one after the other)
   and checks its state after the lock (a submit of an attempt that is no longer open is
   refused, not graded twice). A write the constraint still refuses (a race the code missed,
-  two parallel creates of a unique value) answers 409 `ERR_CONFLICT`, which the client may
-  repeat, never a 500 (see Errors).
+  two parallel creates of a unique value) answers 409 `ERR_CONFLICT`, never a 500 (see
+  Errors). An action whose item bazis-permit already took (`access_action`) has it in
+  `self.item`; `set_item(item_id, with_lock=True)` takes it again, locked.
 - Calculated fields: `@calc_property([...], as_filter=False)` from `bazis.core.utils.orm`
   declares what the query of the routes fetches for the property in the same pass; the
   values come to the item as attributes named by `alias` (else `source`):
@@ -466,21 +467,28 @@ class OrderRouteSet(JsonapiRouteBase):
 
   A route that changes the item goes through the checks of an update (see Rules). Every
   operation of a route class has the OpenAPI extension
-  `x-bazis: {resource, route_set, action, kind}` (`action` is the method name,
-  `kind` is collection, create, item, update, delete, relationship, schema or other), plus
-  `public` and `access_action` when the route declares them; client generators read it
-  instead of parsing `operationId`. Without `kind` a route is `other`; an override keeps
-  the `kind`, `public` and `access_action` of the route it overrides unless it declares
-  its own.
+  `x-bazis: {resource, route_set, action, kind, public}` (`action` is the method name,
+  `kind` is collection, create, item, update, delete, relationship, schema or other,
+  `public` whether the route is declared `public=True`), plus `access_action` when the
+  route declares it; client generators read it instead of parsing `operationId`. Without
+  `kind` a route is `other`; an override keeps the `kind`, `public` and `access_action` of
+  the route it overrides unless it declares its own. To change them on an inherited route
+  without repeating its decorator, declare it again in the subclass with
+  `route_declare(route, **facts)` (`bazis.core.routes_abstract.initial`; `kind`, `public`,
+  `access_action`, `dependencies`; the path, the function, the callbacks stay):
+  `action_transit = route_declare(StatusyRouteSetBase.action_transit, public=True)`.
 - Who may call an action (a route of kind `other`): `public=True` opens it to anonymous
-  users and limits it by `BAZIS_THROTTLE_PUBLIC` per IP address (see Request rate limits);
-  `access_action=CrudAccessAction.<X>` (`bazis.core.schemas.enums`, or an `AccessAction` of
-  a package such as `StatusyAccessAction`) is the permission it requires. The core has no
-  users and only records them; bazis-permit enforces them (an anonymous user gets 403 on an
-  action that is not public, the permission is checked on the model for an action of the
-  collection and on the item `set_item` takes for an action of an item, `permit.W007` for
-  an action of the collection that declares neither). The core `/_id/` route declares
-  `access_action=view`.
+  users and limits it by `BAZIS_THROTTLE_PUBLIC` per user or IP address (see Request rate
+  limits); `access_action=CrudAccessAction.<X>` (`bazis.core.schemas.enums`, or an
+  `AccessAction` of a package such as `StatusyAccessAction`) is the permission it
+  requires. The core has no users and only records them: without bazis-permit `public`
+  only adds the default throttle and `access_action` does nothing. bazis-permit enforces
+  them in `route_check` (the hook of `InitialRouteBase` that runs before the function of a
+  route, in its transaction): a public action is open to all; with `access_action` the
+  roles decide (also the roles for anonymous users), on the model for an action of the
+  collection, on the item (`{item_id}`, taken before the action runs) for an action of an
+  item; with neither only authenticated users (`permit.W007` unless `public=False` says
+  so). The core `/_id/` route declares `access_action=view`: it is open as `GET /`.
 - The OpenAPI operations document the errors they fail with (`SchemaErrors`): 400 and 422
   on the CRUD operations, 404 on every route of an item (`{item_id}` in the path), 403 on
   the relationships routes. The core has no authentication, so no 401 and no `security`.
@@ -558,8 +566,9 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   and `detail`; another `HTTPException` (an unknown path 404, a wrong method 405) its
   status and `detail`, with `ERR_REQUEST` when a route raised it; a query error 400
   `ERR_FILTER`; an `IntegrityError` of a unique or an exclusion constraint (also at the
-  commit) 409 `ERR_CONFLICT` (the request may be repeated; `meta.constraint` names the
-  constraint with DEBUG; the transaction of the request is rolled back), anywhere in the
+  commit) 409 `ERR_CONFLICT` ("The change conflicts with the current data";
+  `meta.constraint` names the constraint with DEBUG; the transaction of the request is
+  rolled back), anywhere in the
   request (bazis 2.16; a create answered 409 `ERR_REQUEST` "Data conflict" for any
   integrity error before); a throttled request 429 `ERR_THROTTLED` with `Retry-After`; any
   other exception 500 (the traceback in `detail` only with DEBUG), also another
@@ -614,21 +623,30 @@ class CertificateRouteSet(PermitRouteBase):
 
 - `rate`: `'<number>/<second|minute|hour|day>'` (or `s`, `m`, `h`, `d`); a callable
   returning one is read on every request (a dynamic setting of the project, editable in the
-  admin; None or `''` means unlimited). An invalid rate fails at import (a callable one on
-  the request).
+  admin; None or `''` means unlimited). An invalid rate fails at import; an invalid rate of
+  a callable is logged and does not limit.
 - `key`: `user_or_ip` counts the user of the route (`self.inject.user` of bazis-users) when
-  he is authenticated, else the IP address (`request.client.host`: run uvicorn with
-  `--proxy-headers`/`--forwarded-allow-ips` behind a proxy); `ip` always the IP address.
-  On a route that is not a route class `throttle` counts by the IP address.
+  he is authenticated, else the IP address; `ip` always the IP address. On a route that is
+  not a route class `throttle` counts by the IP address.
+- The IP address is `request.client.host`, the address uvicorn gives: Bazis does not read
+  `X-Forwarded-For` itself. Behind a reverse proxy, uvicorn (or the gunicorn worker) takes
+  the client from `X-Forwarded-For` only for the proxies it trusts: `forwarded_allow_ips`
+  of the gunicorn config (the deploy template of the samples reads
+  `BS_FORWARDED_ALLOW_IPS`, default loopback and the private networks), `--proxy-headers
+  --forwarded-allow-ips` of uvicorn. Never `'*'` on a server clients reach directly: any
+  client then picks its address in the header and escapes the limits. If the proxy is not
+  trusted (its address missing from the list), every request has the address of the proxy:
+  all anonymous users share one count and are throttled together.
 - `scope`: routes that name the same scope share the count; by default each route counts
   its own.
 - An action declared `public=True` without a throttle of its own gets
-  `throttle(BAZIS_THROTTLE_PUBLIC, key='ip')` (`'30/minute'`, a dynamic setting; `''`
-  turns it off). A throttle the action declares replaces it.
+  `throttle(BAZIS_THROTTLE_PUBLIC)` (`'30/minute'` per user or IP address, a dynamic
+  setting validated in the environment and the admin; `''` turns it off). A throttle the
+  action declares replaces it.
 - `BAZIS_THROTTLE_ENABLED` (dynamic, true) turns all of them off;
   `BAZIS_THROTTLE_EXEMPT` (an import path of a function `(request, ident) -> bool`,
   `ident` is `user:<pk>` or `ip:<address>`) exempts requests, e.g. by a whitelist of the
-  project. The cache failing lets the requests through.
+  project. The cache failing (Redis down) is logged and lets the requests through.
 - A limit on a business count (attempts per assignment, messages per day of a user) is an
   invariant of the data, not a rate: keep it in `validate_item` (see Models).
 

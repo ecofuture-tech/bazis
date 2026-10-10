@@ -92,6 +92,34 @@ OPENAPI_EXTENSION = 'x-bazis'
 #: the facts of a route an override keeps when it leaves them None
 ROUTE_INHERITED = ('kind', 'public', 'access_action')
 
+#: the facts `route_declare` changes in an inherited route
+ROUTE_DECLARABLE = ('kind', 'public', 'access_action', 'dependencies')
+
+
+def route_declare(route: RouteContext, **facts) -> RouteContext:
+    """
+    An inherited route declared again with other facts (`kind`, `public`, `access_action`,
+    `dependencies`), the same path, function, callbacks and other parameters, in the body of
+    a subclass: `action_transit = route_declare(StatusyRouteSetBase.action_transit,
+    public=True)`. A copy: the route of the base class is not changed.
+
+    Tags: RAG, EXPORT
+    """
+    if unknown := set(facts) - set(ROUTE_DECLARABLE):
+        raise TypeError(f'route_declare() takes {ROUTE_DECLARABLE}, not {sorted(unknown)}')
+    route_params = deepcopy(route.route_params)
+    if 'dependencies' in facts:
+        route_params = dataclasses.replace(route_params, dependencies=facts.pop('dependencies'))
+    return dataclasses.replace(
+        route,
+        route_params=route_params,
+        endpoint=None,
+        Inject=None,
+        route=None,
+        store=dict(route.store),
+        **facts,
+    )
+
 
 def deep_merge(base: dict, override: dict) -> dict:
     """
@@ -178,7 +206,7 @@ def http_action_decor(
     `kind` tells API clients what the route does (`x-bazis` in OpenAPI); without it an
     override keeps the kind of the route it overrides, a new route is `other`.
     `public=True` opens an action (kind `other`) to anonymous users and limits it with
-    `BAZIS_THROTTLE_PUBLIC` per IP address unless it declares its own `throttle`;
+    `BAZIS_THROTTLE_PUBLIC` per user or IP address unless it declares its own `throttle`;
     `access_action` is the permission the action requires (bazis-permit checks both, see
     its guide). An override that leaves them None keeps those of the route it overrides.
 
@@ -572,11 +600,20 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
         """
         return ''
 
+    def route_check(self, *args, **kwargs):
+        """
+        Checks the request before the function of the route runs (in the transaction of a
+        JSON:API route, with the route of the request set): a package that refuses requests
+        by the facts of the route (bazis-permit: `public`, `access_action`) extends it and
+        calls `super()`. Takes the arguments of the function.
+        """
+
     def route_run(self, *args, **kwargs):
         """
         Method to run the endpoint function.
         Overriding this method allows implementing logic common to several routes of this class.
         """
+        self.route_check(*args, **kwargs)
         if func_before := getattr(self, f'{self.route_ctx.name}__before', None):
             func_before(*args, **kwargs)
 
@@ -709,7 +746,7 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
         # default one; the context of the class gets its own parameters
         throttles, dependencies = split_throttles(route_ctx.route_params.dependencies)
         if route_ctx.public and not throttles:
-            throttles = [Throttle(public_rate, key='ip')]
+            throttles = [Throttle(public_rate)]
         if throttles:
             throttle_scope = f'{cls.__module__}.{cls.__qualname__}.{route_ctx.name}'
 
@@ -744,8 +781,9 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
         The facts about a route for API clients and tools: the `x-bazis` extension of its
         OpenAPI operation, also reported by `bazis_introspect`. `resource` is the JSON:API
         type of the model of the class (None without a model), `action` is the name of the
-        route (as `as_router(actions=...)` takes it), `kind` is a `RouteKind`; `public` and
-        `access_action` (the value of the `AccessAction`) only when the route declares them.
+        route (as `as_router(actions=...)` takes it), `kind` is a `RouteKind`, `public`
+        whether anonymous users may call it (declared `public=True`), `access_action` (the
+        value of the `AccessAction`) only when the route declares it.
         """
         model = getattr(cls, 'model', None)
         meta = {
@@ -753,9 +791,8 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
             'route_set': f'{cls.__module__}.{cls.__qualname__}',
             'action': route_ctx.name,
             'kind': (route_ctx.kind or RouteKind.OTHER).value,
+            'public': bool(route_ctx.public),
         }
-        if route_ctx.public is not None:
-            meta['public'] = route_ctx.public
         if route_ctx.access_action is not None:
             meta['access_action'] = route_ctx.access_action.value
         return meta

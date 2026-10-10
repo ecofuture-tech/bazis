@@ -20,10 +20,11 @@ The request rate limits of routes (`bazis.core.throttle`): a fixed window in Red
 
 from types import SimpleNamespace
 
+from django import forms
 from django.core.cache import cache
 from django.test import override_settings
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
@@ -137,6 +138,87 @@ def test_ident():
     assert Throttle('1/s').ident(request, anonymous) == 'ip:10.0.0.1'
     assert Throttle('1/s').ident(request, None) == 'ip:10.0.0.1'
     assert Throttle('1/s', key='ip').ident(request, user) == 'ip:10.0.0.1'
+
+
+@pytest.mark.django_db
+def test_failures_let_the_requests_through(sample_app, monkeypatch, caplog):
+    """
+    A failing cache (Redis down) and an invalid rate of a callable (a dynamic setting edited
+    by hand) are logged and let the requests through; an invalid static rate fails at
+    import.
+    """
+    client = get_api_client(sample_app)
+
+    class Failing:
+        def __getattr__(self, name):
+            def failing(*args, **kwargs):
+                raise ConnectionError('redis is down')
+
+            return failing
+
+    monkeypatch.setattr('bazis.core.throttle.cache', Failing())
+    assert statuses(client, 'capital/', 3) == [200] * 3
+    assert 'the cache failed' in caplog.text
+    monkeypatch.undo()
+
+    with override_settings(BAZIS_THROTTLE_PUBLIC='often'):
+        assert statuses(client, 'greeting/', 2) == [200, 200]
+    assert "Invalid throttle rate 'often'" in caplog.text
+
+
+def test_public_rate_setting():
+    """
+    `BAZIS_THROTTLE_PUBLIC` is validated when the settings load and in the admin (the
+    constance field `throttle_rate`); empty is unlimited.
+    """
+    from pydantic import ValidationError
+
+    from bazis.core.conf import Settings
+    from bazis.core.throttle import RateFormField
+
+    assert Settings(BAZIS_THROTTLE_PUBLIC='').BAZIS_THROTTLE_PUBLIC == ''
+    assert Settings(BAZIS_THROTTLE_PUBLIC='5/s').BAZIS_THROTTLE_PUBLIC == '5/s'
+    with pytest.raises(ValidationError):
+        Settings(BAZIS_THROTTLE_PUBLIC='5 per minute')
+
+    field = RateFormField()
+    assert field.clean('') == '' and field.clean('10/hour') == '10/hour'
+    with pytest.raises(forms.ValidationError):
+        field.clean('10/week')
+
+    from django.conf import settings
+
+    assert settings.CONSTANCE_CONFIG['BAZIS_THROTTLE_PUBLIC'][2] == 'throttle_rate'
+
+
+@pytest.mark.django_db
+def test_client_address_behind_a_proxy():
+    """
+    The address is the one the server gives (`request.client`): uvicorn takes it from
+    `X-Forwarded-For` only of the proxies of `forwarded_allow_ips`; a client that sends the
+    header itself is counted by its own address, however it varies the header.
+    """
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    app = FastAPI()
+
+    @app.exception_handler(JsonApiThrottledException)
+    async def throttled(request, exc):
+        return JSONResponse({}, status_code=exc.status_code, headers=exc.headers)
+
+    @app.get('/ping', dependencies=[throttle('1/minute')])
+    def ping(request: Request):
+        return request.client.host
+
+    served = ProxyHeadersMiddleware(app, trusted_hosts='10.0.0.1')
+    spoofer = TestClient(served, client=('203.0.113.5', 5000))
+    assert spoofer.get('/ping', headers={'X-Forwarded-For': '198.51.100.1'}).json() == '203.0.113.5'
+    assert spoofer.get('/ping', headers={'X-Forwarded-For': '198.51.100.2'}).status_code == 429
+
+    proxy = TestClient(served, client=('10.0.0.1', 5000))
+    for address in ('198.51.100.7', '198.51.100.8'):
+        response = proxy.get('/ping', headers={'X-Forwarded-For': address})
+        assert (response.status_code, response.json()) == (200, address)
 
 
 def test_rates():

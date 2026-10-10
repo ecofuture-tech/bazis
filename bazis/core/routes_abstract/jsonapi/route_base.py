@@ -836,13 +836,15 @@ class JsonapiRouteBase(InitialRouteBase):
     ) -> JsonApiMixin:
         """
         If the instance is already set, do not override anything. sets the item for the
-        current route context.
+        current route context. `with_lock` takes it again, locked (`FOR NO KEY UPDATE`),
+        also when it is already set (bazis-permit takes the item of an action that declares
+        `access_action` before the action runs).
         """
         qs = self.get_queryset_for_item(item_id, with_lock)
         only_fields = getattr(
             self.inject, f'fields_{qs.model.get_resource_label().replace(".", "_")}', None
         )
-        if self.item and not is_force and only_fields is None:
+        if self.item and not is_force and not with_lock and only_fields is None:
             return self.item
         self.item = qs.first()
         if not self.item:
