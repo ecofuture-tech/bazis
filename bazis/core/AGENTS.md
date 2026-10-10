@@ -14,8 +14,8 @@ Facts about a concrete project come from the project itself, not from this text:
 - `python manage.py bazis_doctor [--deploy] [--database ALIAS] [--json]` runs the system
   checks of Django and of the Bazis packages and fails on errors. Run it after every change.
   It also runs the database checks, which compare the project with its database (such as
-  the declared roles and workflows against the rows), against `default` when it can be
-  reached; otherwise they are skipped with the info `bazis.database`, so a warning-free
+  the declared roles, workflows and schedules against the rows), against `default` when it
+  can be reached; otherwise they are skipped with the info `bazis.database`, so a warning-free
   doctor without the database says nothing about the data (`SILENCED_SYSTEM_CHECKS`
   silences the info). `--database` (repeatable) names the databases, and one that cannot
   be reached is an error. PostgreSQL is probed with a connect timeout of 5 seconds.

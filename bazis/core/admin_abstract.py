@@ -260,3 +260,64 @@ class ValidateItemAdminMixin:
                     self.add_error(name if of_form and name in self.fields else None, field_errors)
 
         return ItemInvalidForm
+
+
+class ManagedAdminMixin:
+    """
+    The objects declared in the code (a model with a unique `slug` and a `managed` flag,
+    bazis.core.declare) are read-only in the admin, besides the fields of
+    `managed_editable`, and are not deleted: `migrate` would bring them back. A managed
+    object no longer declared is an ordinary object again. A subclass gives the declared
+    slugs of its model (`declared_slugs`).
+    """
+
+    #: the fields of a declared object the admin still changes
+    managed_editable: tuple[str, ...] = ()
+
+    def declared_slugs(self) -> set[str]:
+        """
+        The slugs of the objects of the model declared in the code.
+        """
+        raise NotImplementedError
+
+    def is_declared(self, obj) -> bool:
+        return obj.managed and obj.slug in self.declared_slugs()
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = (*super().get_readonly_fields(request, obj), 'managed')
+        if obj is not None and self.is_declared(obj):
+            opts = self.model._meta
+            fields += tuple(
+                f.name for f in (*opts.concrete_fields, *opts.many_to_many)
+                if f.editable and f.name not in self.managed_editable and f.name not in fields
+            )
+        return fields
+
+    def has_change_permission(self, request, obj=None):
+        if obj is not None and not self.managed_editable and self.is_declared(obj):
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and self.is_declared(obj):
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        super().delete_queryset(request, queryset.exclude(managed=True, slug__in=self.declared_slugs()))
+
+    def get_changelist_formset(self, request, **kwargs):
+        formset = super().get_changelist_formset(request, **kwargs)
+        editable = self.managed_editable
+        declared = self.declared_slugs()
+
+        class ManagedFormSet(formset):
+            def _construct_form(self, i, **kwargs):
+                form = super()._construct_form(i, **kwargs)
+                if form.instance.managed and form.instance.slug in declared:
+                    for name, field in form.fields.items():
+                        if name not in editable:
+                            field.disabled = True
+                return form
+
+        return ManagedFormSet
