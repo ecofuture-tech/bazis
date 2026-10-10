@@ -63,6 +63,18 @@ class OpenedInThreads:
             cursor.execute('SELECT pid FROM pg_stat_activity WHERE pid = ANY(%s)', [list(pids)])
             return [row[0] for row in cursor.fetchall()]
 
+    @classmethod
+    def live_until(cls, pids, expected, timeout=5) -> list[int]:
+        """
+        The sessions of `pids` that PostgreSQL still has, once they are `expected` or after
+        `timeout` seconds: the session of a connection ends a moment after the client closed
+        it (or after `pg_terminate_backend`), not when `close()` returns.
+        """
+        deadline = time.monotonic() + timeout
+        while (live := cls.live(pids)) != expected and time.monotonic() < deadline:
+            time.sleep(0.01)
+        return live
+
 
 @pytest.fixture
 def opened_in_threads():
@@ -99,7 +111,7 @@ def test_connection_of_a_thread_is_closed_when_it_ends(opened_in_threads):
     thread.join()
 
     assert len(opened_in_threads.pids) == 1
-    assert opened_in_threads.live(opened_in_threads.pids) == []
+    assert opened_in_threads.live_until(opened_in_threads.pids, []) == []
     assert_no_unclosed_connection()
 
 
@@ -119,7 +131,8 @@ def test_closed_connection_of_a_thread_and_the_main_one(opened_in_threads):
     thread.join()
 
     assert len(opened_in_threads.pids) == 1
-    assert opened_in_threads.live(opened_in_threads.pids + [main_pid]) == [main_pid]
+    pids = opened_in_threads.pids + [main_pid]
+    assert opened_in_threads.live_until(pids, [main_pid]) == [main_pid]
     assert_no_unclosed_connection()
 
 
@@ -135,7 +148,7 @@ def test_connections_of_the_ended_workers_are_closed(sample_app, opened_in_threa
 
     opened_in_threads.join()
     assert len(opened_in_threads.pids) == 3
-    assert opened_in_threads.live(opened_in_threads.pids) == []
+    assert opened_in_threads.live_until(opened_in_threads.pids, []) == []
     assert_no_unclosed_connection()
 
 
@@ -150,7 +163,7 @@ def test_worker_reuses_its_connection(sample_app, opened_in_threads):
         assert opened_in_threads.live(pids) == pids
 
     opened_in_threads.join()
-    assert opened_in_threads.live(pids) == []
+    assert opened_in_threads.live_until(pids, []) == []
     assert_no_unclosed_connection()
 
 
@@ -167,7 +180,7 @@ def test_endpoint_closes_an_obsolete_connection(sample_app, opened_in_threads, m
             assert client.get(URL).status_code == 200
             pids = list(opened_in_threads.pids)
             assert pids
-            assert opened_in_threads.live(pids) == []
+            assert opened_in_threads.live_until(pids, []) == []
         assert len(opened_in_threads.pids) >= 2
 
 
@@ -193,10 +206,7 @@ def test_plain_route_reconnects_after_its_connection_broke(opened_in_threads):
         first = client.get('/plain-connection/').json()
         with connection.cursor() as cursor:
             cursor.execute('SELECT pg_terminate_backend(%s)', [first])
-        for _ in range(100):
-            if not opened_in_threads.live([first]):
-                break
-            time.sleep(0.05)
+        assert opened_in_threads.live_until([first], []) == []
 
         response = client.get('/plain-connection/')
         assert response.status_code == 200
@@ -205,5 +215,5 @@ def test_plain_route_reconnects_after_its_connection_broke(opened_in_threads):
         assert opened_in_threads.live(pids) == [response.json()]
 
     opened_in_threads.join()
-    assert opened_in_threads.live(opened_in_threads.pids) == []
+    assert opened_in_threads.live_until(opened_in_threads.pids, []) == []
     assert_no_unclosed_connection()
