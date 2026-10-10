@@ -57,6 +57,11 @@ route of the request is ``JsonApiMixin.CTX_ROUTE.get()``. An override should acc
   Only the objects whose link changes are checked: an object linked before stays linked
   and can be unlinked. Otherwise the request fails with ``403``, code
   ``ERR_RELATION_ACCESS`` and the pointer ``/data/relationships/<field>``.
+* The core asks ``restrict_queryset`` for the objects that get linked (not the ones a
+  reverse relationship unlinks) with ``link=True``: an override may
+  return fewer objects then, the ones the user may link (bazis-uploadable links only the
+  own files of a user, though he sees more). A visible object it leaves out fails with
+  ``422``, code ``ERR_RELATION_LINK`` and the same pointer; an invisible one stays ``403``.
 * ``included`` contains only the objects ``restrict_queryset`` returns for ``view``; the
   relationship keeps the identifiers of all linked objects.
 * The objects of a model whose default route does not override ``restrict_queryset``, or

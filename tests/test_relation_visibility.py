@@ -15,7 +15,8 @@
 """
 A relationship can link only the objects the route of the related model shows
 (`restrict_queryset` of its default route), and `included` shows only those objects.
-The route of `visibility.Tag` hides the hidden tags and does not let change the locked ones.
+The route of `visibility.Tag` hides the hidden tags and does not let change or link anew
+the locked ones.
 """
 
 from django.contrib.auth.models import AnonymousUser, User
@@ -387,7 +388,98 @@ def test_route_without_user_links_restricted_target(sample_app, tags, restrict_u
         NOTES, json_data=note_payload(tags=rels('tag', tags['hidden']))
     )
     assert_relation_denied(response, 'tags')
-    assert restrict_users == [None]
+    # the refused tag is looked up again: is it hidden (403) or only not linkable (422)
+    assert restrict_users == [None, None]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_visible_target_that_is_not_linkable(sample_app, tags):
+    """
+    `restrict_queryset` with `link=True` leaves out the locked tags: a user sees them but may
+    not link them anew (422 ERR_RELATION_LINK); a hidden one among them is still 403; a kept
+    link is not checked.
+    """
+    client = get_api_client(sample_app)
+
+    def assert_not_linkable(response, field, pointer=None):
+        assert response.status_code == 422, response.text
+        error = response.json()['errors'][0]
+        assert error['code'] == 'ERR_RELATION_LINK'
+        assert error['source'] == {'pointer': pointer or f'/data/relationships/{field}'}
+
+    response = client.post(NOTES, json_data=note_payload(tag=rel('tag', tags['locked'])))
+    assert_not_linkable(response, 'tag')
+    response = client.post(
+        NOTES, json_data=note_payload(tags=rels('tag', tags['locked'], tags['hidden']))
+    )
+    assert_relation_denied(response, 'tags')
+    assert not Note.objects.exists()
+
+    note = Note.objects.create(name='note', tag=tags['locked'])
+    response = relationships_request(
+        client, 'POST', note, 'tags', rels('tag', tags['visible'], tags['locked'])
+    )
+    assert_not_linkable(response, 'tags', '/data/1')
+    response = relationships_request(
+        client, 'POST', note, 'tags', rels('tag', tags['locked'], tags['hidden'])
+    )
+    # the pointer is the hidden tag, the reason of the 403
+    assert_relation_denied(response, 'tags', '/data/1')
+    assert list(note.tags.all()) == []
+
+    # the locked tag linked before stays linked
+    response = client.patch(
+        f'{NOTES}{note.id}/', json_data=note_payload(note, tag=rel('tag', tags['locked']))
+    )
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.django_db(transaction=True)
+def test_reverse_relation_asks_link_only_for_the_linked_objects(sample_app, tags, monkeypatch):
+    """
+    A reverse relationship changes the linked and the unlinked objects (`change`), but only
+    the linked ones are asked for with `link=True`: an object the override does not let
+    link (here also `visible2`) is unlinked, not linked anew.
+    """
+    calls = []
+    restrict = TagRouteSet.restrict_queryset.__func__
+
+    def narrower(cls, qs, access_action, user=None, **kwargs):
+        calls.append((access_action, kwargs.get('link', False)))
+        qs = restrict(cls, qs, access_action, user=user, **kwargs)
+        return qs.exclude(name='visible2') if kwargs.get('link') else qs
+
+    monkeypatch.setattr(TagRouteSet, 'restrict_queryset', classmethod(narrower))
+    note, other = Note.objects.create(name='note'), Note.objects.create(name='other')
+    Tag.objects.filter(pk=tags['visible2'].pk).update(note=note)
+    client = get_api_client(sample_app)
+
+    response = relationships_request(
+        client, 'DELETE', note, 'attached_tags', rels('tag', tags['visible2'])
+    )
+    assert response.status_code == 204, response.text
+    assert calls == [(CrudAccessAction.CHANGE, False)]
+
+    calls.clear()
+    response = relationships_request(
+        client, 'POST', other, 'attached_tags', rels('tag', tags['visible2'])
+    )
+    assert response.status_code == 422, response.text
+    error = response.json()['errors'][0]
+    assert (error['code'], error['source']) == ('ERR_RELATION_LINK', {'pointer': '/data/0'})
+    assert calls == [(CrudAccessAction.CHANGE, True), (CrudAccessAction.CHANGE, False)]
+
+    # replacing the tags links one and unlinks another: a query for each
+    Tag.objects.filter(pk=tags['visible2'].pk).update(note=note)
+    calls.clear()
+    response = relationships_request(
+        client, 'PATCH', note, 'attached_tags', rels('tag', tags['visible'])
+    )
+    assert response.status_code == 204, response.text
+    assert calls == [(CrudAccessAction.CHANGE, True), (CrudAccessAction.CHANGE, False)]
+    assert list(note.attached_tags.all()) == [tags['visible']]
+    tags['visible2'].refresh_from_db()
+    assert tags['visible2'].note is None
 
 
 def test_restrict_queryset_without_authentication(tags):

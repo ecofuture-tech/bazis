@@ -408,7 +408,11 @@ class OrderRouteSet(JsonapiRouteBase):
   relationships endpoints) links only the objects it returns for `view`, a reverse
   relationship only the objects it returns for `change` (their foreign key changes), both
   for the objects whose link changes; otherwise 403 `ERR_RELATION_ACCESS` (pointers: see
-  Errors). `included` shows only the visible objects (the
+  Errors). The core asks for the objects that get linked (not the ones a reverse
+  relationship unlinks) with `link=True`: an override may return
+  fewer then, the objects the user may link (e.g. bazis-uploadable: only his own files,
+  though he sees more), and a visible object it leaves out is 422 `ERR_RELATION_LINK`
+  (same pointers). `included` shows only the visible objects (the
   relationship keeps the identifiers), and the filter, sorting and search of the other
   routes reach only the visible objects through a relation. The objects of a model whose
   default route does not
@@ -574,9 +578,9 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
     relationships endpoints the parameter `/related_field_name`.
   - `ERR_INCLUDE` (400): `/query/include`. `ERR_FILTER` (400): `/query/filter`,
     `/query/sort`, `/query/search`.
-  - `ERR_RELATION_ACCESS`: `/data/relationships/<f>`. On the relationships endpoints
-    `/data/<j>`, the refused identifier of a to-many relationship, else `/data` (a to-one
-    relationship, or an object the change unlinks).
+  - `ERR_RELATION_ACCESS` (403), `ERR_RELATION_LINK` (422): `/data/relationships/<f>`. On
+    the relationships endpoints `/data/<j>`, the refused identifier of a to-many
+    relationship, else `/data` (a to-one relationship, or an object the change unlinks).
   Up to 2.10 `ERR_VALIDATE` pointed to `/attributes/<f>` and `/relationships/<f>`, also for
   an included item, and the relationships endpoints into the document of an update: a
   client that also serves older servers reads both forms.

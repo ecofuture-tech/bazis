@@ -25,8 +25,8 @@ class FolderRouteSet(JsonapiRouteBase):
 
 class TagRouteSet(RestrictedQsRouteMixin):
     """
-    Hidden tags are not visible, locked tags cannot be changed. The relationships of the
-    other routes to tags respect it.
+    Hidden tags are not visible, locked tags cannot be changed nor linked anew (`link`). The
+    relationships of the other routes to tags respect it.
     """
 
     model = apps.get_model('visibility.Tag')
@@ -38,7 +38,7 @@ class TagRouteSet(RestrictedQsRouteMixin):
         if getattr(user, 'is_staff', False):
             return qs
         qs = qs.filter(is_hidden=False)
-        if access_action == CrudAccessAction.CHANGE:
+        if access_action == CrudAccessAction.CHANGE or kwargs.get('link'):
             qs = qs.filter(is_locked=False)
         return qs
 
