@@ -35,15 +35,20 @@ DYNAMIC_SMTP_OPTIONS = {
     'BAZIS_EMAIL_HOST_PASSWORD': 'password',
     'BAZIS_EMAIL_USE_TLS': 'use_tls',
     'BAZIS_EMAIL_USE_SSL': 'use_ssl',
+    'BAZIS_EMAIL_TIMEOUT': 'timeout',
 }
 
 def get_dynamic_smtp_options() -> dict:
     """
-    Returns the SMTP backend options from the current values of the Bazis settings.
+    Returns the SMTP backend options from the current values of the Bazis settings: the
+    timeout (seconds) bounds the connection and every command to the server, none if not
+    positive.
     """
     options = {option: getattr(settings, name) for name, option in DYNAMIC_SMTP_OPTIONS.items()}
     port = options['port']
     options['port'] = int(port) if port not in (None, '') else None
+    timeout = options['timeout']
+    options['timeout'] = timeout if timeout and timeout > 0 else None
     return options
 
 

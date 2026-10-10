@@ -15,8 +15,11 @@
 import json
 import logging
 import os
+import smtplib
+import socket
 import subprocess
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -119,6 +122,39 @@ def test_dynamic_smtp_backend_reads_settings_on_each_connection(db):
         backend = mailers.default
         assert backend.host == 'smtp2.example.com'
         assert backend.port == 25
+
+
+@override_settings(MAILERS={'default': {'BACKEND': 'bazis.core.mail.DynamicSMTPEmailBackend'}})
+def test_dynamic_smtp_backend_has_a_timeout(db):
+    """
+    An unresponsive mail server held the request that sent a mail (no timeout): the
+    dynamic BAZIS_EMAIL_TIMEOUT reaches the connection, 0 disables it.
+    """
+    with override_settings(BAZIS_EMAIL_HOST='127.0.0.1'):
+        assert settings.BAZIS_EMAIL_TIMEOUT == 10
+        assert mailers.default.timeout == 10
+    with override_settings(BAZIS_EMAIL_HOST='127.0.0.1', BAZIS_EMAIL_TIMEOUT=0):
+        assert mailers.default.timeout is None
+    explicit = {
+        'BACKEND': 'bazis.core.mail.DynamicSMTPEmailBackend',
+        'OPTIONS': {'timeout': 3},
+    }
+    with override_settings(BAZIS_EMAIL_HOST='127.0.0.1', MAILERS={'default': explicit}):
+        assert mailers.default.timeout == 3
+
+    # a server that accepts the connection and never greets
+    with socket.socket() as server:
+        server.bind(('127.0.0.1', 0))
+        server.listen()
+        port = str(server.getsockname()[1])
+        with override_settings(
+            BAZIS_EMAIL_HOST='127.0.0.1', BAZIS_EMAIL_PORT=port, BAZIS_EMAIL_TIMEOUT=1
+        ):
+            backend = mailers.default
+            started = time.monotonic()
+            with pytest.raises(smtplib.SMTPServerDisconnected, match='timed out'):
+                backend.open()
+            assert time.monotonic() - started < 5
 
 
 def test_legacy_email_env_is_mapped(monkeypatch):

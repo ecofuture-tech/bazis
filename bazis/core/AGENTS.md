@@ -810,8 +810,9 @@ The core configures the mail of Django: `MAILERS['default']` (Django 6.1) uses
 `BAZIS_EMAIL_BACKEND` (default `bazis.core.mail.DynamicSMTPEmailBackend`), an SMTP backend
 that reads the dynamic settings `BAZIS_EMAIL_HOST`, `BAZIS_EMAIL_PORT`,
 `BAZIS_EMAIL_HOST_USER`, `BAZIS_EMAIL_HOST_PASSWORD`, `BAZIS_EMAIL_USE_TLS`,
-`BAZIS_EMAIL_USE_SSL` (editable in the admin, `BS_BAZIS_EMAIL_*` as their initial values)
-every time it opens a connection; `DEFAULT_FROM_EMAIL` is the sender. Send with Django:
+`BAZIS_EMAIL_USE_SSL`, `BAZIS_EMAIL_TIMEOUT` (seconds, default 10, 0 - unlimited)
+(editable in the admin, `BS_BAZIS_EMAIL_*` as their initial values) every time it opens a
+connection; `DEFAULT_FROM_EMAIL` is the sender. Send with Django:
 
 ```python
 from django.core.mail import send_mail
@@ -823,8 +824,11 @@ send_mail(_('Your certificate'), text, None, [user.email])   # None: DEFAULT_FRO
   (development); tests get the `locmem` backend of Django (`django.core.mail.outbox`).
 - `send_mail` is synchronous: do not send many mails in a request; send them from a
   background task (bazis-bg) after the commit (`transaction.on_commit`), and let a failure
-  of one address not stop the others (catch `smtplib.SMTPException` and log it), not a
-  bare `except Exception`.
+  of one address not stop the others (catch `OSError`, which covers
+  `smtplib.SMTPException` and the connection errors, and log it), not a bare
+  `except Exception`. An unresponsive server holds the sender up to `BAZIS_EMAIL_TIMEOUT`
+  for the connection and each command, then fails (`TimeoutError`, or
+  `smtplib.SMTPServerDisconnected` once connected).
 - Options set explicitly in `MAILERS['default']` override the dynamic settings.
 
 ## Rules

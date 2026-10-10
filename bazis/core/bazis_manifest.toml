@@ -121,7 +121,7 @@ use_when = "limit the request rate of a route: dependencies=[throttle('10/minute
 [[extension_points]]
 name = "DynamicSMTPEmailBackend"
 import = "bazis.core.mail.DynamicSMTPEmailBackend"
-use_when = "send e-mail (django.core.mail.send_mail): the default mailer reads the dynamic settings BAZIS_EMAIL_HOST, _PORT, _HOST_USER, _HOST_PASSWORD, _USE_TLS, _USE_SSL (admin) and DEFAULT_FROM_EMAIL; BS_BAZIS_EMAIL_BACKEND replaces the backend (console in development)"
+use_when = "send e-mail (django.core.mail.send_mail): the default mailer reads the dynamic settings BAZIS_EMAIL_HOST, _PORT, _HOST_USER, _HOST_PASSWORD, _USE_TLS, _USE_SSL, _TIMEOUT (10 s) (admin) and DEFAULT_FROM_EMAIL; BS_BAZIS_EMAIL_BACKEND replaces the backend (console in development)"
 
 [[extension_points]]
 name = "InitialRouteBase.route_responses"
@@ -197,7 +197,7 @@ text = "an action open to anonymous users (public=True) is limited by BAZIS_THRO
 text = "the throttle counts the address uvicorn gives (request.client.host): forwarded_allow_ips '*' on a server clients reach directly lets any client choose its address in X-Forwarded-For; a proxy missing from forwarded_allow_ips makes all anonymous users share the address of the proxy and one count"
 
 [[pitfalls]]
-text = "send_mail is synchronous: send many mails from a background task after the commit, not in a request, and handle a failing address (smtplib.SMTPException) without a bare except"
+text = "send_mail is synchronous: send many mails from a background task after the commit, not in a request, and handle a failing address or server (OSError: smtplib.SMTPException, a refused or timed out connection) without a bare except"
 
 [[pitfalls]]
 text = "the hooks of a route (hook_after_create, hook_after_update, the relationships hooks) see the item before validate_item, which runs at the end of the request: a hook that needs a valid item (before a transit of bazis-statusy or a notification) calls `with defer_validate_item() as scope: scope.validate()` first"

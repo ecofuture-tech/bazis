@@ -275,6 +275,12 @@ class Settings(BazisSettings):
         title=_('Mail server use SSL'),
         json_schema_extra={'dynamic': True},
     )
+    # an unresponsive mail server would hold the request (or the task) that sends a mail
+    BAZIS_EMAIL_TIMEOUT: int = Field(
+        10,
+        title=_('Mail server timeout, seconds (0 - unlimited)'),
+        json_schema_extra={'dynamic': True},
+    )
     DEFAULT_FROM_EMAIL: str = Field(
         '',
         title=_('Default outgoing email address'),
