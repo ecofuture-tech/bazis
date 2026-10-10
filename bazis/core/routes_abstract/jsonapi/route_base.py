@@ -22,7 +22,6 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import QuerySet
 from django.db.models.deletion import PROTECT, ProtectedError
-from django.db.utils import IntegrityError
 from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 
@@ -542,6 +541,7 @@ class JsonapiRouteBase(InitialRouteBase):
         '/_id/',
         endpoint_callbacks=[],
         inject_tags=[CrudApiAction.LIST],
+        access_action=CrudAccessAction.VIEW,
     )
     def action_list_id(self, **kwargs) -> List[str]:  # noqa: UP006
         """
@@ -1199,10 +1199,9 @@ class JsonapiRouteBase(InitialRouteBase):
 
         with defer_validate_item(user=self._write_user(), savepoint=False) as scope:
             self.hook_before_create(item)
-            try:
-                data.create_for(item)
-            except IntegrityError:
-                raise HTTPException(status_code=409, detail=_('Data conflict')) from None
+            # a unique constraint refusing the item: 409 ERR_CONFLICT (the IntegrityError
+            # handler of the application)
+            data.create_for(item)
             scope.mark(
                 item,
                 'create',

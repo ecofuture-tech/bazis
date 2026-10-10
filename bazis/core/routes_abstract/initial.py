@@ -80,13 +80,17 @@ from asgiref.sync import async_to_sync
 
 from bazis.core.routes_abstract.context import RouteContext, RouteParams
 from bazis.core.routing import BazisRoute, BazisRouter
-from bazis.core.schemas.enums import ApiAction, HttpMethod, RouteKind
+from bazis.core.schemas.enums import AccessAction, ApiAction, HttpMethod, RouteKind
+from bazis.core.throttle import Throttle, public_rate, split_throttles
 from bazis.core.utils.functools import func_sig_params_append, func_sig_transfer, get_class_name
 from bazis.core.utils.orm import close_old_connections
 
 
 #: the OpenAPI extension of the operations of the route classes (see `InitialRouteBase.route_meta`)
 OPENAPI_EXTENSION = 'x-bazis'
+
+#: the facts of a route an override keeps when it leaves them None
+ROUTE_INHERITED = ('kind', 'public', 'access_action')
 
 
 def deep_merge(base: dict, override: dict) -> dict:
@@ -145,6 +149,8 @@ def http_action_decor(
     endpoint_callbacks: list[Callable[..., Any] | partial] | None,
     *,
     kind: RouteKind | None = None,
+    public: bool | None = None,
+    access_action: AccessAction | None = None,
     status_code: int | None = None,
     tags: list[str | Enum] | None = None,
     dependencies: Sequence[DependsCls] | None = None,
@@ -171,6 +177,10 @@ def http_action_decor(
     Not used directly; it is called from specialized decorators.
     `kind` tells API clients what the route does (`x-bazis` in OpenAPI); without it an
     override keeps the kind of the route it overrides, a new route is `other`.
+    `public=True` opens an action (kind `other`) to anonymous users and limits it with
+    `BAZIS_THROTTLE_PUBLIC` per IP address unless it declares its own `throttle`;
+    `access_action` is the permission the action requires (bazis-permit checks both, see
+    its guide). An override that leaves them None keeps those of the route it overrides.
 
     Tags: RAG
     """
@@ -193,6 +203,8 @@ def http_action_decor(
             inject_tags=set(inject_tags) if inject_tags is not None else set(),
             endpoint_callbacks=endpoint_callbacks,
             kind=kind,
+            public=public,
+            access_action=access_action,
             route_params=RouteParams(
                 path=path,
                 response_model=response_model,
@@ -480,9 +492,12 @@ class InitialRouteBaseMeta(type):
                         routes_ctx[route_ctx.name] = route_ctx_for_cls
                         # Overriding the route object attribute in the class
                         setattr(route_cls, route_ctx.name, route_ctx_for_cls)
-                    elif routes_ctx[route_ctx.name].kind is None:
-                        # an override keeps the kind of the route it overrides
-                        routes_ctx[route_ctx.name].kind = route_ctx.kind
+                    else:
+                        # an override keeps what it does not declare of the route it
+                        # overrides
+                        for attr in ROUTE_INHERITED:
+                            if getattr(routes_ctx[route_ctx.name], attr) is None:
+                                setattr(routes_ctx[route_ctx.name], attr, getattr(route_ctx, attr))
         route_cls.routes_ctx = routes_ctx
         # Launching class custom initialization
         route_cls.cls_init()
@@ -689,6 +704,25 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
 
         func_sig_params_append(route_obj_factory, *injects_params)
 
+        # the throttles of the route count the user of the route object (cached by FastAPI
+        # for the request, the same object the endpoint gets), a public action has the
+        # default one; the context of the class gets its own parameters
+        throttles, dependencies = split_throttles(route_ctx.route_params.dependencies)
+        if route_ctx.public and not throttles:
+            throttles = [Throttle(public_rate, key='ip')]
+        if throttles:
+            throttle_scope = f'{cls.__module__}.{cls.__qualname__}.{route_ctx.name}'
+
+            def throttle_check(request: Request, route=Depends(route_obj_factory)):
+                for throttle in throttles:
+                    throttle.check(
+                        request, user=getattr(route.inject, 'user', None), scope=throttle_scope
+                    )
+
+            route_ctx.route_params = dataclasses.replace(
+                route_ctx.route_params, dependencies=[*dependencies, Depends(throttle_check)]
+            )
+
         # collect Inject dependencies and add a dependency that creates a route instance.
         # In other dependencies, the route will not be available!
         injects_params_route = list(injects_params) + [
@@ -710,15 +744,21 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
         The facts about a route for API clients and tools: the `x-bazis` extension of its
         OpenAPI operation, also reported by `bazis_introspect`. `resource` is the JSON:API
         type of the model of the class (None without a model), `action` is the name of the
-        route (as `as_router(actions=...)` takes it), `kind` is a `RouteKind`.
+        route (as `as_router(actions=...)` takes it), `kind` is a `RouteKind`; `public` and
+        `access_action` (the value of the `AccessAction`) only when the route declares them.
         """
         model = getattr(cls, 'model', None)
-        return {
+        meta = {
             'resource': model.get_resource_label() if model is not None else None,
             'route_set': f'{cls.__module__}.{cls.__qualname__}',
             'action': route_ctx.name,
             'kind': (route_ctx.kind or RouteKind.OTHER).value,
         }
+        if route_ctx.public is not None:
+            meta['public'] = route_ctx.public
+        if route_ctx.access_action is not None:
+            meta['access_action'] = route_ctx.access_action.value
+        return meta
 
     @classmethod
     def route_responses(cls, route_ctx: RouteContext) -> dict[int | str, dict[str, Any]]:
@@ -747,7 +787,11 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
         Register the route in the router defined in the class, with the
         `route_openapi_extra` (`x-bazis`) and the `route_responses` of its OpenAPI operation.
         """
-        route_params = dataclasses.asdict(route_ctx.route_params)
+        # a shallow copy: asdict() would turn the dependencies (dataclasses) into dicts
+        route_params = {
+            field.name: getattr(route_ctx.route_params, field.name)
+            for field in dataclasses.fields(route_ctx.route_params)
+        }
         route_params['responses'] = {
             **cls.route_responses(route_ctx),
             **(route_params['responses'] or {}),

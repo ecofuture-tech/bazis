@@ -29,7 +29,7 @@ from starlette.routing import BaseRoute
 
 from pydantic import BaseModel
 
-from bazis.core.schemas.enums import ApiAction, RouteKind
+from bazis.core.schemas.enums import AccessAction, ApiAction, RouteKind
 
 
 if TYPE_CHECKING:
@@ -121,6 +121,13 @@ class RouteContext:
     route: BaseRoute | None = None
     #: What the route does for API clients; None takes the kind of the overridden route
     kind: RouteKind | None = None
+    #: An action (kind `other`) open to anonymous users; None takes the value of the
+    #: overridden route (not public)
+    public: bool | None = None
+    #: The permission an action requires (bazis-permit checks it on the model of a
+    #: collection action, on the item of an item action); None takes the value of the
+    #: overridden route
+    access_action: AccessAction | None = None
 
     def __set_name__(self, owner: type['InitialRouteBase'], name: str):
         """

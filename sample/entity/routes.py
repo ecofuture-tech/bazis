@@ -16,9 +16,11 @@ from django.apps import apps
 
 from sample.route_mixins import ContextTestRouteMixin
 
+from bazis.core.routes_abstract.initial import http_get
 from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
 from bazis.core.schemas.enums import CrudApiAction
 from bazis.core.schemas.fields import SchemaField, SchemaFields
+from bazis.core.throttle import throttle
 
 
 class ChildEntityRouteSet(JsonapiRouteBase):
@@ -85,9 +87,21 @@ class ParentEntityRouteSet(JsonapiRouteBase):
 
 
 class CountryRouteSet(JsonapiRouteBase):
-    """Route for Country"""
+    """Route for Country, with throttled actions"""
 
     model = apps.get_model('entity.Country')
+
+    @http_get('/greeting/', public=True)
+    def action_greeting(self, **kwargs) -> str:
+        return 'Hello'
+
+    @http_get('/capital/', dependencies=[throttle('2/minute', scope='country_geo')])
+    def action_capital(self, **kwargs) -> str:
+        return 'Capital'
+
+    @http_get('/border/', dependencies=[throttle('2/minute', scope='country_geo')])
+    def action_border(self, **kwargs) -> str:
+        return 'Border'
 
 
 class VehicleModelRouteSet(JsonapiRouteBase):

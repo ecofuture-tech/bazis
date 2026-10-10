@@ -25,7 +25,7 @@ from bazis.core.routes_abstract.initial import (
     http_get,
     http_post,
 )
-from bazis.core.schemas.enums import RouteKind
+from bazis.core.schemas.enums import CrudAccessAction, RouteKind
 
 
 PARENT = '/api/v1/entity/parent_entity'
@@ -66,12 +66,16 @@ def operations():
     ],
 )
 def test_route_set_operations(operations, path, method, action, kind):
-    assert operations[(PARENT + path, method)][OPENAPI_EXTENSION] == {
+    expected = {
         'resource': 'entity.parent_entity',
         'route_set': PARENT_SET,
         'action': action,
         'kind': kind,
     }
+    if action == 'action_list_id':
+        # the permission the action requires (bazis-permit checks it)
+        expected['access_action'] = 'view'
+    assert operations[(PARENT + path, method)][OPENAPI_EXTENSION] == expected
 
 
 def test_custom_action(operations):
@@ -103,8 +107,7 @@ def test_matches_introspect(operations):
                 expected[(route['path'], method)] = {
                     'resource': route_set['resource'],
                     'route_set': route_set['route_set'],
-                    'action': route['action'],
-                    'kind': route['kind'],
+                    **{key: value for key, value in route.items() if key not in ('path', 'methods')},
                 }
     actual = {
         key: operation[OPENAPI_EXTENSION]
@@ -123,6 +126,10 @@ class KindBase(InitialRouteBase):
     def action_make(self, **kwargs):
         pass
 
+    @http_get('/open/', public=True, access_action=CrudAccessAction.VIEW)
+    def action_open(self, **kwargs):
+        pass
+
     @http_get('/plain/')
     def action_plain(self, **kwargs):
         pass
@@ -137,6 +144,10 @@ class KindRouteSet(KindBase):
     def action_plain(self, **kwargs):
         pass
 
+    @http_get('/open/', public=False)
+    def action_open(self, **kwargs):
+        pass
+
 
 def test_override_keeps_kind():
     """
@@ -146,6 +157,18 @@ def test_override_keeps_kind():
     assert KindBase.action_plain.kind is None
     assert KindRouteSet.action_make.kind is RouteKind.CREATE
     assert KindRouteSet.action_plain.kind is RouteKind.ITEM
+    # so are public and access_action
+    assert KindBase.action_open.public is True
+    assert KindRouteSet.action_open.public is False
+    assert KindRouteSet.action_open.access_action is CrudAccessAction.VIEW
+    assert KindRouteSet.route_meta(KindRouteSet.action_open) == {
+        'resource': None,
+        'route_set': f'{__name__}.KindRouteSet',
+        'action': 'action_open',
+        'kind': 'other',
+        'public': False,
+        'access_action': 'view',
+    }
 
     router = KindRouteSet.as_router()
     extra = {route.name: route.openapi_extra for route in router.routes}

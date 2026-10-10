@@ -19,8 +19,9 @@ fields that must not be blank and reference data translated into the languages o
 project.
 """
 
+from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.models import OuterRef, Subquery
+from django.db.models import Max, OuterRef, Subquery
 from django.utils.translation import gettext_lazy as _
 
 from translated_fields import TranslatedFieldWithFallback
@@ -92,6 +93,39 @@ class Card(JsonApiMixin):
 
     class Meta:
         ordering = ['name']
+
+
+class Step(JsonApiMixin):
+    """
+    The recipe of the guide for an invariant under concurrent requests: no more than
+    MAX_PER_MEMO steps per memo, numbered in the memo, under the lock of the memo, with a
+    unique constraint as the barrier.
+    """
+
+    MAX_PER_MEMO = 3
+
+    memo = models.ForeignKey(Memo, on_delete=models.CASCADE, related_name='steps')
+    number = models.PositiveIntegerField('Number', editable=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['memo', 'number'], name='catalog_step_number_uniq')
+        ]
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and not self.number:
+            # the number under the lock of the memo (validate_item runs after the save)
+            Memo.objects.select_for_update().get(pk=self.memo_id)
+            last = self.memo.steps.aggregate(m=Max('number'))['m'] or 0
+            self.number = last + 1
+        super().save(*args, **kwargs)
+
+    def validate_item(self, changes):
+        if changes.is_new:
+            Memo.objects.select_for_update().get(pk=self.memo_id)
+            # the item is already in the database: it is counted
+            if self.memo.steps.count() > self.MAX_PER_MEMO:
+                raise ValidationError({'memo': 'No more steps in this memo'})
 
 
 class BusyMemo(Memo):

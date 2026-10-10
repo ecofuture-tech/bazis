@@ -66,7 +66,9 @@ In each class, there is a class variable :py:attr:`~bazis.core.routes_abstract.i
 - ``endpoint_callbacks``: List of functions that will be applied to the :py:class:`~bazis.core.routes_abstract.initial.RouteContext` object during route initialization. Function signature: ``(cls=cls, route_ctx=route_ctx)``.
 - ``inject_tags``: List of tags based on which corresponding Injects will be applied to the route.
 - ``kind``: What the route does for API clients, a :py:class:`~bazis.core.schemas.enums.RouteKind`; it is the ``kind`` of the ``x-bazis`` extension of the OpenAPI operation (see :doc:`openapi`). Without it, an override keeps the kind of the route it overrides and a new route is ``other``.
-- The remaining parameters are identical to the route parameters in FastAPI.
+- ``public``: ``True`` opens an action to anonymous users (bazis-permit closes the others to them) and limits it by ``BAZIS_THROTTLE_PUBLIC`` per IP address unless it declares its own ``throttle`` (:py:func:`~bazis.core.throttle.throttle` in ``dependencies``). Kept by an override that does not declare it, as ``kind``.
+- ``access_action``: the permission the action requires (an :py:class:`~bazis.core.schemas.enums.AccessAction`); bazis-permit checks it on the model for an action of the collection and on the item ``set_item`` takes for an action of an item.
+- The remaining parameters are identical to the route parameters in FastAPI (``dependencies`` included).
 
 **Injects**:
 

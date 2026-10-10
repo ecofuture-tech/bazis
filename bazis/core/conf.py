@@ -285,6 +285,20 @@ class Settings(BazisSettings):
         True, title=_('Filter, sort and search only by the fields of the route')
     )
 
+    # request rate limits (bazis.core.throttle), counted in the default cache
+    BAZIS_THROTTLE_ENABLED: bool = Field(
+        True, title=_('Limit the request rate of routes'), json_schema_extra={'dynamic': True}
+    )
+    BAZIS_THROTTLE_PUBLIC: str = Field(
+        '30/minute',
+        title=_('Request rate of the public actions per IP address (empty - unlimited)'),
+        json_schema_extra={'dynamic': True},
+    )
+    BAZIS_THROTTLE_EXEMPT: str | None = Field(
+        None,
+        title=_('Import path of a function (request, ident) exempting a request from the limits'),
+    )
+
     @model_validator(mode='after')
     def calc_trusted_uri(self):
         """

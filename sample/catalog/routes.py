@@ -60,6 +60,10 @@ class CardRouteSet(JsonapiRouteBase):
     model = apps.get_model('catalog.Card')
 
 
+class StepRouteSet(JsonapiRouteBase):
+    model = apps.get_model('catalog.Step')
+
+
 class BusyMemoRouteSet(JsonapiRouteBase):
     """
     A report of the memos with cards: the list and the items of a route are its

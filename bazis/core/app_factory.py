@@ -103,6 +103,7 @@ def _initialize_app(app): # noqa: C901
     from urllib.parse import unquote, urlsplit
 
     from django.conf import settings
+    from django.db import IntegrityError
     from django.utils.translation import get_language, gettext_lazy, to_locale
 
     from fastapi import Request
@@ -116,7 +117,9 @@ def _initialize_app(app): # noqa: C901
     from starlette.middleware.sessions import SessionMiddleware
     from starlette.responses import JSONResponse
     from starlette.staticfiles import StaticFiles
-    from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
+    from starlette.status import HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_CONTENT
+
+    from psycopg.errors import ExclusionViolation, UniqueViolation
 
     from bazis.core.i18n import LanguageMiddleware, expand_lang
     from bazis.core.utils.functools import get_attr
@@ -453,6 +456,33 @@ def _initialize_app(app): # noqa: C901
             ],
             exc.status_code,
             headers=headers,
+        )
+
+    @app.exception_handler(IntegrityError)
+    async def json_api_integrity_error_handler(
+        request: Request, exc: IntegrityError
+    ) -> JSONResponse:
+        """
+        A write that a unique or an exclusion constraint refuses (two parallel requests
+        creating the same item, a number taken under a race) is 409 `ERR_CONFLICT`: the
+        request can be repeated. Any other IntegrityError stays a 500.
+        """
+        cause = exc.__cause__
+        if not isinstance(cause, UniqueViolation | ExclusionViolation):
+            raise exc
+        return exc_encoder(
+            [
+                SchemaError(
+                    status=HTTP_409_CONFLICT,
+                    code='ERR_CONFLICT',
+                    title=str(gettext_lazy('Conflict')),
+                    detail=str(
+                        gettext_lazy('The change conflicts with the current data: repeat the request')
+                    ),
+                    meta={'constraint': cause.diag.constraint_name} if settings.DEBUG else None,
+                )
+            ],
+            HTTP_409_CONFLICT,
         )
 
     @app.exception_handler(500)

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-09 20:13+0000\n"
+"POT-Creation-Date: 2026-10-10 11:26+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,11 +16,19 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: app_factory.py:401 routes_abstract/jsonapi/route_base.py:817
+#: app_factory.py:404 routes_abstract/jsonapi/route_base.py:817
 #: routes_abstract/jsonapi/route_base.py:831
 #: routes_abstract/jsonapi/route_base.py:849
 msgid "Item not found"
 msgstr "Объект не найден"
+
+#: app_factory.py:478
+msgid "Conflict"
+msgstr "Конфликт данных"
+
+#: app_factory.py:480
+msgid "The change conflicts with the current data: repeat the request"
+msgstr "Изменение конфликтует с текущими данными: повторите запрос"
 
 #: conf.py:157
 msgid "Application port"
@@ -139,23 +147,44 @@ msgstr ""
 msgid "Filter, sort and search only by the fields of the route"
 msgstr ""
 
+#: conf.py:290
+msgid "Limit the request rate of routes"
+msgstr "Ограничивать частоту запросов к маршрутам"
+
+#: conf.py:294
+msgid "Request rate of the public actions per IP address (empty - unlimited)"
+msgstr ""
+"Частота запросов к публичным действиям с одного IP-адреса (пусто — без "
+"ограничения)"
+
+#: conf.py:299
+msgid ""
+"Import path of a function (request, ident) exempting a request from the "
+"limits"
+msgstr ""
+"Путь импорта функции (request, ident), освобождающей запрос от ограничений"
+
 #: configure.py:330
 msgid "System time zone for generating agent report"
 msgstr "Часовой пояс системы для формирования отчета агента"
 
-#: errors.py:45
+#: errors.py:46
 msgid "Request error"
 msgstr "Ошибка запроса"
 
-#: errors.py:74
+#: errors.py:75
 msgid "Permission denied: check token"
 msgstr "Доступ запрещён: проверьте токен"
 
-#: errors.py:87
+#: errors.py:88
 msgid "Permission denied: check access"
 msgstr "Доступ запрещён: проверьте права доступа"
 
-#: errors.py:98 errors.py:111
+#: errors.py:101
+msgid "Too many requests: try again later"
+msgstr "Слишком много запросов: повторите позже"
+
+#: errors.py:112 errors.py:125
 msgid "Validation error"
 msgstr "Ошибка валидации"
 
@@ -187,12 +216,12 @@ msgstr ""
 msgid "Proxy-type of document"
 msgstr "Proxy-тип документа"
 
-#: routes_abstract/jsonapi/route_base.py:435
+#: routes_abstract/jsonapi/route_base.py:434
 #, python-brace-format
 msgid "The relationships cannot be included: {names}"
 msgstr "Нельзя включить связи: {names}"
 
-#: routes_abstract/jsonapi/route_base.py:440
+#: routes_abstract/jsonapi/route_base.py:439
 msgid "Invalid include"
 msgstr "Недопустимый параметр include"
 
@@ -218,21 +247,17 @@ msgstr "Доступ запрещён"
 msgid "Data type is invalid"
 msgstr "Недопустимый тип данных"
 
-#: routes_abstract/jsonapi/route_base.py:1205
-msgid "Data conflict"
-msgstr "Конфликт данных"
-
-#: routes_abstract/jsonapi/route_base.py:1285
+#: routes_abstract/jsonapi/route_base.py:1284
 #, python-brace-format
 msgid "The object does not exist. Type: {type}. ID: {id}"
 msgstr "Объект не существует. Тип: {type}. ID: {id}"
 
-#: routes_abstract/jsonapi/route_base.py:1360
+#: routes_abstract/jsonapi/route_base.py:1359
 #, python-brace-format
 msgid "{model} is not JSON:API compliant"
 msgstr "{model} не является ресурсом JSON:API"
 
-#: routes_abstract/jsonapi/route_base.py:1364
+#: routes_abstract/jsonapi/route_base.py:1363
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has related objects in non-JSON:API models. "
@@ -241,11 +266,11 @@ msgstr ""
 "Нельзя удалить объект: на него ссылаются объекты моделей вне JSON:API "
 "(количество: {count})"
 
-#: routes_abstract/jsonapi/route_base.py:1383
+#: routes_abstract/jsonapi/route_base.py:1382
 msgid "Error deleting protected model"
 msgstr "Ошибка удаления защищённого объекта"
 
-#: routes_abstract/jsonapi/route_base.py:1386
+#: routes_abstract/jsonapi/route_base.py:1385
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has protected related objects of type "
@@ -303,18 +328,18 @@ msgstr "Пагинация"
 msgid "Invalid sorting parameters: `%s`"
 msgstr "Недопустимые параметры сортировки: `%s`"
 
-#: utils/geo.py:56
+#: utils/geo.py:61
 #, python-brace-format
 msgid "A point is '<longitude>,<latitude>', not '{value}'"
 msgstr "Точка задаётся как '<долгота>,<широта>', а не '{value}'"
 
-#: utils/geo.py:61
+#: utils/geo.py:66
 #, python-brace-format
 msgid ""
 "The point {value} is out of range: longitude -180..180, latitude -90..90"
 msgstr "Точка {value} вне диапазона: долгота -180..180, широта -90..90"
 
-#: utils/geo.py:76
+#: utils/geo.py:81
 #, python-brace-format
 msgid "A distance is a number of meters or '<number>km', not '{value}'"
 msgstr "Расстояние задаётся числом метров или '<число>km', а не '{value}'"

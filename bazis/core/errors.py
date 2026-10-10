@@ -27,6 +27,7 @@ from starlette.status import (
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
     HTTP_422_UNPROCESSABLE_CONTENT,
+    HTTP_429_TOO_MANY_REQUESTS,
 )
 
 from pydantic import BaseModel, ValidationError
@@ -85,6 +86,19 @@ class JsonApi403Exception(JsonApiHttpException):
     status = HTTP_403_FORBIDDEN
     code = 'ERR_FORBIDDEN'
     title = _('Permission denied: check access')
+
+
+class JsonApiThrottledException(JsonApiHttpException):
+    """
+    HTTP 429 Too Many Requests exception for JSON API: the request rate limit of a route
+    (`bazis.core.throttle`) is reached; the header `Retry-After` gives the seconds to wait.
+
+    Tags: RAG, EXPORT
+    """
+
+    status = HTTP_429_TOO_MANY_REQUESTS
+    code = 'ERR_THROTTLED'
+    title = _('Too many requests: try again later')
 
 
 class JsonApiRequestValidationError(RequestValidationError):

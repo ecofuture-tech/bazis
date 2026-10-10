@@ -94,6 +94,21 @@ import = "bazis.core.schemas.enums.RouteKind"
 use_when = "declare what a custom route does (`kind=` of the http_* decorators, `x-bazis` in OpenAPI)"
 
 [[extension_points]]
+name = "http_* public / access_action"
+import = "bazis.core.routes_abstract.initial.http_get"
+use_when = "who may call a custom action: public=True opens it to anonymous users (limited by BAZIS_THROTTLE_PUBLIC), access_action=CrudAccessAction.<X> is the permission it requires (bazis-permit enforces both; x-bazis shows them); an override keeps them unless it declares its own"
+
+[[extension_points]]
+name = "throttle"
+import = "bazis.core.throttle.throttle"
+use_when = "limit the request rate of a route: dependencies=[throttle('10/minute', key='user_or_ip'|'ip', scope=None)] (a fixed window in Redis, 429 ERR_THROTTLED with Retry-After); the rate may be a callable read per request (a dynamic setting); BAZIS_THROTTLE_ENABLED, BAZIS_THROTTLE_EXEMPT (a function (request, ident) -> bool)"
+
+[[extension_points]]
+name = "DynamicSMTPEmailBackend"
+import = "bazis.core.mail.DynamicSMTPEmailBackend"
+use_when = "send e-mail (django.core.mail.send_mail): the default mailer reads the dynamic settings BAZIS_EMAIL_HOST, _PORT, _HOST_USER, _HOST_PASSWORD, _USE_TLS, _USE_SSL (admin) and DEFAULT_FROM_EMAIL; BS_BAZIS_EMAIL_BACKEND replaces the backend (console in development)"
+
+[[extension_points]]
 name = "InitialRouteBase.route_responses"
 import = "bazis.core.routes_abstract.initial.InitialRouteBase"
 use_when = "document in OpenAPI the error statuses (SchemaErrors) a route class fails its routes with: extend the classmethod route_responses"
@@ -153,6 +168,18 @@ text = "a verbose_name of a model or field composed with an f-string at import i
 
 [[pitfalls]]
 text = "an invariant of an item kept only in the hooks of a route (hook_before_create, hook_after_update) is bypassed by the relationships endpoints, the transits, the admin and save(): put it in JsonApiMixin.validate_item"
+
+[[pitfalls]]
+text = "an invariant over several rows (no more than N per parent, one open per parent, a number in the parent) checked by count() passes in every parallel request: lock the parent with select_for_update() in validate_item (and in save() before taking the number), keep a UniqueConstraint as the barrier, and take the item of an action that changes it with set_item(item_id, with_lock=True); a write the constraint refuses answers 409 ERR_CONFLICT"
+
+[[pitfalls]]
+text = "an IntegrityError of a unique or an exclusion constraint answers 409 ERR_CONFLICT (bazis 2.16; any integrity error of a create was 409 ERR_REQUEST before); a not-null, check or foreign key violation is a 500: keep such rules in validate_item (422)"
+
+[[pitfalls]]
+text = "an action open to anonymous users (public=True) is limited by BAZIS_THROTTLE_PUBLIC ('30/minute' per IP address, dynamic, '' turns it off) unless it declares its own throttle; a guessable code or a costly operation must never be open without a rate limit; a limit on a business count is an invariant (validate_item), not a rate"
+
+[[pitfalls]]
+text = "send_mail is synchronous: send many mails from a background task after the commit, not in a request, and handle a failing address (smtplib.SMTPException) without a bare except"
 
 [[pitfalls]]
 text = "the hooks of a route (hook_after_create, hook_after_update, the relationships hooks) see the item before validate_item, which runs at the end of the request: a hook that needs a valid item (before a transit of bazis-statusy or a notification) calls `with defer_validate_item() as scope: scope.validate()` first"

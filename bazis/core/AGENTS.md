@@ -213,6 +213,48 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   write the item in `validate_item` (its own writes there are not validated again); items
   whose `validate_item` save each other are stopped after 10 validations of one item in one
   validation pass (`ImproperlyConfigured`). A model that does not override it pays nothing.
+- Invariants under concurrent requests ("no more than N per parent", "one open per
+  parent", a number in the parent): a check by `count()` passes in every parallel request
+  (each sees only the committed rows) unless the requests are serialized. Lock the parent
+  row with `select_for_update()` before counting (the lock holds until the commit of the
+  request: the next request waits, then counts the committed row), take the next number
+  under that lock, and keep a `UniqueConstraint` as the barrier that no code path can
+  bypass:
+
+  ```python
+  from django.db.models import Max
+
+  class Attempt(DtMixin, UuidMixin, JsonApiMixin):
+      assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE,
+                                     related_name='attempts')
+      number = models.PositiveIntegerField(editable=False)
+
+      class Meta:
+          constraints = [models.UniqueConstraint(fields=['assignment', 'number'],
+                                                 name='attempt_number_uniq')]
+
+      def save(self, *args, **kwargs):
+          if self._state.adding and not self.number:
+              # the number under the lock of the parent (validate_item runs after the save)
+              Assignment.objects.select_for_update().get(pk=self.assignment_id)
+              last = self.assignment.attempts.aggregate(m=Max('number'))['m'] or 0
+              self.number = last + 1
+          super().save(*args, **kwargs)
+
+      def validate_item(self, changes):
+          if changes.is_new:
+              assignment = Assignment.objects.select_for_update().get(pk=self.assignment_id)
+              # the item is already in the database: it is counted
+              if assignment.attempts.count() > assignment.max_attempts:
+                  raise ValidationError({'assignment': _('No attempts left')})
+  ```
+
+  A custom action that changes its item takes it with `self.set_item(item_id,
+  with_lock=True)` (`SELECT ... FOR NO KEY UPDATE`: parallel calls run one after the other)
+  and checks its state after the lock (a submit of an attempt that is no longer open is
+  refused, not graded twice). A write the constraint still refuses (a race the code missed,
+  two parallel creates of a unique value) answers 409 `ERR_CONFLICT`, which the client may
+  repeat, never a 500 (see Errors).
 - Calculated fields: `@calc_property([...], as_filter=False)` from `bazis.core.utils.orm`
   declares what the query of the routes fetches for the property in the same pass; the
   values come to the item as attributes named by `alias` (else `source`):
@@ -390,8 +432,9 @@ class OrderRouteSet(JsonapiRouteBase):
   `bazis.core.routes_abstract.initial`, `RouteKind` from `bazis.core.schemas.enums`). The
   decorator takes the path, then `inject_tags` (the injections of an action, e.g.
   `[CrudApiAction.LIST]` for `self.inject.filtering`), `response_model` (a Pydantic model
-  of the response), `kind`, and the arguments of FastAPI (`status_code`, `responses`,
-  `summary`, ...). The method is the endpoint: its parameters other than `self` and
+  of the response), `kind`, `public` and `access_action` (who may call an action, below),
+  and the arguments of FastAPI (`status_code`, `responses`, `summary`, `dependencies`,
+  ...). The method is the endpoint: its parameters other than `self` and
   `**kwargs` are the parameters of FastAPI (a path parameter `item_id: str`, a Pydantic
   model the JSON body, a typed name a query parameter); `self.inject.user` is the user
   with bazis-users; `self.set_item(item_id)` loads the item the route shows (404
@@ -420,9 +463,20 @@ class OrderRouteSet(JsonapiRouteBase):
   A route that changes the item goes through the checks of an update (see Rules). Every
   operation of a route class has the OpenAPI extension
   `x-bazis: {resource, route_set, action, kind}` (`action` is the method name,
-  `kind` is collection, create, item, update, delete, relationship, schema or other);
-  client generators read it instead of parsing `operationId`. Without `kind` a route is
-  `other`; an override keeps the kind of the route it overrides.
+  `kind` is collection, create, item, update, delete, relationship, schema or other), plus
+  `public` and `access_action` when the route declares them; client generators read it
+  instead of parsing `operationId`. Without `kind` a route is `other`; an override keeps
+  the `kind`, `public` and `access_action` of the route it overrides unless it declares
+  its own.
+- Who may call an action (a route of kind `other`): `public=True` opens it to anonymous
+  users and limits it by `BAZIS_THROTTLE_PUBLIC` per IP address (see Request rate limits);
+  `access_action=CrudAccessAction.<X>` (`bazis.core.schemas.enums`, or an `AccessAction` of
+  a package such as `StatusyAccessAction`) is the permission it requires. The core has no
+  users and only records them; bazis-permit enforces them (an anonymous user gets 403 on an
+  action that is not public, the permission is checked on the model for an action of the
+  collection and on the item `set_item` takes for an action of an item, `permit.W007` for
+  an action of the collection that declares neither). The core `/_id/` route declares
+  `access_action=view`.
 - The OpenAPI operations document the errors they fail with (`SchemaErrors`): 400 and 422
   on the CRUD operations, 404 on every route of an item (`{item_id}` in the path), 403 on
   the relationships routes. The core has no authentication, so no 401 and no `security`.
@@ -499,10 +553,14 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   `JsonApiHttpException` (`JsonApi403Exception` is `ERR_FORBIDDEN`) its status, `code`
   and `detail`; another `HTTPException` (an unknown path 404, a wrong method 405) its
   status and `detail`, with `ERR_REQUEST` when a route raised it; a query error 400
-  `ERR_FILTER`; any
-  other exception 500 (the traceback in `detail` only with DEBUG), also an
-  `IntegrityError` of a constraint checked at the commit (a foreign key to a missing
-  object).
+  `ERR_FILTER`; an `IntegrityError` of a unique or an exclusion constraint (also at the
+  commit) 409 `ERR_CONFLICT` (the request may be repeated; `meta.constraint` names the
+  constraint with DEBUG; the transaction of the request is rolled back), anywhere in the
+  request (bazis 2.16; a create answered 409 `ERR_REQUEST` "Data conflict" for any
+  integrity error before); a throttled request 429 `ERR_THROTTLED` with `Retry-After`; any
+  other exception 500 (the traceback in `detail` only with DEBUG), also another
+  `IntegrityError` (a foreign key to a missing object, checked at the commit; a not-null
+  or check constraint: keep such rules in `validate_item`, 422).
 - The pointers (`source`) of the errors of the core, by code. Create and update point into
   the request document; an included item is `/included/<i>` instead of `/data`, `<i>` its
   index in the `included` of the document. The relationships endpoints point into their
@@ -530,6 +588,45 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   request (`ru` is translated), also the diagnostics of `ERR_FILTER` and `ERR_INCLUDE` (the
   names in them as given); the Pydantic messages (`ERR_VALIDATE`) and the messages of
   Django and Python in `ERR_FILTER` (a value that is not a number) are English.
+
+### Request rate limits (throttle)
+
+`throttle(rate, key='user_or_ip', scope=None)` (`bazis.core.throttle`) is a FastAPI
+dependency that limits the requests of a route in a fixed window counted in the default
+cache (Redis): over the rate the request fails with 429 `ERR_THROTTLED` and the header
+`Retry-After` (seconds to the next window).
+
+```python
+from bazis.core.throttle import throttle
+
+class CertificateRouteSet(PermitRouteBase):
+    @http_get('/verify/', public=True, dependencies=[throttle('10/minute', key='ip')])
+    def action_verify(self, code: str, **kwargs): ...
+
+    @http_post('/export/', access_action=CrudAccessAction.VIEW,
+               dependencies=[throttle(lambda: settings.TRAINING_EXPORT_RATE)])
+    def action_export(self, **kwargs): ...
+```
+
+- `rate`: `'<number>/<second|minute|hour|day>'` (or `s`, `m`, `h`, `d`); a callable
+  returning one is read on every request (a dynamic setting of the project, editable in the
+  admin; None or `''` means unlimited). An invalid rate fails at import (a callable one on
+  the request).
+- `key`: `user_or_ip` counts the user of the route (`self.inject.user` of bazis-users) when
+  he is authenticated, else the IP address (`request.client.host`: run uvicorn with
+  `--proxy-headers`/`--forwarded-allow-ips` behind a proxy); `ip` always the IP address.
+  On a route that is not a route class `throttle` counts by the IP address.
+- `scope`: routes that name the same scope share the count; by default each route counts
+  its own.
+- An action declared `public=True` without a throttle of its own gets
+  `throttle(BAZIS_THROTTLE_PUBLIC, key='ip')` (`'30/minute'`, a dynamic setting; `''`
+  turns it off). A throttle the action declares replaces it.
+- `BAZIS_THROTTLE_ENABLED` (dynamic, true) turns all of them off;
+  `BAZIS_THROTTLE_EXEMPT` (an import path of a function `(request, ident) -> bool`,
+  `ident` is `user:<pk>` or `ip:<address>`) exempts requests, e.g. by a whitelist of the
+  project. The cache failing lets the requests through.
+- A limit on a business count (attempts per assignment, messages per day of a user) is an
+  invariant of the data, not a rate: keep it in `validate_item` (see Models).
 
 ### Several route sets of a model, read-only routes
 
@@ -671,6 +768,29 @@ another row): `point_distance(field, point)` and `point_within(field, point, met
 (`parse_point('37.62,55.75')`) or an expression of a point such as a `Subquery` of a point
 field).
 
+## E-mail
+
+The core configures the mail of Django: `MAILERS['default']` (Django 6.1) uses
+`BAZIS_EMAIL_BACKEND` (default `bazis.core.mail.DynamicSMTPEmailBackend`), an SMTP backend
+that reads the dynamic settings `BAZIS_EMAIL_HOST`, `BAZIS_EMAIL_PORT`,
+`BAZIS_EMAIL_HOST_USER`, `BAZIS_EMAIL_HOST_PASSWORD`, `BAZIS_EMAIL_USE_TLS`,
+`BAZIS_EMAIL_USE_SSL` (editable in the admin, `BS_BAZIS_EMAIL_*` as their initial values)
+every time it opens a connection; `DEFAULT_FROM_EMAIL` is the sender. Send with Django:
+
+```python
+from django.core.mail import send_mail
+
+send_mail(_('Your certificate'), text, None, [user.email])   # None: DEFAULT_FROM_EMAIL
+```
+
+- `BS_BAZIS_EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend` prints the mails
+  (development); tests get the `locmem` backend of Django (`django.core.mail.outbox`).
+- `send_mail` is synchronous: do not send many mails in a request; send them from a
+  background task (bazis-bg) after the commit (`transaction.on_commit`), and let a failure
+  of one address not stop the others (catch `smtplib.SMTPException` and log it), not a
+  bare `except Exception`.
+- Options set explicitly in `MAILERS['default']` override the dynamic settings.
+
 ## Rules
 
 - Every way of changing an object goes through the checks of an update: do not change
@@ -680,6 +800,11 @@ field).
 - Keep an invariant of an item (no overlap, a limit, a consistency of fields) in
   `validate_item` of the model, not in the hooks of a route: the hooks of create and
   update do not run for the relationships endpoints, the transits, the admin or `save()`.
+  An invariant over several rows locks their parent (`select_for_update()`) and has a
+  database constraint as the barrier (see Models).
+- An action open to anonymous users (`public=True`) is limited (the default
+  `BAZIS_THROTTLE_PUBLIC`, or its own `throttle`): never leave a guessable code or a costly
+  operation open without a rate limit.
 - Restrict the objects of a model that a user must not see in `restrict_queryset` of its
   default route, not only in `get_queryset`: `get_queryset` restricts the route's own
   list and item, the relationships, `included` and the filters through a relation of the
