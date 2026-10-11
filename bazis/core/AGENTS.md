@@ -23,6 +23,20 @@ Facts about a concrete project come from the project itself, not from this text:
 With bazis-mcp installed, the MCP server `bazis-mcp` gives the same facts and checks and the
 guides of all Bazis packages, also the ones not installed.
 
+### The sections
+
+Read a section with `package_guide("bazis", "<section>")` when the step at hand needs it;
+`guide_search` finds the part of a section that answers a question.
+
+| Section | Read it when |
+|---|---|
+| Project layout | you create a project or an app: its files, the media and static files, the `BS_*` settings and `BS_INSTALLED_APPS`, the translations (`bazis_messages`), the language of a request |
+| Models | you write a model: the mixins, `validate_item` and the invariants under concurrent requests, the declarations, `calc_property`, `UniqNumberMixin`, translated data, callable defaults |
+| Routes | you write a route set: its schemas (`fields`), `restrict_queryset`, the default route, custom routes and actions (`@http_get`, `@http_post`, `public`, `access_action`), the hooks of the writes and their order, the errors, throttle, several route sets of a model |
+| API conventions | a client builds a request: `filter`, `sort`, `search`, `include`, the errors, the points and the distances (`near`, `distance`) |
+| E-mail | the product sends mail |
+| Rules | before you write the code of a project, once: what every model, route and custom endpoint must respect |
+
 ## Project layout
 
 ```
@@ -36,6 +50,8 @@ sample/router.py         # root router, BS_BAZIS_ROUTER_MODULE=sample.router
 <app>/conf.py            # optional `Settings(BazisSettings)` of the app
 ```
 
+### Media and static files
+
 Files: the application redirects `MEDIA_URL` to `MEDIA_HOST_URL` (else `ADMIN_HOST_URL`)
 and `STATIC_URL` to `ADMIN_HOST_URL`. Without such a host (or when the redirect would
 point at the request itself: the same host, port and path, whatever the scheme), in DEBUG
@@ -46,6 +62,8 @@ production serve them by the web server or a media host (`BS_MEDIA_HOST_URL`); d
 mount `MEDIA_ROOT` in the project. The loop is detected against the Host of the request: a
 proxy in front of the application must preserve the Host header (not rewrite it to an
 internal address), or a host setting that names the public address redirects to itself.
+
+### Settings: `BS_*`
 
 Settings are environment variables with the `BS_` prefix (`BS_DEBUG`, `BS_SECRET_KEY`,
 `BS_DATABASES__DEFAULT__HOST`, lists and dicts as JSON). Apps, including Bazis packages,
@@ -62,6 +80,8 @@ the packages to load the settings from. Leave it unset; `'[]'` turns off the set
 of the ones the project uses (`bazis_doctor` warns, `bazis.W002`). Requirements:
 PostgreSQL with PostGIS and Redis (`BS_CACHES__DEFAULT__LOCATION`). `DEBUG` is true by
 default: set `BS_DEBUG=false` and `BS_SECRET_KEY` (required without DEBUG) in production.
+
+### Translations: `bazis_messages`
 
 Translations: the core puts into `LOCALE_PATHS` the `locale` directory of the project
 (`<BASE_DIR>/locale`), then those of the installed apps in the order of `INSTALLED_APPS`
@@ -122,6 +142,8 @@ The loop after a change of the texts: `make` → write the translations of `untr
 and `fuzzy` to a file → `apply` (keep the file in the project to reapply it after the next
 `make`).
 
+### Languages of a request
+
 Languages: `BS_LANGUAGES` (default `[["en", "English"]]`) and `BS_LANGUAGE_CODE` (default
 `en`, one of them). The language of a request is the query parameter `lang`, otherwise the
 header `Accept-Language` by weight, matched against `LANGUAGES` by code or base code
@@ -165,6 +187,9 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   makes the model a JSON:API resource; its type is `<app_label>.<class name in snake_case>`
   (`CarrierTask` in the app `crm` is `crm.carrier_task`).
 - A missing `Meta` is inherited from all parents (unlike plain Django).
+
+### Invariants of an item: `validate_item`
+
 - Invariants: override `validate_item(self, changes)` and raise a Django
   `ValidationError` (a dict by field) to refuse a write:
 
@@ -213,6 +238,9 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   write the item in `validate_item` (its own writes there are not validated again); items
   whose `validate_item` save each other are stopped after 10 validations of one item in one
   validation pass (`ImproperlyConfigured`). A model that does not override it pays nothing.
+
+### Invariants under concurrent requests
+
 - Invariants under concurrent requests ("no more than N per parent", "one open per
   parent", a number in the parent): a check by `count()` passes in every parallel request
   (each sees only the committed rows) unless the requests are serialized. Lock the parent
@@ -262,6 +290,9 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   a create that locks the same parent first and then the item — lock the parent first in
   both, or keep the item action from locking the parent, otherwise the two may deadlock
   (PostgreSQL aborts one of them with a 500).
+
+### Declarations in the code (`bazis.core.declare`)
+
 - Declarations in the code (for package authors): `bazis.core.declare` holds what
   bazis-permit (`roles.py`), bazis-statusy (`workflow.py`) and bazis-bg (`schedules.py`)
   share to apply `<app>/<module>.py` on `migrate`: `discover` the modules,
@@ -270,6 +301,9 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   with a warning; the model has a unique `slug` and a `managed` flag), `managed_orphans`
   (the managed objects no longer declared; each package decides their fate), and
   `ManagedAdminMixin` (`bazis.core.admin_abstract`, declared objects read-only).
+
+### Calculated fields: `calc_property`
+
 - Calculated fields: `@calc_property([...], as_filter=False)` from `bazis.core.utils.orm`
   declares what the query of the routes fetches for the property in the same pass; the
   values come to the item as attributes named by `alias` (else `source`):
@@ -339,6 +373,9 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   `filter_field=` a model field class for the lookups of another type); a calculated field
   does not sort and is not a search field. For a report, put the calculated fields on a
   proxy model with a route of its own (see Several route sets).
+
+### Numbers: `UniqNumberMixin`
+
 - Numbers: `UniqNumberMixin` (`bazis.core.models_abstract`) gives the item `uniq_number`, the
   next value of a database sequence (django-sequences, installed by the core) on its first
   save, and the property `number` (its string; override it to format, calling `super()`).
@@ -346,6 +383,9 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   several models one label to share the numbering). Show it with
   `include={'number': None}`, and exclude `uniq_number` from the create and update schemas
   (it is an ordinary integer field there).
+
+### Data named in every language
+
 - Data named in every language of the project (statuses, priorities, categories): a
   `TranslatedFieldWithFallback` of django-translated-fields (a dependency of the core, used
   by bazis-permit and bazis-statusy), a column per language:
@@ -367,6 +407,9 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   empty, not by the fallback: fill every language). The columns are edited in the admin
   (`translated_fields.TranslatedFieldAdmin`), or through the API when the route adds them
   (`include={'name_en': None, 'name_ru': None}`).
+
+### Callable defaults of the fields
+
 - A callable default of a model field (`auto_now`, `timezone.now`, `uuid.uuid4`, `dict`, a
   database lookup) is never evaluated by the schemas, neither when they are built nor when
   a request or a response is validated: the field is optional, without a `default` in the
@@ -412,6 +455,9 @@ class OrderRouteSet(JsonapiRouteBase):
   `readonly` of bazis-permit) is ignored by an update, and the relationships endpoints
   refuse it as a relation that is not in the schema: 403 `ERR_RELATIONSHIP_READONLY` with
   `source.parameter` `/related_field_name`.
+
+### The visibility of the objects for the other routes: `restrict_queryset`
+
 - Visibility of the objects of a model for the other routes: override the classmethod
   `restrict_queryset(qs, access_action, user=None, **kwargs)` of `RestrictedQsRouteMixin`
   (`bazis.core.routes_abstract.jsonapi`) in the default route of the model (the core
@@ -439,6 +485,9 @@ class OrderRouteSet(JsonapiRouteBase):
   `included` and the filter, sort and search through a relation; bazis-permit implements it from the permissions and
   restricts the items of its routes with it; the core never applies it to the list of a
   route by itself.
+
+### The default route of a model
+
 - The default route of a model (`Model.get_default_route()`) is the last defined route
   class of the model (abstract ones never), unless one declares `default_route = True` in
   its class body (not inherited). With several route sets of a model that restrict its
@@ -446,6 +495,9 @@ class OrderRouteSet(JsonapiRouteBase):
 - Logic around writes: the hooks of the route (below). They are for the side effects of
   the writes of the route; a rule about the item (an invariant) belongs in `validate_item`
   of the model (see Models), which no way of writing bypasses.
+
+### Custom routes and actions: `@http_get`, `@http_post`
+
 - Custom routes: `@http_get('/{item_id}/card/', kind=RouteKind.ITEM)` (decorators
   `http_get`, `http_post`, `http_put`, `http_patch`, `http_delete` from
   `bazis.core.routes_abstract.initial`, `RouteKind` from `bazis.core.schemas.enums`). The
@@ -491,6 +543,9 @@ class OrderRouteSet(JsonapiRouteBase):
   `route_declare(route, **facts)` (`bazis.core.routes_abstract.initial`; `kind`, `public`,
   `access_action`, `dependencies`; the path, the function, the callbacks stay):
   `action_transit = route_declare(StatusyRouteSetBase.action_transit, public=True)`.
+
+### Who may call an action: `public`, `access_action`
+
 - Who may call an action (a route of kind `other`): `public=True` opens it to anonymous
   users and limits it by `BAZIS_THROTTLE_PUBLIC` per user or IP address (see Request rate
   limits); `access_action=CrudAccessAction.<X>` (`bazis.core.schemas.enums`, or an
@@ -503,6 +558,9 @@ class OrderRouteSet(JsonapiRouteBase):
   collection, on the item (`{item_id}`, taken before the action runs) for an action of an
   item; with neither only authenticated users (`permit.W007` unless `public=False` says
   so). The core `/_id/` route declares `access_action=view`: it is open as `GET /`.
+
+### The errors in the OpenAPI
+
 - The OpenAPI operations document the errors they fail with (`SchemaErrors`): 400 and 422
   on the CRUD operations, 404 on every route of an item (`{item_id}` in the path), 403 on
   the relationships routes. The core has no authentication, so no 401 and no `security`.
@@ -514,6 +572,9 @@ class OrderRouteSet(JsonapiRouteBase):
   wins. Other facts of the operation (`security`, extensions) are added the same way by
   extending `route_openapi_extra(route_ctx)` (`x-bazis` is its base; never change the route
   context there). Document only what the route can really return.
+
+### Registering the route sets
+
 - Register: `router = BazisRouter(tags=['CRM'])`, `router.register(OrderRouteSet.as_router())`
   in `<app>/router.py`; the root router (`BazisRouter(prefix='/api/v1')`) registers the app
   routers by module name: `router.register('crm.router')` (its `router`). `register` also
@@ -835,6 +896,7 @@ send_mail(_('Your certificate'), text, None, [user.email])   # None: DEFAULT_FRO
 - Options set explicitly in `MAILERS['default']` override the dynamic settings.
 
 ## Rules
+
 
 - Every way of changing an object goes through the checks of an update: do not change
   relations in custom endpoints without the route (use `relationships_change`, which
