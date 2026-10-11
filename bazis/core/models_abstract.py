@@ -258,6 +258,16 @@ class InitialBase(CloneMixin, models.Model, metaclass=InitialMetaclass):
         """
         return FieldsInfo.get_fields_info(cls)
 
+    @classmethod
+    def get_fields_hidden(cls) -> set[str]:
+        """
+        The fields of the model that the schemas of the routes leave out unless a route
+        names them (`include`, `origin` of its `fields`): the internal columns a package
+        adds to the models of the project (the selector arrays of bazis-permit). Extend it
+        with `super()`.
+        """
+        return set()
+
     @cached_property
     def dict_data(self) -> dict:
         """

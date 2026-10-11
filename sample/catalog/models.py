@@ -79,6 +79,11 @@ class Memo(UniqNumberMixin, JsonApiMixin):
     def first_card(self) -> str | None:
         return self.first_card
 
+    # nothing to fetch: computed from the fields of the item
+    @calc_property([])
+    def headline(self) -> str:
+        return f'{self.title} ({self.code})' if self.code else self.title
+
 
 class Card(JsonApiMixin):
     """A model with a default ordering, counted by the memos."""

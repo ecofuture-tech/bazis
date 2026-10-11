@@ -139,8 +139,10 @@ class SchemaFactory:
                 except AttributeError:
                     continue
 
+            # the internal columns of the model are in a schema only when the route names them
+            hidden = self.model.get_fields_hidden()
             fields = list(attributes) + list(fields_info.forward_relations)
-            fields_map = {f_name: None for f_name in fields}
+            fields_map = {f_name: None for f_name in fields if f_name not in hidden}
 
         # add the extending dictionary
         if self.fields_struct:

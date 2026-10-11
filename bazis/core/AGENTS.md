@@ -373,6 +373,14 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   `filter_field=` a model field class for the lookups of another type); a calculated field
   does not sort and is not a search field. For a report, put the calculated fields on a
   proxy model with a route of its own (see Several route sets).
+- A value computed from the fields of the item itself (a full name, a label), with nothing
+  to fetch: `@calc_property([])` (or a plain `@property`) with the return annotation,
+  added to the schema the same way (`include={'full_name': None}`; read-only, a write
+  ignores it). It is computed for each item of a list, an item, the response of a write
+  and a sparse fieldset (`fields[app.model]=full_name`); `calc_property([])` keeps the
+  value on the item (a cached property), a `@property` computes it on each read. It is
+  not a filter, a sort or a search field: for that, an annotation (`FieldAnnotate`,
+  `as_filter=True`).
 
 ### Numbers: `UniqNumberMixin`
 
@@ -584,7 +592,10 @@ class OrderRouteSet(JsonapiRouteBase):
 ### Fields of a route
 
 `fields = {<action or None>: SchemaFields(...)}` (`None`: every action). By default a schema
-has the attributes and the forward relations of the model. `origin={...}` replaces them
+has the attributes and the forward relations of the model, without the internal columns a
+package adds to it (`Model.get_fields_hidden()`, such as the selector arrays
+`autogen_<field>_selectors` of bazis-permit): a route has one only when it names it in
+`include` or `origin`. `origin={...}` replaces them
 with the listed fields (a projection), `include={...}` adds fields (reverse relations,
 calculated fields, a `SchemaField` that overrides one), `exclude={...}` removes fields and
 wins over `include`. The entries of an action are read along the MRO of the route, the

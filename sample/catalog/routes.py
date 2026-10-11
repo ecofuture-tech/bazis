@@ -46,6 +46,7 @@ class MemoRouteSet(JsonapiRouteBase):
             include={
                 'cards': None,
                 'cards_count': None,
+                'headline': None,
                 'number': None,
             },
         ),

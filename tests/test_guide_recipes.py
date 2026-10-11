@@ -14,7 +14,8 @@
 
 """
 The recipes of the guide of the core (`bazis/core/AGENTS.md`): a calculated field in the
-schema of a route, the numbers of `UniqNumberMixin`, a report on a proxy model.
+schema of a route (also one with nothing to fetch, `calc_property([])`), the numbers of
+`UniqNumberMixin`, a report on a proxy model.
 """
 
 import pytest
@@ -44,6 +45,57 @@ def test_calculated_field_in_the_schema(sample_app):
     # not a filter: not declared `as_filter`
     response = client.get(f'{MEMOS}?filter=cards_count=1')
     assert response.status_code == 400, response.text
+
+
+@pytest.mark.django_db(transaction=True)
+def test_calculated_field_with_nothing_to_fetch(sample_app):
+    """
+    `@calc_property([])`: a property computed from the fields of the item, in the schema
+    with `include` (read-only, of the type it returns), in the list, an item, the response
+    of a write and a sparse fieldset.
+    """
+    client = get_api_client(sample_app)
+
+    schema = client.get(f'{MEMOS}schema_create/').json()
+    found = [
+        props['headline']
+        for it in schema['$defs'].values()
+        if 'headline' in (props := it.get('properties', {}))
+    ]
+    assert found and all(it.get('readOnly') and it['type'] == 'string' for it in found)
+
+    response = client.post(
+        MEMOS,
+        json_data={'data': {'type': 'catalog.memo', 'attributes': {'title': 'Plan', 'code': 'P1'}}},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()['data']['attributes']['headline'] == 'Plan (P1)'
+    Memo.objects.create(title='Notes')
+
+    response = client.get(f'{MEMOS}?sort=title')
+    assert response.status_code == 200, response.text
+    assert [it['attributes']['headline'] for it in response.json()['data']] == [
+        'Notes',
+        'Plan (P1)',
+    ]
+    memo = Memo.objects.get(title='Plan')
+    response = client.get(f'{MEMOS}{memo.pk}/?fields[catalog.memo]=headline')
+    assert response.status_code == 200, response.text
+    assert response.json()['data']['attributes'] == {'headline': 'Plan (P1)'}
+
+    # read-only: a write ignores it
+    response = client.patch(
+        f'{MEMOS}{memo.pk}/',
+        json_data={
+            'data': {
+                'id': str(memo.pk),
+                'type': 'catalog.memo',
+                'attributes': {'headline': 'Other'},
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()['data']['attributes']['headline'] == 'Plan (P1)'
 
 
 @pytest.mark.django_db(transaction=True)
