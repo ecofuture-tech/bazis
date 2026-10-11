@@ -414,8 +414,14 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
       @calc_property([FieldDynamic(source='tickets', func='Count', alias='open_tickets',
                                    query=Q(done=False))])
       def open_tickets(self) -> int:
-          return self.open_tickets
+          return self.tickets.filter(done=False).count()
   ```
+
+  The query of a route sets the attribute (by `alias`) on the item, so the method is not
+  called there; it is called by the other reads (the admin, the shell, the code of the
+  project, an item created or locked without the query of the route): compute the value
+  there. Never `return self.<alias>` when the alias is the name of the property: the
+  method calls itself again (`RecursionError`, a 500).
 
   `FieldAnnotate(source, query)`: an expression of the row. `FieldDynamic(source=<relation>,
   ...)`: with `func` (`'Count'`, `'Sum'`, ...; `source` may end with the field,
@@ -435,7 +441,8 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
           Request.objects.filter(department=OuterRef('pk'), status_id='approved')
           .order_by().values('department').annotate(total=Sum('amount')).values('total')))])
       def spent(self) -> Decimal | None:
-          return self.spent
+          return Request.objects.filter(department=self, status_id='approved').aggregate(
+              total=Sum('amount'))['total']
   ```
 
   The expressions see the filter context of the route
@@ -449,7 +456,7 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
       Ticket.objects.filter(agent=OuterRef('pk'), assignee=OuterRef('_user'), done=False)
       .order_by().values('agent').annotate(n=Count('pk')).values('n')))])
   def my_open(self) -> int | None:
-      return self.my_open
+      return None  # the user of the request is known only to the query of a route
   ```
 
   The value depends on the user of the request: it is right for the API, not for a cache
