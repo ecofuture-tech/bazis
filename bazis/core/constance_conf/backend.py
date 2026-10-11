@@ -33,11 +33,19 @@ class DatabaseBackend(DatabaseBackendBase):
     """
 
     def get(self, key):
-        if self._cache and self._cache.get(self._unset_key(key)):
+        if not self._cache:
+            return super().get(key)
+        # the cached value first: a marker of absence added late (after a parallel set())
+        # must not hide it
+        if (value := self._cache.get(self.add_prefix(key))) is not None:
+            return value
+        if self._cache.get(self._unset_key(key)):
             return None
         value = super().get(key)
-        if value is None and self._cache:
-            self._cache.add(self._unset_key(key), True)
+        if value is None and self._cache.add(self._unset_key(key), True):
+            if self._cache.get(self.add_prefix(key)) is not None:
+                # a value was set since the read: drop the marker, which set() deleted before
+                self._cache.delete(self._unset_key(key))
         return value
 
     def set(self, key, value):

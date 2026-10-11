@@ -135,7 +135,8 @@ def test_doctor_warns_of_the_missing_triggers(uninstalled):
     assert 'lacks 2 trigger(s)' in warning['message']
     assert URI in warning['message']
     assert 'manage.py migrate --database default' in warning['hint']
-    assert 'manage.py pgtrigger install --database default' in warning['hint']
+    assert 'manage.py pgtrigger install <uri> --database default' in warning['hint']
+    assert 'without a URI' in warning['hint']
 
     pgtrigger.install(URI)
     assert URI not in warnings_w008()[0]['message']

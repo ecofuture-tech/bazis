@@ -229,3 +229,44 @@ def test_the_absence_of_a_value_is_cached(monkeypatch):
         assert len(queries) == 0
     finally:
         cache.delete_many(keys)
+
+
+@pytest.mark.django_db
+def test_a_late_marker_of_absence_does_not_hide_a_value(monkeypatch):
+    """
+    A value set while a read misses it: the marker of absence the read adds after the set
+    is dropped, and a cached value is read before a marker.
+    """
+    from django.core.cache import caches
+
+    from constance import settings as constance_settings
+    from constance.backends.database import DatabaseBackend as DatabaseBackendBase
+
+    from bazis.core.constance_conf.backend import DatabaseBackend
+
+    monkeypatch.setattr(constance_settings, 'DATABASE_CACHE_BACKEND', 'default')
+    cache = caches['default']
+    marker = f'bazis_unset:{SENDER}'
+    keys = ['autofilled', SENDER, marker]
+    cache.delete_many(keys)
+    try:
+        backend, other = DatabaseBackend(), DatabaseBackend()
+        miss = DatabaseBackendBase.get
+
+        def get_then_set(self, key):
+            value = miss(self, key)
+            # another process sets the value after this read missed it
+            other.set(SENDER, 'office@example.com')
+            return value
+
+        monkeypatch.setattr(DatabaseBackendBase, 'get', get_then_set)
+        assert backend.get(SENDER) is None
+        monkeypatch.setattr(DatabaseBackendBase, 'get', miss)
+        assert cache.get(marker) is None
+        assert backend.get(SENDER) == 'office@example.com'
+
+        # a marker left with a cached value: the value wins
+        cache.set(marker, True)
+        assert backend.get(SENDER) == 'office@example.com'
+    finally:
+        cache.delete_many(keys)

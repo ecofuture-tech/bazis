@@ -67,8 +67,11 @@ def check_triggers_installed(app_configs, databases=None, **kwargs):
                     f'them outdated: {_shown(missing)}. The rules they keep do not work in this '
                     'database, while the tests (whose database has them) pass.',
                     hint=(
-                        f'Run `manage.py migrate --database {using}` (it installs them once the '
-                        f'migrations are applied) or `manage.py pgtrigger install --database {using}`.'
+                        f'Run `manage.py migrate --database {using}`: it installs them once the '
+                        'migrations are applied (or `manage.py pgtrigger install <uri> --database '
+                        f'{using}` for one). Not `pgtrigger install` without a URI: it also removes '
+                        'the triggers of pgtrigger that no model declares, also of another project '
+                        'that shares the database.'
                     ),
                     id='bazis.W008',
                 )

@@ -51,28 +51,15 @@ else
 
 fi
 
-echo "Stopping triggers"
-if python manage.py pgtrigger uninstall; then
- echo "Success: Stopping triggers"
-else
- echo "Error: Stopping triggers"
-#  exit 1
-fi
-
-
+# `migrate` installs the missing and changed triggers of pgtrigger once the migrations are
+# applied (bazis 2.16). Before a migration that removes or renames a column a trigger reads,
+# uninstall that trigger by its URI, e.g. `python manage.py pgtrigger uninstall
+# app_label.Model:name`. Never `pgtrigger uninstall` or `pgtrigger install` without a URI: it
+# also removes the triggers of pgtrigger of the other projects that share the database.
 echo "Running migrations"
 if python manage.py migrate; then
   echo "Success: migrations"
 else
   echo "Error: migrations"
-  exit 1
-fi
-
-
-echo "Installing triggers"
-if python manage.py pgtrigger install; then
-  echo "Success: Installing triggers"
-else
-  echo "Error: Installing triggers"
   exit 1
 fi

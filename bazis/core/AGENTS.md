@@ -479,16 +479,20 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
 - `migrate` never removes a trigger: one no model declares any more (renamed, its model
   deleted) or of another project in the same database keeps running. `bazis_doctor`
   warns of the missing or outdated triggers and of the ones no model declares
-  (`bazis.W008`): `manage.py migrate` (or `manage.py pgtrigger install <uri>`) installs
-  the first, `manage.py pgtrigger prune` removes the others (`manage.py pgtrigger
-  uninstall <uri>` one of them); `manage.py pgtrigger ls` lists them all.
+  (`bazis.W008`): `manage.py migrate` installs the first (`manage.py pgtrigger install
+  <uri>` one of them), `manage.py pgtrigger prune` removes the others; `manage.py
+  pgtrigger ls` lists them all. `manage.py pgtrigger install` and `uninstall` without a
+  URI also remove every trigger of pgtrigger that no model declares, also the ones of
+  another project that shares the database: name the triggers (`app_label.Model:name`).
 - The triggers stay installed while the next migrations run, as the code of their
   version: they fire on the writes of a data migration (`RunPython`, `RunSQL`), and one
   that reads a column a migration removes or renames fails those writes (a condition of a
   trigger on the column even refuses the removal). Run such a migration after `manage.py
-  pgtrigger uninstall` (all of them, or the URIs of the affected ones); the `migrate`
-  that follows installs them again. The deploy script of the sample uninstalls them
-  before every `migrate`.
+  pgtrigger uninstall <uri>` of the affected triggers; the `migrate` that follows installs
+  them again.
+- Deploy: run `migrate` as a step of its own before the processes of the new version
+  start, never from the processes of the old version once the new one migrated: an old
+  `migrate` sees the triggers of the new version as changed and installs its own again.
 
 ### Calculated fields: `calc_property`
 
