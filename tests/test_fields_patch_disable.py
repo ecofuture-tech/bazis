@@ -104,3 +104,73 @@ def test_inclusion_of_the_update_hides_the_disabled_required_field(sample_app):
     create = ParentEntityRouteSet.schema_factories[CrudApiAction.CREATE]
     inclusion = create.inclusions_factory_with_default['dependent_entities']
     assert 'dependent_name' in names(inclusion, {'dependent_name': {'disable'}})
+
+
+def test_own_required_keeps_the_disabled_field(factories):
+    """
+    A field whose own restrictions say `required` stays in the schema although `__all__`
+    (or the field itself) disables it, as before bazis 2.16: the permission names the field.
+    """
+    from bazis.core.schemas.enums import CrudApiAction
+
+    for action in (CrudApiAction.UPDATE, CrudApiAction.CREATE):
+        factory = factories[action]
+        fields = {
+            f.name: f
+            for f in factory.fields_patch(
+                {'__all__': {'disable'}, OPTIONAL: {'required', 'notnull'}}
+            )
+        }
+        assert set(fields) == {OPTIONAL} | ({REQUIRED} if action == CrudApiAction.CREATE else set())
+        assert fields[OPTIONAL].required
+        assert fields[OPTIONAL].nullable is False
+        assert OPTIONAL in names(factory, {OPTIONAL: {'required', 'disable'}})
+
+    # in a view the restrictions of requiredness do not apply: the field is hidden
+    assert names(factories[CrudApiAction.RETRIEVE], {'__all__': {'disable'}, OPTIONAL: {'required'}}) == set()
+
+
+def test_required_of_all_does_not_keep_a_disabled_field(factories):
+    """`__all__.required` with `<field>.disable`: the field is hidden from an update."""
+    from bazis.core.schemas.enums import CrudApiAction
+
+    restricts = {'__all__': {'required'}, REQUIRED: {'disable'}, OPTIONAL: {'disable'}}
+    shown = names(factories[CrudApiAction.UPDATE], restricts)
+    assert REQUIRED not in shown
+    assert OPTIONAL not in shown
+    assert 'child_is_active' in shown
+    # the create keeps the fields required there, by the model or by `__all__` (as before)
+    shown = names(factories[CrudApiAction.CREATE], restricts)
+    assert {REQUIRED, OPTIONAL} <= shown
+
+
+def test_own_required_keeps_the_disabled_field_in_another_action(sample_app):
+    """
+    An operation of a package (the transit of bazis-statusy, which validates the stored
+    item): its own `required` keeps a field `__all__` disables, the requiredness of the
+    model alone does not.
+    """
+    from functools import cached_property
+
+    from entity.routes import ChildEntityRouteSet
+
+    from bazis.core.schemas.enums import AccessAction, ApiAction
+    from bazis.core.schemas.factory import SchemaFactory
+
+    class Access(AccessAction):
+        CHECKUP = 'checkup'
+
+    class Action(ApiAction):
+        CHECKUP = 'checkup'
+
+        @cached_property
+        def access_action(self):
+            return Access.CHECKUP
+
+    factory = SchemaFactory(
+        route_cls=ChildEntityRouteSet, model=ChildEntityRouteSet.model, api_action=Action.CHECKUP
+    )
+    assert names(factory, {'__all__': {'disable'}, OPTIONAL: {'required', 'notnull'}}) == {OPTIONAL}
+    assert names(factory, {'__all__': {'disable'}}) == set()
+    assert names(factory, {'__all__': {'required'}, OPTIONAL: {'disable'}}) >= {REQUIRED}
+    assert OPTIONAL not in names(factory, {'__all__': {'required'}, OPTIONAL: {'disable'}})
