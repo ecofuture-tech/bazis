@@ -44,7 +44,7 @@ from bazis.core.errors import (
     JsonApiRequestValidationError,
     SchemaErrors,
 )
-from bazis.core.item_validation import defer_validate_item
+from bazis.core.item_validation import defer_validate_item, lock_on_write, lock_parents
 from bazis.core.models_abstract import JsonApiMixin
 from bazis.core.routes_abstract.context import RouteContext
 from bazis.core.routes_abstract.initial import (
@@ -139,7 +139,8 @@ class JsonapiRouteBase(InitialRouteBase):
     filters_aliases: dict[str, str] = {}
 
     item: JsonApiMixin | None = None
-    #: the item was taken with `set_item(with_lock=True)`
+    #: the item was taken with `set_item(with_lock=True)` (after the parents of its
+    #: `lock_on_write`)
     item_locked: bool = False
     schema_defaults: dict[ApiAction, type[BaseModel]] = None
     schema_responses_defaults: dict[ApiAction, type[BaseModel]] = None
@@ -842,6 +843,12 @@ class JsonapiRouteBase(InitialRouteBase):
         `with_lock` while it was not taken locked: then it is taken again, locked (`FOR NO
         KEY UPDATE`, until the end of the transaction of the request). bazis-permit takes the
         item of an action that declares `access_action` before the action runs.
+
+        A model with `lock_on_write` has its parents locked before the item, in the order
+        of a create or an update of its parent: by the values of the item read without a
+        lock (of the item the route holds, under the same id), then again by those of the
+        locked item (the same rows, unless the item moved meanwhile: then the new parent is
+        locked after the item, and a deadlock is answered 409 with `meta.retry`).
         """
         only_fields = getattr(
             self.inject, f'fields_{self.model.get_resource_label().replace(".", "_")}', None
@@ -854,11 +861,27 @@ class JsonapiRouteBase(InitialRouteBase):
             and only_fields is None
         ):
             return self.item
+        locks_parents = with_lock and bool(getattr(self.model, 'lock_on_write', ()))
+        if locks_parents:
+            # the parents first, by the values read without a lock (no item: no lock, the
+            # locked query answers 404)
+            attnames = [
+                self.model._meta.get_field(name).attname for name in self.model.lock_on_write
+            ]
+            if self.item is not None and str(self.item.pk) == str(item_id):
+                values = {attname: getattr(self.item, attname) for attname in attnames}
+            else:
+                values = self.get_queryset_for_item(item_id).values(*attnames).first()
+            if values:
+                lock_parents(self.model, values)
         qs = self.get_queryset_for_item(item_id, with_lock)
         self.item_locked = with_lock
         self.item = qs.first()
         if not self.item:
             raise HTTPException(status_code=404, detail=_('Item not found'))
+        if locks_parents:
+            # by the values of the locked item: held already unless it moved meanwhile
+            lock_on_write(self.item)
         self.item.only_fields = only_fields
         return self.item
 

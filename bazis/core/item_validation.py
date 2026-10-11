@@ -348,26 +348,49 @@ def defer_validate_item(
         _CTX_SCOPE.reset(token)
 
 
-def lock_on_write(item, using=None):
+def lock_parents(model, values: dict, using=None):
     """
-    Locks the rows the foreign keys `lock_on_write` of the model of the item point to
-    (`SELECT ... FOR NO KEY UPDATE`, the lock of `set_item(..., with_lock=True)`) by their
-    current values, in their order; an empty one is skipped. The locks are held until the
-    end of the transaction, and a row the transaction holds already is not waited for.
+    Locks the rows the foreign keys `lock_on_write` of `model` point to (`SELECT ... FOR NO
+    KEY UPDATE`, the lock of `set_item(..., with_lock=True)`), by their values in `values`
+    (by attname), in their order; an empty or a missing value is skipped. The locks are
+    held until the end of the transaction, and a row the transaction holds already is not
+    waited for.
     """
-    model = type(item)
-    using = using or router.db_for_write(model, instance=item)
+    using = using or router.db_for_write(model)
     for name in model.lock_on_write:
         field = model._meta.get_field(name)
         if not field.concrete or not (field.many_to_one or field.one_to_one):
             raise ImproperlyConfigured(
                 f'{model._meta.label}.lock_on_write: {name} is not a foreign key'
             )
-        value = getattr(item, field.attname)
+        value = values.get(field.attname)
         if value is None:
             continue
         rows = field.related_model._base_manager.db_manager(using)
         rows.select_for_update(no_key=True).filter(**{field.target_field.name: value}).exists()
+
+
+def lock_on_write(item, using=None):
+    """
+    Locks the parents of the item (`lock_parents`) by the current values of its foreign
+    keys `lock_on_write`: the new parent when the item moves.
+    """
+    model = type(item)
+    values = {
+        field.attname: getattr(item, field.attname)
+        for field in (model._meta.get_field(name) for name in model.lock_on_write)
+        if field.concrete
+    }
+    lock_parents(model, values, using or router.db_for_write(model, instance=item))
+
+
+def saves_items(model) -> bool:
+    """
+    Whether the items of the model are saved one by one where a bulk write would do (the
+    linked items of a reverse foreign key): the model validates its items or locks their
+    parents before a write (`lock_on_write`).
+    """
+    return validates_items(model) or bool(getattr(model, 'lock_on_write', ()))
 
 
 def item_save(item, save, *, update_fields=None, using=None):
@@ -496,7 +519,8 @@ def reverse_items_link(rel, action: str, objs: Iterable, *, clear: bool = False)
     Changes a reverse foreign key (`rel`, the manager of the reverse relation) item by
     item, as `add()`, `remove()` or `set()` (`action`) with `bulk=False`, but each linked
     or unlinked item is saved with `save(update_fields=[<foreign key>])`: only its foreign
-    key is written, and the save is validated (`validate_item`). An item to unlink whose
+    key is written, and the save is validated (`validate_item`) after the parents of the
+    item are locked (`lock_on_write`). An item to unlink whose
     foreign key cannot be null is left as it is (as `set()` of Django does).
     """
     field = rel.field

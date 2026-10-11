@@ -28,7 +28,7 @@ from pydantic import (
 
 from pydantic_core import PydanticUndefined
 
-from bazis.core.item_validation import reverse_items_link, validates_items
+from bazis.core.item_validation import reverse_items_link, saves_items
 from bazis.core.models_abstract import InitialBase, JsonApiMixin
 from bazis.core.utils.functools import get_attr
 from bazis.core.utils.geo import geojson_geometry
@@ -190,8 +190,9 @@ class JsonApiDataSchema(BaseModel):
         for f_name, objs in m2m.items():
             rel_obj = getattr(item, f_name)
             rel_info = factory.fields[f_name].field_db_rel
-            if rel_info.reverse and not rel_info.is_m2m and validates_items(rel_obj.model):
+            if rel_info.reverse and not rel_info.is_m2m and saves_items(rel_obj.model):
                 # the linked items are saved one by one (their foreign key), to validate them
+                # and to lock their parents first (lock_on_write)
                 reverse_items_link(rel_obj, 'set', objs)
             else:
                 rel_obj.set(objs)

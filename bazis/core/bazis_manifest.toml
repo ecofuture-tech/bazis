@@ -26,7 +26,7 @@ use_when = "an invariant of an item (no overlap, a limit, a consistency of field
 [[extension_points]]
 name = "JsonApiMixin.lock_on_write"
 import = "bazis.core.models_abstract.JsonApiMixin"
-use_when = "an invariant counted under the lock of a parent (no more than N per parent, a unique value per parent): lock_on_write = ('<fk>',) locks the row of the foreign key (FOR NO KEY UPDATE, by its current value) before every write of an item, whatever writes it, so validate_item counts under the lock and every path takes the locks in the order of an action that locks the parent first"
+use_when = "an invariant counted under the lock of a parent (no more than N per parent, a unique value per parent): lock_on_write = ('<fk>',) locks the row of the foreign key (FOR NO KEY UPDATE, by its current value) before every write of an item, whatever writes it, so validate_item counts under the lock and every path takes the locks in the order of an action that locks the parent first (also the items a reverse foreign key links, and set_item(item_id, with_lock=True), which locks the parents before the item)"
 
 [[extension_points]]
 name = "defer_validate_item"

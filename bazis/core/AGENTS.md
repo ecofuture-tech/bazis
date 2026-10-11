@@ -282,19 +282,29 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   rows they point to (`SELECT ... FOR NO KEY UPDATE`, by the current values: the new
   parent when the item moves; an empty key locks nothing) before every write of an item,
   whatever writes it: the create and update routes, the actions, the admin, scripts,
-  commands, background tasks, the transits of bazis-statusy (every `save()`). The lock
-  holds until the commit: the next write under the same parent waits, then its
-  `validate_item` counts the committed row. Do not lock the parent again in
-  `validate_item`: the lock is held. Not covered, as with `validate_item`:
-  `QuerySet.update()`, `bulk_create()`, `bulk_update()` and raw SQL.
+  commands, background tasks, the transits of bazis-statusy (every `save()`), and the
+  items a reverse foreign key links (the relationships endpoints, the create and the
+  update of the parent with the relation: they are saved one by one then, not by one bulk
+  update). The lock holds until the commit: the next write under the same parent waits,
+  then its `validate_item` counts the committed row. Do not lock the parent again in
+  `validate_item`: the lock is held. Not covered: `QuerySet.update()`, `bulk_create()`,
+  `bulk_update()`, raw SQL, `add()`/`set()` of a many-to-many manager (the rows of the
+  `through` model are written without `save()`) and the deletion (it does not lock the
+  parent: a deletion does not break a limit counted in `validate_item`).
 
-  The order of the locks matters as much as the locks. An action that locks the parent
-  itself and then creates the item (`Vacancy.objects.select_for_update(no_key=True)
-  .get(pk=data.vacancy)`, or `self.set_item(item_id, with_lock=True)` on the route of the
-  parent) takes them in the order of the create route. Locking the parent only in
-  `validate_item`, which runs after the insert, inverts it: such an action and a create of
-  the same unique value deadlock, and PostgreSQL aborts one of them (409 `ERR_CONFLICT`
-  with `meta.retry`, see Errors).
+  The order of the locks matters as much as the locks: the parent before the item,
+  everywhere. An action that locks the parent itself and then creates the item
+  (`Vacancy.objects.select_for_update(no_key=True).get(pk=data.vacancy)`, or
+  `self.set_item(item_id, with_lock=True)` on the route of the parent) takes them in the
+  order of the create route. Locking the parent only in `validate_item`, which runs after
+  the insert, inverts it: such an action and a create of the same unique value deadlock,
+  and PostgreSQL aborts one of them (409 `ERR_CONFLICT` with `meta.retry`, see Errors).
+  `set_item(item_id, with_lock=True)` on the route of a model with `lock_on_write` locks
+  its parents before the item (bazis 2.16): an action of the item (a write action that
+  bazis-permit checks with `access_action`, a transit of bazis-statusy) runs in the order
+  of a create and of a write of the parent that saves its items. An action that locks a
+  row of the item directly (`Model.objects.select_for_update().get()`), past `set_item`,
+  locks the parent first itself.
 
 - A number in the parent is taken before the write, so `save()` locks the parent before
   it computes the number (the lock of `lock_on_write` that follows is the same lock: it
@@ -335,12 +345,14 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   Errors). An action whose item bazis-permit already took (`access_action`) has it in
   `self.item`: locked for POST/PUT/PATCH/DELETE (`set_item(item_id, with_lock=True)`
   returns it without another query), unlocked for GET (`set_item(..., with_lock=True)`
-  reads it again, locked). Take the locks in one order everywhere: such an action holds
-  its item first, so an action that also locks the parent (or another row) must not race
-  a create that locks the same parent first and then the item — lock the parent first in
-  both, or keep the item action from locking the parent. A deadlock the code did not
-  avoid answers 409 `ERR_CONFLICT` with `meta.retry` (the client may send the request
-  again); it is a safety net, not the design.
+  reads it again, locked); with `lock_on_write` its parents were locked before it. Take
+  the locks in one order everywhere, the parent before the item: an action of a model
+  without `lock_on_write` that holds its item and then locks the parent (or another row)
+  must not race a write that locks the same parent first and then the item — declare the
+  parent in `lock_on_write`, or keep the item action from locking the parent. A deadlock
+  the code did not avoid (also an item moved to another parent while an action of it
+  waits for the lock) answers 409 `ERR_CONFLICT` with `meta.retry` (the client may send
+  the request again); it is a safety net, not the design.
 
 - Test every such invariant with parallel requests: `parallel(count, func)` or
   `parallel([f1, f2, ...])` of bazis-test-utils runs the calls at once in threads and

@@ -20,9 +20,13 @@ aborts for a parallel one (a deadlock, a serialization failure) is 409 `ERR_CONF
 """
 
 import threading
+import time
+from contextlib import contextmanager
+from types import SimpleNamespace
 
 from django.core.exceptions import ImproperlyConfigured
-from django.db import OperationalError, connection
+from django.db import OperationalError, connection, transaction
+from django.db.backends.signals import connection_created
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 
@@ -31,7 +35,7 @@ from fastapi.testclient import TestClient
 import pytest
 from bazis_test_utils.utils import get_api_client, parallel
 from catalog.models import Card, Memo, Reader, Step
-from catalog.routes import MemoRouteSet
+from catalog.routes import MemoRouteSet, ReaderRouteSet
 from entity.models import Country
 from psycopg.errors import DeadlockDetected, QueryCanceled, SerializationFailure
 
@@ -334,3 +338,172 @@ def test_lock_on_write_without_validate_item(monkeypatch):
     with pytest.raises(ImproperlyConfigured, match='name is not a foreign key'):
         Card.objects.create(name='Typo')
     assert not Card.objects.filter(name='Typo').exists()
+
+
+def rename(app, reader, email):
+    """An action of the reader (set_item with a lock, as the actions bazis-permit checks)."""
+    return TestClient(app, raise_server_exceptions=False).post(
+        f'/api/v1/catalog/reader/{reader.pk}/rename/', json={'email': email}
+    )
+
+
+def normalize(app, memo):
+    """An action of the memo: the memo locked, then each of its readers saved."""
+    return TestClient(app, raise_server_exceptions=False).post(
+        f'/api/v1/catalog/memo/{memo.pk}/normalize/'
+    )
+
+
+def retried(responses) -> list:
+    return [
+        r for r in responses if r.status_code == 409 and r.json()['errors'][0].get('meta')
+    ]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_action_of_the_item_locks_the_parent_first(sample_app, monkeypatch):
+    """
+    An action of an item that takes it locked (`set_item(with_lock=True)`, as bazis-permit
+    does for the write actions of an item) locks the parent of `lock_on_write` before the
+    item: it waits for a write of the parent that saves the item, no deadlock. The two are
+    put in the order that deadlocked before (the item locked first, then its parent): the
+    action of the memo holds the memo and saves the reader after the action of the reader
+    started.
+    """
+    memo = Memo.objects.create(title='Plan')
+    reader = Reader.objects.create(memo=memo, email='A@Example.com')
+    parent_holds = threading.Event()
+
+    def save(self, *args, **kwargs):
+        if isinstance(JsonApiMixin.CTX_ROUTE.get(), MemoRouteSet):
+            parent_holds.set()
+            # the action of the reader runs meanwhile, up to the lock it waits for
+            time.sleep(0.5)
+        JsonApiMixin.save(self, *args, **kwargs)
+
+    monkeypatch.setattr(Reader, 'save', save)
+
+    def rename_later():
+        assert parent_holds.wait(10)
+        return rename(sample_app, reader, 'B@Example.com')
+
+    responses = parallel([lambda: normalize(sample_app, memo), rename_later])
+
+    assert [r.status_code for r in responses] == [200, 200], [r.content for r in responses]
+    reader.refresh_from_db()
+    # the action of the reader waited for the memo: it wrote last
+    assert reader.email == 'B@Example.com'
+
+
+@pytest.mark.django_db(transaction=True)
+def test_actions_of_the_parent_and_of_the_items_race(sample_app):
+    """
+    Writes of the parent that save its items race the actions of the items: no deadlock (a
+    409 with `meta.retry`), no 500.
+    """
+    for round_ in range(3):
+        memo = Memo.objects.create(title=f'Plan {round_}')
+        readers = [
+            Reader.objects.create(memo=memo, email=f'R{i}@Example.com') for i in range(3)
+        ]
+        calls = [lambda memo=memo: normalize(sample_app, memo)] * 3 + [
+            lambda reader=reader: rename(sample_app, reader, f'N{reader.pk}@Example.com')
+            for reader in readers
+        ]
+        responses = parallel(calls)
+        assert [r.status_code for r in responses] == [200] * 6, [r.content for r in responses]
+        assert not retried(responses)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_set_item_locks_the_parents_before_the_item():
+    """
+    `set_item(with_lock=True)` on a route of a model with `lock_on_write`: the parent by the
+    value read without a lock, the item, the parent again (held: no wait).
+    """
+    memo = Memo.objects.create(title='Plan')
+    reader = Reader.objects.create(memo=memo, email='a@example.com')
+    route = ReaderRouteSet(inject=SimpleNamespace(), route_ctx=SimpleNamespace(store={}))
+    with transaction.atomic(), CaptureQueriesContext(connection) as queries:
+        assert route.set_item(str(reader.pk), with_lock=True) == reader
+    assert locks_and_inserts(queries) == [
+        'lock catalog_memo',
+        'lock catalog_reader',
+        'lock catalog_memo',
+    ]
+    lock = next(q['sql'] for q in queries if 'FOR NO KEY UPDATE' in q['sql'])
+    assert f'= {memo.pk}' in lock
+
+
+@contextmanager
+def queries_of_the_requests():
+    """The SQL of the connections opened inside the block (those of the endpoints)."""
+    found = []
+
+    def record(execute, sql, params, many, context):
+        found.append(sql)
+        return execute(sql, params, many, context)
+
+    def created(sender, connection, **kwargs):
+        connection.execute_wrappers.append(record)
+
+    connection_created.connect(created, weak=False)
+    try:
+        yield found
+    finally:
+        connection_created.disconnect(created)
+
+
+def parent_locked_before_each_update(sqls, table) -> bool:
+    """Each UPDATE of `table` right after a lock of the memo (lock_on_write of the item)."""
+    updates = [i for i, sql in enumerate(sqls) if sql.startswith(f'UPDATE "{table}"')]
+    return bool(updates) and all(
+        'FOR NO KEY UPDATE' in sqls[i - 1] and '"catalog_memo"' in sqls[i - 1] for i in updates
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('path', ['relationships', 'update', 'create'])
+def test_linked_by_a_reverse_relation(sample_app, monkeypatch, path):
+    """
+    The items a reverse foreign key links (the relationships endpoints, the update and the
+    create of the parent with the relation) are saved one by one with their lock, also of a
+    model without validate_item that declares `lock_on_write` (`Card`), not by a bulk
+    update without the lock.
+    """
+    monkeypatch.setattr(Card, 'lock_on_write', ('memo',))
+    memo = Memo.objects.create(title='Plan')
+    cards = [Card.objects.create(name=f'Card {i}') for i in range(2)]
+    linked = [{'type': 'catalog.card', 'id': str(card.pk)} for card in cards]
+    client = get_api_client(sample_app)
+    with queries_of_the_requests() as queries:
+        if path == 'relationships':
+            response = client.post(
+                f'/api/v1/catalog/memo/{memo.pk}/relationships/cards', json_data={'data': linked}
+            )
+        elif path == 'update':
+            response = client.patch(
+                f'/api/v1/catalog/memo/{memo.pk}/',
+                json_data={
+                    'data': {
+                        'id': str(memo.pk),
+                        'type': 'catalog.memo',
+                        'relationships': {'cards': {'data': linked}},
+                    }
+                },
+            )
+        else:
+            response = client.post(
+                '/api/v1/catalog/memo/',
+                json_data={
+                    'data': {
+                        'type': 'catalog.memo',
+                        'attributes': {'title': 'New'},
+                        'relationships': {'cards': {'data': linked}},
+                    }
+                },
+            )
+    assert response.status_code in (200, 201, 204), response.text
+    assert parent_locked_before_each_update(queries, 'catalog_card'), queries
+    assert Card.objects.exclude(memo=None).count() == 2
+

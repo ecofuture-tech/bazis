@@ -78,6 +78,18 @@ class MemoRouteSet(JsonapiRouteBase):
         reader = apps.get_model('catalog.Reader').objects.create(memo=memo, email=data.email)
         return SubscribeResponse(id=reader.pk)
 
+    @http_post('/{item_id}/normalize/', response_model=SubscribeResponse)
+    def action_normalize(self, item_id: str, **kwargs):
+        """
+        The e-mails of the readers of a memo in lower case: the memo is locked, then each
+        reader is saved (a write of the parent, then of its children).
+        """
+        memo = self.set_item(item_id, with_lock=True)
+        for reader in memo.readers.order_by('pk'):
+            reader.email = reader.email.lower()
+            reader.save()
+        return SubscribeResponse(id=memo.pk)
+
 
 class CardRouteSet(JsonapiRouteBase):
     model = apps.get_model('catalog.Card')
@@ -89,6 +101,17 @@ class StepRouteSet(JsonapiRouteBase):
 
 class ReaderRouteSet(JsonapiRouteBase):
     model = apps.get_model('catalog.Reader')
+
+    @http_post('/{item_id}/rename/', response_model=SubscribeResponse)
+    def action_rename(self, item_id: str, data: SubscribeRequest, **kwargs):
+        """
+        A new e-mail of a reader: an action of the item, which takes it locked (as the
+        actions bazis-permit checks); its memo is locked first (lock_on_write).
+        """
+        reader = self.set_item(item_id, with_lock=True)
+        reader.email = data.email
+        reader.save()
+        return SubscribeResponse(id=reader.pk)
 
 
 class BusyMemoRouteSet(JsonapiRouteBase):
