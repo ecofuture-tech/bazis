@@ -113,7 +113,7 @@ def test_migrate_keeps_the_triggers_no_model_declares(db):
     assert triggers.triggers_not_declared() == ['validation_room:pgtrigger_foreign_abc12']
     (warning,) = warnings_w008()
     assert 'no model declares: validation_room:pgtrigger_foreign_abc12' in warning['message']
-    assert 'manage.py pgtrigger prune --database default' in warning['hint']
+    assert 'DROP TRIGGER <name> ON <table>' in warning['hint']
 
 
 def test_flush_does_not_install_them(uninstalled):

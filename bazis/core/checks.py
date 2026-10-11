@@ -82,8 +82,10 @@ def check_triggers_installed(app_configs, databases=None, **kwargs):
                     f'The database {using} has {len(stale)} trigger(s) of pgtrigger that no model '
                     f'declares: {_shown(stale)}. They still run on the writes of their tables.',
                     hint=(
-                        'If they are not of another project that shares the database, remove them '
-                        f'with `manage.py pgtrigger prune --database {using}` (migrate keeps them).'
+                        'migrate keeps them. If one is not of another project that shares the '
+                        'database, remove it by its name: `DROP TRIGGER <name> ON <table>` (and '
+                        '`DROP FUNCTION <name>()`); not `manage.py pgtrigger prune`, which removes '
+                        'them all, also the ones of the other projects.'
                     ),
                     id='bazis.W008',
                 )
