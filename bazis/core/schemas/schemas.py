@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import re
 from collections.abc import Iterable
 from itertools import chain
@@ -38,6 +39,9 @@ from bazis.core.utils.query_complex import QueryToOrm
 from .enums import CrudAccessAction
 from .utils import get_types
 from .validators import field_validate, model_validate
+
+
+logger = logging.getLogger(__name__)
 
 
 JsonApiDataT = TypeVar('JsonApiDataT')
@@ -369,13 +373,36 @@ class JsonApiTopListSchema[JsonApiDataT, JsonApiMetaT](BaseModel):
             return cls._validate(**data)
         return data
 
+    @staticmethod
+    def _item_type(types_map: dict, item) -> type[BaseModel]:
+        """
+        The member of the schema of an object of the list: the one of its `_schema_key` (the
+        fields of the object: bazis-permit). An object whose key has no member is shown
+        with the member without a key, the fields shown in every object, and logged: a key
+        the schema does not know is a defect of the package that sets it, and an error
+        would make the whole list a 500.
+        """
+        key = get_attr(item, '_schema_key')
+        if (item_type := types_map.get(key)) is not None:
+            return item_type
+        if key is None or (item_type := types_map.get(None)) is None:
+            raise KeyError(key)
+        logger.warning(
+            'The list schema has no member for the _schema_key %r of %s %s: the member of '
+            'the fields shown in every object is used',
+            key,
+            type(item).__name__,
+            get_attr(item, 'pk'),
+        )
+        return item_type
+
     @classmethod
     def _validate(cls, data: list | QuerySet, links: PaginationLinks = None, meta=None):
         # determine the list of element types
         elem_types = get_types(cls.model_fields['data'])
 
         types_map = {get_attr(elem_type, 'schema_key'): elem_type for elem_type in elem_types}
-        data_list = [types_map[get_attr(item, '_schema_key')].model_validate(item) for item in data]
+        data_list = [cls._item_type(types_map, item).model_validate(item) for item in data]
 
         return {
             'data': data_list,

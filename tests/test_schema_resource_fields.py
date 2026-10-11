@@ -17,6 +17,8 @@
 none (a package that hides every field, as the field permissions of bazis-permit).
 """
 
+import pytest
+
 
 def test_empty_fields_are_none(sample_app):
     from entity.routes import ChildEntityRouteSet
@@ -35,3 +37,27 @@ def test_empty_fields_are_none(sample_app):
     assert 'child_name' in every
     assert schema_fields(SchemaResourceBuilder(factory, fields=None).build()) >= {'child_name'}
     assert schema_fields(SchemaResourceBuilder(factory, fields=[]).build()) == set()
+
+
+def test_list_object_of_an_unknown_schema_key(caplog):
+    """
+    `JsonApiTopListSchema`: an object takes the member of its `_schema_key`; one whose key
+    has no member takes the member without a key (the fields shown in every object) and is
+    logged, not a 500; without such a member it is an error.
+    """
+    from types import SimpleNamespace
+
+    from bazis.core.schemas.schemas import JsonApiTopListSchema
+
+    every, some = object(), object()
+    types_map = {None: every, 1: some}
+    item = SimpleNamespace(pk=7, _schema_key=1)
+    assert JsonApiTopListSchema._item_type(types_map, item) is some
+    assert JsonApiTopListSchema._item_type(types_map, SimpleNamespace(pk=8)) is every
+    assert not caplog.records
+
+    item._schema_key = 5
+    assert JsonApiTopListSchema._item_type(types_map, item) is every
+    assert 'no member for the _schema_key 5 of SimpleNamespace 7' in caplog.text
+    with pytest.raises(KeyError):
+        JsonApiTopListSchema._item_type({1: some}, item)

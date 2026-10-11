@@ -360,7 +360,7 @@ def unique_constraint_error(model: type[Model], name: str) -> tuple[tuple[str, .
             return None
         if constraint.violation_error_message != constraint.default_violation_error_message:
             return fields, str(constraint.get_violation_error_message())
-        return fields, model().unique_error_message(model, fields).messages[0]
+        return fields, _unique_message(model, fields)
 
     # the names the schema editor gives (a private helper of Django, stable since 1.7)
     editor = connections[router.db_for_write(model)].schema_editor()
@@ -377,7 +377,17 @@ def unique_constraint_error(model: type[Model], name: str) -> tuple[tuple[str, .
         candidates[editor._create_index_name(table, columns, suffix='_uniq')] = tuple(names)
     if (fields := candidates.get(name)) is None:
         return None
-    return fields, model().unique_error_message(model, fields).messages[0]
+    return fields, _unique_message(model, fields)
+
+
+def _unique_message(model: type[Model], fields: tuple[str, ...]) -> str:
+    """
+    The message of Django for a unique check of the fields ("... with this ... already
+    exists."), without an instance of the model: creating one may read the database (a
+    default of a field) or fail. `self` of `Model.unique_error_message` is only a
+    parameter of the message.
+    """
+    return Model.unique_error_message(None, model, fields).messages[0]
 
 
 def batch_qs(qs, batch_size=1000):

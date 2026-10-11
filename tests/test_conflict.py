@@ -38,11 +38,13 @@ from fastapi.testclient import TestClient
 import pytest
 from bazis_test_utils.utils import get_api_client, parallel
 from catalog.models import Card, Memo, Reader, Step
-from catalog.routes import MemoRouteSet, ReaderRouteSet
+from catalog.routes import MemoRouteSet, ReaderRouteSet, StepRouteSet
 from entity.models import Country
 from psycopg.errors import DeadlockDetected, QueryCanceled, SerializationFailure
 
 from bazis.core.models_abstract import JsonApiMixin
+from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
+from bazis.core.schemas.enums import CrudApiAction, RouteKind
 from bazis.core.utils.orm import unique_constraint_error
 
 
@@ -225,6 +227,116 @@ def test_parallel_creates_point_to_the_constraint_fields(sample_app):
     (error,) = response.json()['errors']
     assert 'source' not in error
     assert error['detail'] == 'The change conflicts with the current data'
+
+
+def conflict_without_fields(response):
+    """A 409 of a constraint that names no field: a single error without a pointer."""
+    assert response.status_code == 409, response.content
+    errors = response.json()['errors']
+    assert len(errors) == 1, errors
+    (error,) = errors
+    assert error['code'] == 'ERR_CONFLICT' and 'source' not in error
+    assert error['detail'] == 'The change conflicts with the current data'
+    return error
+
+
+@pytest.mark.django_db(transaction=True)
+def test_field_filled_by_the_server_is_not_named(sample_app, monkeypatch):
+    """
+    A unique constraint with a field the user does not write (`Step.number`, numbered by
+    the server, not in the schema of the create): no pointer and no name of a field.
+    """
+    save = Step.save
+
+    def save_numbered_one(self, *args, **kwargs):
+        # the number the server takes, here always the same one
+        if self._state.adding:
+            self.number = 1
+        save(self, *args, **kwargs)
+
+    monkeypatch.setattr(Step, 'save', save_numbered_one)
+    memo = Memo.objects.create(title='Plan')
+    Step.objects.create(memo=memo)
+    response = get_api_client(sample_app).post(
+        '/api/v1/catalog/step/',
+        json_data={
+            'data': {
+                'type': 'catalog.step',
+                'relationships': {'memo': {'data': {'type': 'catalog.memo', 'id': str(memo.pk)}}},
+            }
+        },
+    )
+    conflict_without_fields(response)
+    assert 'Number' not in response.text
+    assert Step.objects.filter(memo=memo).count() == 1
+
+
+def test_field_not_in_the_schema_of_the_user_is_not_named():
+    """
+    `unique_conflict` names the fields only when all of them are in the schema of the write
+    the user has: a field hidden from him (here the schema of a route without the e-mail)
+    leaves the conflict without fields; the create and the update only, of the table of
+    the model of the route.
+    """
+    reader_schema = ReaderRouteSet.schema_defaults[CrudApiAction.CREATE]
+    hidden_schema = StepRouteSet.schema_defaults[CrudApiAction.CREATE]   # the memo alone
+
+    def conflict(kind, schema, table='catalog_reader'):
+        route = SimpleNamespace(
+            route_ctx=SimpleNamespace(kind=kind),
+            model=Reader,
+            schemas={CrudApiAction.CREATE: schema, CrudApiAction.UPDATE: schema},
+        )
+        return JsonapiRouteBase.unique_conflict(route, table, 'catalog_reader_email_uniq')
+
+    assert conflict(RouteKind.CREATE, reader_schema)[0] == ('memo', 'email')
+    assert conflict(RouteKind.UPDATE, reader_schema)[0] == ('memo', 'email')
+    assert conflict(RouteKind.CREATE, hidden_schema) is None
+    assert conflict(RouteKind.RELATIONSHIP, reader_schema) is None
+    assert conflict(RouteKind.OTHER, reader_schema) is None
+    assert conflict(RouteKind.CREATE, reader_schema, table='catalog_step') is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_relationships_endpoint_names_no_field(sample_app):
+    """
+    A relationships endpoint that moves a reader to a memo that has his e-mail: 409 without
+    a pointer (its body is the relationship, not the document of the item).
+    """
+    first, second = Memo.objects.create(title='First'), Memo.objects.create(title='Second')
+    Reader.objects.create(memo=first, email='a@example.com')
+    reader = Reader.objects.create(memo=second, email='a@example.com')
+    response = TestClient(sample_app, raise_server_exceptions=False).patch(
+        f'/api/v1/catalog/reader/{reader.pk}/relationships/memo',
+        headers={'Content-Type': 'application/vnd.api+json'},
+        json={'data': {'type': 'catalog.memo', 'id': str(first.pk)}},
+    )
+    conflict_without_fields(response)
+    assert Reader.objects.get(pk=reader.pk).memo_id == second.pk
+
+
+@pytest.mark.django_db(transaction=True)
+def test_conflict_of_a_model_whose_default_reads_the_database(sample_app, monkeypatch):
+    """
+    The message of the conflict is made without an instance of the model: a default that
+    reads the database (a next number) failed in the handler (SynchronousOnlyOperation, a
+    500).
+    """
+    field = Country._meta.get_field('name')
+    monkeypatch.setattr(field, '_get_default', lambda: f'Country {Country.objects.count()}')
+    assert create(sample_app, 'Chile').status_code == 201
+    response = create(sample_app, 'Chile')
+    assert response.status_code == 409, response.content
+    assert [it['source'] for it in response.json()['errors']] == [{'pointer': '/data/attributes/name'}]
+
+    def fail():
+        raise AssertionError('an instance of the model is created')
+
+    monkeypatch.setattr(field, '_get_default', fail)
+    assert unique_constraint_error(Country, 'entity_country_name_key') == (
+        ('name',),
+        'Country with this Country Name already exists.',
+    )
 
 
 @pytest.mark.django_db

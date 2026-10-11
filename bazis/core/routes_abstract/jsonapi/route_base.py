@@ -15,7 +15,7 @@
 import traceback
 from contextlib import contextmanager
 from itertools import chain
-from typing import Any, List, TypeVar, get_type_hints  # noqa: UP035
+from typing import Any, List, TypeVar, get_args, get_type_hints  # noqa: UP035
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -73,7 +73,7 @@ from bazis.core.services.searching import ServiceSearching
 from bazis.core.services.sorting import SortingSearching
 from bazis.core.services.sparse_fieldsets import ServiceSparseFieldsets
 from bazis.core.utils.functools import get_attr
-from bazis.core.utils.orm import calc_cached_property
+from bazis.core.utils.orm import calc_cached_property, unique_constraint_error
 from bazis.core.utils.query_complex import QueryScope
 
 from ...services.relationships import RelationshipsService
@@ -82,6 +82,38 @@ from .callbacks import crud_jsonapi_callbacks
 from .schemas import FieldListModel, RelationshipData, openapi_relationship_examples
 from .schemas_dict import SchemasDict, SchemasResponseDict
 from .services import RouteFilterFieldsService
+
+
+#: the key of the request scope that holds the route instance of the request (`set_route`):
+#: the error handlers of the application read it
+ROUTE_SCOPE_KEY = 'bazis.route'
+
+
+def schema_writable_fields(schema: type[BaseModel]) -> set[str]:
+    """
+    The names of the attributes and the relationships of the resource of a document schema
+    (`data`) that a client writes, with their aliases: not those marked `readOnly` (filled
+    by the server, `editable=False`, or read-only for the user).
+    """
+
+    def model_of(annotation):
+        if hasattr(annotation, 'model_fields'):
+            return annotation
+        return next((it for it in get_args(annotation) if hasattr(it, 'model_fields')), None)
+
+    names = set()
+    resource = model_of(schema.model_fields['data'].annotation) if 'data' in schema.model_fields else None
+    for part in ('attributes', 'relationships'):
+        field = resource.model_fields.get(part) if resource is not None else None
+        if field is not None and (model := model_of(field.annotation)) is not None:
+            for name, info in model.model_fields.items():
+                extra = info.json_schema_extra if isinstance(info.json_schema_extra, dict) else {}
+                if extra.get('readOnly'):
+                    continue
+                names.add(name)
+                if info.alias:
+                    names.add(info.alias)
+    return names
 
 
 SchemaStructT = TypeVar('SchemaStructT')
@@ -346,6 +378,9 @@ class JsonapiRouteBase(InitialRouteBase):
         Tags: RAG, INTERNAL
         """
         JsonApiMixin.CTX_ROUTE.set(route)
+        # the error handlers of the application, which run out of this context
+        if (request := getattr(self.inject, 'request', None)) is not None:
+            request.scope[ROUTE_SCOPE_KEY] = route
 
     def set_api_action(self, api_action: ApiAction | None):
         """
@@ -366,6 +401,32 @@ class JsonapiRouteBase(InitialRouteBase):
         self.schemas_responses = SchemasResponseDict(
             type(self), getattr(self.inject, 'include', []), True
         )
+
+    def unique_conflict(self, table: str, constraint: str) -> tuple[tuple[str, ...], str] | None:
+        """
+        The fields and the message of the unique constraint `constraint` of the table `table`
+        that refused a write of this route (the IntegrityError handler of the application:
+        409 `ERR_CONFLICT` with a pointer to each field), or None, which answers without
+        a pointer and without a name of a field: a constraint of another table than that of
+        the model (a child an action creates), not found (`unique_constraint_error`), a
+        route other than the create and the update (an action, the relationships
+        endpoints), or a constraint with a field the user does not write (not in the schema
+        of the write he has, `schemas`, or read-only there: a field hidden from him or
+        filled by the server is not named).
+        Runs in a worker thread: the schema of a user may read the database.
+        """
+        api_action = {
+            RouteKind.CREATE: CrudApiAction.CREATE,
+            RouteKind.UPDATE: CrudApiAction.UPDATE,
+        }.get(self.route_ctx.kind)
+        if api_action is None or table != self.model._meta.db_table:
+            return None
+        if (found := unique_constraint_error(self.model, constraint)) is None:
+            return None
+        schema = self.schemas.get(api_action)
+        if schema is None or not set(found[0]) <= schema_writable_fields(schema):
+            return None
+        return found
 
     @classmethod
     def get_fiter_context(cls, route: 'JsonapiRouteBase' = None, **kwargs):
