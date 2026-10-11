@@ -761,7 +761,13 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   `ERR_FILTER`; an `IntegrityError` of a unique or an exclusion constraint (also at the
   commit) 409 `ERR_CONFLICT` ("The change conflicts with the current data";
   `meta.constraint` names the constraint with DEBUG; the transaction of the request is
-  rolled back), anywhere in the
+  rolled back); a unique constraint of the model of the route (`Meta.constraints`, also of
+  expressions, `unique=True`, `unique_together`) an error for each of its fields at
+  `/data/relationships/<f>` or `/data/attributes/<f>` with the message of Django ("...
+  with this ... already exists." or its `violation_error_message`), so a parallel
+  duplicate shows at its field as a sequential one does (422 of `validate_item`); a
+  constraint of another table (a child an action creates) or an exclusion constraint has
+  no pointer, anywhere in the
   request (bazis 2.16; a create answered 409 `ERR_REQUEST` "Data conflict" for any
   integrity error before); a throttled request 429 `ERR_THROTTLED` with `Retry-After`; any
   other exception 500 (the traceback in `detail` only with DEBUG), also another
@@ -787,6 +793,9 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   - `ERR_ITEM_INVALID`: `/data/attributes/<f>`, `/data/relationships/<f>`, `/data`. On the
     relationships endpoints the parameter `/related_field_name`; a Django `ValidationError`
     of a GET route `/query/<f>`.
+  - `ERR_CONFLICT` (409) of a unique constraint of the model of the route:
+    `/data/attributes/<f>`, `/data/relationships/<f>`, an error for each field; none for
+    another constraint.
   - `ERR_INCLUDE` (400): `/query/include`. `ERR_FILTER` (400): `/query/filter`,
     `/query/sort`, `/query/search`.
   - `ERR_RELATION_ACCESS` (403), `ERR_RELATION_LINK` (422): `/data/relationships/<f>`. On

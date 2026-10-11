@@ -53,6 +53,7 @@ from django.db.models import (
     Sum,
     Value,
 )
+from django.db.models.constants import LOOKUP_SEP
 from django.db.models.expressions import Expression
 from django.db.models.functions import JSONObject
 from django.utils.functional import Promise, cached_property
@@ -325,6 +326,58 @@ def get_model_field_by_name(model, field_name):
     for field in model._meta.get_fields():
         if field.name == field_name:
             return field
+
+
+def unique_constraint_error(model: type[Model], name: str) -> tuple[tuple[str, ...], str] | None:
+    """
+    The fields of the unique constraint (or unique index) `name` of the table of the model
+    and its message, as `Model.validate_constraints` gives it, or None if it is not one of
+    them:
+
+    - a `UniqueConstraint` of `Meta.constraints`: its `fields`, or the fields its expressions
+      name (`Lower('email')`); its `violation_error_message` if it declares one;
+    - a field with `unique=True`: PostgreSQL names the constraint of `CREATE TABLE`
+      `<table>_<column>_key`, Django the one a migration adds later
+      (`<table>_<column>_<digest>_uniq`);
+    - a `unique_together` (`<table>_<columns>_<digest>_uniq`).
+
+    A constraint of a parent table (multi-table inheritance), of an automatic many-to-many
+    table or an exclusion constraint is none of them.
+    """
+    opts = model._meta
+    for constraint in opts.constraints:
+        if not isinstance(constraint, models.UniqueConstraint) or constraint.name != name:
+            continue
+        fields = tuple(constraint.fields) or tuple(
+            dict.fromkeys(
+                it.name.split(LOOKUP_SEP)[0]
+                for expression in constraint.expressions
+                for it in ([expression] if isinstance(expression, F) else expression.flatten())
+                if isinstance(it, F)
+            )
+        )
+        if not fields:
+            return None
+        if constraint.violation_error_message != constraint.default_violation_error_message:
+            return fields, str(constraint.get_violation_error_message())
+        return fields, model().unique_error_message(model, fields).messages[0]
+
+    # the names the schema editor gives (a private helper of Django, stable since 1.7)
+    editor = connections[router.db_for_write(model)].schema_editor()
+    table = opts.db_table
+    candidates = {}
+    for field in opts.local_concrete_fields:
+        if field.unique and not field.primary_key:
+            candidates[f'{table}_{field.column}_key'] = (field.name,)
+            candidates[editor._create_index_name(table, [field.column], suffix='_uniq')] = (
+                field.name,
+            )
+    for names in opts.unique_together:
+        columns = [opts.get_field(it).column for it in names]
+        candidates[editor._create_index_name(table, columns, suffix='_uniq')] = tuple(names)
+    if (fields := candidates.get(name)) is None:
+        return None
+    return fields, model().unique_error_message(model, fields).messages[0]
 
 
 def batch_qs(qs, batch_size=1000):

@@ -24,9 +24,12 @@ import time
 from contextlib import contextmanager
 from types import SimpleNamespace
 
+from django.apps import apps
 from django.core.exceptions import ImproperlyConfigured
-from django.db import OperationalError, connection, transaction
+from django.db import OperationalError, connection, models, transaction
 from django.db.backends.signals import connection_created
+from django.db.models import F
+from django.db.models.functions import Lower
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 
@@ -40,6 +43,7 @@ from entity.models import Country
 from psycopg.errors import DeadlockDetected, QueryCanceled, SerializationFailure
 
 from bazis.core.models_abstract import JsonApiMixin
+from bazis.core.utils.orm import unique_constraint_error
 
 
 URL = '/api/v1/entity/country/'
@@ -53,12 +57,17 @@ def create(app, name):
 
 @pytest.mark.django_db(transaction=True)
 def test_unique_violation(sample_app):
+    """
+    A unique field of the model of the route (`unique=True`): the error points to it, with
+    the message of Django.
+    """
     assert create(sample_app, 'Norway').status_code == 201
     response = create(sample_app, 'Norway')
     assert response.status_code == 409, response.content
     (error,) = response.json()['errors']
     assert (error['status'], error['code']) == (409, 'ERR_CONFLICT')
-    assert error['detail'] == 'The change conflicts with the current data'
+    assert error['detail'] == 'Country with this Country Name already exists.'
+    assert error['source'] == {'pointer': '/data/attributes/name'}
     assert 'meta' not in error
     with override_settings(DEBUG=True):
         (error,) = create(sample_app, 'Norway').json()['errors']
@@ -107,8 +116,12 @@ def test_parallel_requests(sample_app):
     """
     Parallel creates of the same unique value: one is created, the others are 409, none 500.
     """
-    results = parallel(4, lambda: create(sample_app, 'Iceland').status_code)
-    assert sorted(results) == [201, 409, 409, 409]
+    responses = parallel(4, lambda: create(sample_app, 'Iceland'))
+    assert sorted(it.status_code for it in responses) == [201, 409, 409, 409]
+    for response in responses:
+        if response.status_code == 409:
+            (error,) = response.json()['errors']
+            assert error['source'] == {'pointer': '/data/attributes/name'}
     assert Country.objects.filter(name='Iceland').count() == 1
 
 
@@ -179,6 +192,93 @@ def test_action_and_create_of_the_same_item(sample_app):
         ]
         assert not [r for r in responses if (r.json().get('errors') or [{}])[0].get('meta')]
         assert Reader.objects.filter(memo=memo).count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_parallel_creates_point_to_the_constraint_fields(sample_app):
+    """
+    Parallel creates of a reader with the same e-mail in a memo (`UniqueConstraint` of
+    `memo` and `email`): one is created, each other answers an error for each field of the
+    constraint, at the relation and at the attribute. The action that creates a reader on
+    the route of the memo has no pointer: the constraint is not one of the model of its
+    route.
+    """
+    memo = Memo.objects.create(title='Plan')
+    responses = parallel(4, lambda: add_reader(sample_app, memo, 'a@example.com'))
+    assert sorted(it.status_code for it in responses) == [201, 409, 409, 409], [
+        (it.status_code, it.content) for it in responses
+    ]
+    for response in responses:
+        if response.status_code == 409:
+            errors = response.json()['errors']
+            assert [it['source'] for it in errors] == [
+                {'pointer': '/data/relationships/memo'},
+                {'pointer': '/data/attributes/email'},
+            ]
+            assert {it['detail'] for it in errors} == {
+                'Reader with this Memo and E-mail already exists.'
+            }
+    assert Reader.objects.filter(memo=memo).count() == 1
+
+    response = subscribe(sample_app, memo, 'a@example.com')
+    assert response.status_code == 409, response.content
+    (error,) = response.json()['errors']
+    assert 'source' not in error
+    assert error['detail'] == 'The change conflicts with the current data'
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('model', apps.get_models(), ids=lambda it: it._meta.label)
+def test_unique_constraint_names(model):
+    """
+    Every unique constraint and unique index of the tables of the sample, as the migrations
+    made them, maps to its columns (`unique_constraint_error`): a `unique=True` field
+    (created with the table, `_key`, or added later, `_uniq`), a `unique_together`, a
+    `UniqueConstraint`.
+    """
+    if model._meta.proxy or not model._meta.managed:
+        return
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT index.relname, array_agg(attribute.attname ORDER BY key.ord)
+            FROM pg_index AS i
+            JOIN pg_class AS index ON index.oid = i.indexrelid
+            JOIN pg_class AS tbl ON tbl.oid = i.indrelid
+            CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS key(attnum, ord)
+            LEFT JOIN pg_attribute AS attribute
+                ON attribute.attrelid = tbl.oid AND attribute.attnum = key.attnum
+            WHERE i.indisunique AND NOT i.indisprimary AND tbl.relname = %s
+              AND tbl.relnamespace = 'public'::regnamespace
+            GROUP BY index.relname
+            """,
+            [model._meta.db_table],
+        )
+        uniques = cursor.fetchall()
+    for name, columns in uniques:
+        found = unique_constraint_error(model, name)
+        assert found, (model, name)
+        fields, message = found
+        assert sorted(model._meta.get_field(it).column for it in fields) == sorted(columns)
+        assert message
+
+
+def test_unique_constraint_of_expressions(monkeypatch):
+    """
+    A `UniqueConstraint` of expressions points to the fields they name; one that declares
+    its message gives it; a name that is no constraint of the model is None.
+    """
+    lower = models.UniqueConstraint(Lower('email'), F('memo'), name='reader_lower_email_uniq')
+    told = models.UniqueConstraint(
+        fields=['memo', 'email'], name='reader_told_uniq', violation_error_message='Subscribed'
+    )
+    monkeypatch.setattr(Reader._meta, 'constraints', [lower, told])
+    assert unique_constraint_error(Reader, 'reader_lower_email_uniq') == (
+        ('email', 'memo'),
+        'Reader with this E-mail and Memo already exists.',
+    )
+    assert unique_constraint_error(Reader, 'reader_told_uniq') == (('memo', 'email'), 'Subscribed')
+    assert unique_constraint_error(Reader, 'catalog_step_number_uniq') is None
 
 
 @pytest.mark.django_db(transaction=True)

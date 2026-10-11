@@ -131,7 +131,7 @@ def _initialize_app(app): # noqa: C901
 
     from bazis.core.i18n import LanguageMiddleware, expand_lang
     from bazis.core.utils.functools import get_attr
-    from bazis.core.utils.orm import close_old_connections
+    from bazis.core.utils.orm import close_old_connections, unique_constraint_error
 
     from .errors import (
         JsonApiBazisException,
@@ -472,28 +472,60 @@ def _initialize_app(app): # noqa: C901
             headers=headers,
         )
 
+    def route_model(request: Request):
+        """
+        The model of the route of the request (a JSON:API model), or None.
+        """
+        route_ctx = getattr(getattr(request.scope.get('route'), 'endpoint', None), 'route_ctx', None)
+        model = getattr(getattr(route_ctx, 'route_cls', None), 'model', None)
+        return model if hasattr(model, 'get_fields_info') else None
+
     @app.exception_handler(IntegrityError)
     async def json_api_integrity_error_handler(
         request: Request, exc: IntegrityError
     ) -> JSONResponse:
         """
         A write that a unique or an exclusion constraint refuses (two parallel requests
-        creating the same item, a number taken under a race) is 409 `ERR_CONFLICT`. Any
-        other IntegrityError (not-null, check, foreign key) stays a 500: such rules belong in
-        `validate_item` (422).
+        creating the same item, a number taken under a race) is 409 `ERR_CONFLICT`. A unique
+        constraint of the table of the model of the route (`unique_constraint_error`) gives
+        an error for each of its fields, at `/data/relationships/<name>` (a relation) or
+        `/data/attributes/<name>`, with the message of Django ("... with this ... already
+        exists."); another one (of another table, an exclusion constraint) a single error
+        without a pointer. Any other IntegrityError (not-null, check, foreign key) stays a
+        500: such rules belong in `validate_item` (422).
         """
         cause = exc.__cause__
         if not isinstance(cause, UniqueViolation | ExclusionViolation):
             raise exc
+        meta = {'constraint': cause.diag.constraint_name} if settings.DEBUG else None
+        found = None
+        model = route_model(request)
+        if (
+            isinstance(cause, UniqueViolation)
+            and model is not None
+            and cause.diag.table_name == model._meta.db_table
+        ):
+            found = unique_constraint_error(model, cause.diag.constraint_name)
+        if found is None:
+            locs, detail = [None], gettext_lazy('The change conflicts with the current data')
+        else:
+            fields, detail = found
+            relations = model.get_fields_info().relations
+            locs = [
+                ('data', 'relationships' if it in relations else 'attributes', it)
+                for it in fields
+            ]
         return exc_encoder(
             [
                 SchemaError(
                     status=HTTP_409_CONFLICT,
                     code='ERR_CONFLICT',
                     title=str(gettext_lazy('Conflict')),
-                    detail=str(gettext_lazy('The change conflicts with the current data')),
-                    meta={'constraint': cause.diag.constraint_name} if settings.DEBUG else None,
+                    detail=str(detail),
+                    source=get_source_from_loc(loc),
+                    meta=meta,
                 )
+                for loc in locs
             ],
             HTTP_409_CONFLICT,
         )
@@ -519,13 +551,9 @@ def _initialize_app(app): # noqa: C901
             exc.messages,
             exc_info=exc,
         )
-        route_ctx = getattr(getattr(request.scope.get('route'), 'endpoint', None), 'route_ctx', None)
-        model = getattr(getattr(route_ctx, 'route_cls', None), 'model', None)
-        if not hasattr(model, 'get_fields_info'):
-            model = None
         loc = ('query',) if request.method in ('GET', 'HEAD') else None
         return await json_api_bazis_exception_handler(
-            request, JsonApiItemInvalidException(exc, model=model, loc=loc)
+            request, JsonApiItemInvalidException(exc, model=route_model(request), loc=loc)
         )
 
     @app.exception_handler(OperationalError)
