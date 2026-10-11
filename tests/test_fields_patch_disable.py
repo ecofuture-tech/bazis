@@ -109,7 +109,8 @@ def test_inclusion_of_the_update_hides_the_disabled_required_field(sample_app):
 def test_own_required_keeps_the_disabled_field(factories):
     """
     A field whose own restrictions say `required` stays in the schema although `__all__`
-    (or the field itself) disables it, as before bazis 2.16: the permission names the field.
+    disables it, as before bazis 2.16: the permission names the field. Its own `disable`
+    wins over its own `required` (except the create of a field required there).
     """
     from bazis.core.schemas.enums import CrudApiAction
 
@@ -124,7 +125,11 @@ def test_own_required_keeps_the_disabled_field(factories):
         assert set(fields) == {OPTIONAL} | ({REQUIRED} if action == CrudApiAction.CREATE else set())
         assert fields[OPTIONAL].required
         assert fields[OPTIONAL].nullable is False
-        assert OPTIONAL in names(factory, {OPTIONAL: {'required', 'disable'}})
+        # its own disable wins over its own required (the create keeps a required field)
+        is_create = action == CrudApiAction.CREATE
+        assert (OPTIONAL in names(factory, {OPTIONAL: {'required', 'disable'}})) is is_create
+        own_both = {'__all__': {'disable'}, OPTIONAL: {'required', 'disable'}}
+        assert (OPTIONAL in names(factory, own_both)) is is_create
 
     # in a view the restrictions of requiredness do not apply: the field is hidden
     assert names(factories[CrudApiAction.RETRIEVE], {'__all__': {'disable'}, OPTIONAL: {'required'}}) == set()
@@ -171,6 +176,9 @@ def test_own_required_keeps_the_disabled_field_in_another_action(sample_app):
         route_cls=ChildEntityRouteSet, model=ChildEntityRouteSet.model, api_action=Action.CHECKUP
     )
     assert names(factory, {'__all__': {'disable'}, OPTIONAL: {'required', 'notnull'}}) == {OPTIONAL}
+    # its own disable wins
+    assert names(factory, {OPTIONAL: {'required', 'disable'}}) >= {REQUIRED}
+    assert OPTIONAL not in names(factory, {OPTIONAL: {'required', 'disable'}})
     assert names(factory, {'__all__': {'disable'}}) == set()
     assert names(factory, {'__all__': {'required'}, OPTIONAL: {'disable'}}) >= {REQUIRED}
     assert OPTIONAL not in names(factory, {'__all__': {'required'}, OPTIONAL: {'disable'}})

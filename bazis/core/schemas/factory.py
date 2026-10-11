@@ -331,9 +331,11 @@ class SchemaFactory:
         restrictions from fields_restricts. A `disable` hides the field, whatever its
         requiredness in the model, except a required field in the schema of a create (an
         item cannot be created without it; bazis-permit warns, permit.W009) and a field
-        whose own restrictions say `required` (not those of `__all__`): the schema keeps it
-        required (the transit of bazis-statusy validates it). An update, the relationships
-        endpoints and the other schemas never keep a field disabled otherwise.
+        whose own restrictions say `required` against a `disable` of `__all__`: the schema
+        keeps it required (the transit of bazis-statusy validates it). The field's own
+        `disable` always wins over its own `required`, and `required` of `__all__` keeps no
+        field. An update, the relationships endpoints and the other schemas never keep a
+        field disabled otherwise.
         """
         is_view_op = self.api_action.access_action == CrudAccessAction.VIEW
         is_add_op = self.api_action.access_action == CrudAccessAction.ADD
@@ -394,9 +396,14 @@ class SchemaFactory:
             elif FieldAvail.writeonly.name in restricts:
                 field.write_only = True
 
+            # a required field stays in a create; elsewhere only a field whose own
+            # restrictions require it and do not disable it (against `__all__.disable`)
+            required_own = (
+                FieldRequired.required.name in restricts_for_field
+                and FieldAvail.disable.name not in restricts_for_field
+            )
             if FieldAvail.disable.name in restricts and not (
-                field.required
-                and (is_add_op or FieldRequired.required.name in restricts_for_field)
+                field.required and (is_add_op or required_own)
             ):
                 continue
             # # if the field is read-only, and the schema does not support this - exclude the field
