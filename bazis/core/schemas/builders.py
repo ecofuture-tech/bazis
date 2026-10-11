@@ -247,11 +247,12 @@ class SchemaResourceBuilder:
     ):
         """
         Constructor for SchemaResourceBuilder, initializing with factory, primary key
-        field, and fields.
+        field, and fields. `fields=None` is every field of the factory; an empty list is
+        none (a package that hides every field, e.g. the field permissions of bazis-permit).
         """
         self.factory = factory
         self.pk_field = pk_field or factory.pk_field
-        self.fields = fields or factory.fields_list
+        self.fields = factory.fields_list if fields is None else fields
 
     def build(
         self, _schema_key=None, is_response_schema: bool = False, **defaults
