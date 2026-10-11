@@ -44,7 +44,13 @@ project needs, use them the way they are meant to be used and check the result.
 A package `bazis-<name>` ships two files in its module (`bazis/contrib/<name>/`):
 
 - `AGENTS.md` — how to use the package: setup, the classes to extend, the rules. Short and
-  exact; it is read by agents, not people browsing the docs.
+  exact; it is read by agents, not people browsing the docs. bazis-mcp serves a guide
+  with its manifest whole up to 12,000 bytes of JSON, a longer one as its introduction
+  (the text before the first `## ` heading) with the titles of its `## ` sections, which
+  the agent reads when a step needs them. So the introduction of a longer guide says what
+  the package is for and maps the sections, `### The sections`: a table of each `## `
+  title, in order, with when to read it; each section is self-contained, under 25,000
+  bytes. A fact is written once, in the section where a step needs it.
 - `bazis_manifest.toml`:
 
   ```toml
@@ -64,6 +70,10 @@ A package `bazis-<name>` ships two files in its module (`bazis/contrib/<name>/`)
   text = "..."
   check = "permit.W001"                     # optional: the system check that detects it
   ```
+
+The manifest comes with every first read of the guide and with the results of
+`guide_search`: keep its items to one line each (what to use, which mistake), the details
+in the sections of `AGENTS.md`.
 
 Mistakes that can be detected are Django system checks of the package (ids
 `<package>.E/W<nnn>`, registered in `AppConfig.ready`) and listed as pitfalls with their

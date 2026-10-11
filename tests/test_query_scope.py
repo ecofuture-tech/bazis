@@ -185,6 +185,21 @@ def test_search_through_a_relation_reaches_only_visible_objects(sample_app, data
 
 
 @pytest.mark.django_db(transaction=True)
+def test_search_of_several_words(sample_app, data):
+    """
+    The words of `search` (split at spaces and commas) must each be in one of the search
+    fields (name, tag__name), not all in the same one: a substring in any case of a field
+    of the model, the whole value of a field through a relation.
+    """
+    plain = [str(data['plain'].pk)]
+    assert ids(sample_app, NOTES, search='LAI visible') == plain
+    assert ids(sample_app, NOTES, search='lai,visible') == plain
+    assert ids(sample_app, NOTES, search='plain other') == []
+    assert ids(sample_app, NOTES, search='lai isib') == []
+    assert ids(sample_app, NOTES, search='secret topic') == [str(data['secret'].pk)]
+
+
+@pytest.mark.django_db(transaction=True)
 def test_sort_through_a_relation_hides_invisible_objects(sample_app, data):
     data['plain'].tag = data['tags']['other']
     data['plain'].save()

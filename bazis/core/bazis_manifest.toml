@@ -16,42 +16,42 @@ pairs_well = ["bazis-users", "bazis-permit"]
 [[extension_points]]
 name = "JsonApiMixin"
 import = "bazis.core.models_abstract.JsonApiMixin"
-use_when = "a model is a JSON:API resource (with DtMixin, UuidMixin)"
+use_when = "a model is a JSON:API resource (with DtMixin, UuidMixin): guide section Models"
 
 [[extension_points]]
 name = "JsonApiMixin.validate_item"
 import = "bazis.core.models_abstract.JsonApiMixin"
-use_when = "an invariant of an item (no overlap, a limit, a consistency of fields) that every write must keep: override validate_item(self, changes) and raise a Django ValidationError; it runs once per write after the values are in the database and before the commit, for the routes (create, update, relationships), the transits of bazis-statusy and any save() or many-to-many manager change (admin, scripts, tasks); changes is bazis.core.item_validation.ItemChanges (fields, relations, is_new, source, user); the API answers 422 ERR_ITEM_INVALID"
+use_when = "an invariant of an item that every write keeps (the routes, the transits, save(), the admin): raise a Django ValidationError, 422 ERR_ITEM_INVALID; changes is ItemChanges (Invariants of the items)"
 
 [[extension_points]]
 name = "JsonApiMixin.lock_on_write"
 import = "bazis.core.models_abstract.JsonApiMixin"
-use_when = "an invariant counted under the lock of a parent (no more than N per parent, a unique value per parent): lock_on_write = ('<fk>',) locks the row of the foreign key (FOR NO KEY UPDATE, by its current value) before every write of an item, whatever writes it, so validate_item counts under the lock and every path takes the locks in the order of an action that locks the parent first (also the items a reverse foreign key links, and set_item(item_id, with_lock=True), which locks the parents before the item)"
+use_when = "an invariant counted under the lock of a parent (no more than N per parent, a unique value per parent): lock_on_write = ('<fk>',) (Invariants of the items)"
 
 [[extension_points]]
 name = "defer_validate_item"
 import = "bazis.core.item_validation.defer_validate_item"
-use_when = "several writes of an item in a script, a command or a task validated once at the end, with the user who makes them; in a hook of a route, `with defer_validate_item() as scope: scope.validate()` validates the writes so far (the route validates at the end of the request, after its hooks)"
+use_when = "validate several writes of an item once (a script, a task), or the writes so far in a hook: `with defer_validate_item() as scope: scope.validate()`"
 
 [[extension_points]]
 name = "TranslatedSchemaModel"
 import = "bazis.core.utils.schemas.TranslatedSchemaModel"
-use_when = "a pydantic model with lazy texts (Field(title=_('…'))) whose JSON schema the code reads itself (model_json_schema() outside the OpenAPI): the schema is in the active language; TranslatedJsonSchema (bazis.core.utils.schemas) is the generator for any other model"
+use_when = "a pydantic model with lazy texts whose JSON schema the code reads itself (model_json_schema() outside the OpenAPI)"
 
 [[extension_points]]
 name = "ValidateItemAdminMixin"
 import = "bazis.core.admin_abstract.ValidateItemAdminMixin"
-use_when = "the admin change form validates the item once after the item, its many-to-many relations and the inlines are saved, and shows the errors of validate_item in the form"
+use_when = "the admin change form validates the item once and shows the errors of validate_item"
 
 [[extension_points]]
 name = "JsonapiRouteBase"
 import = "bazis.core.routes_abstract.jsonapi.JsonapiRouteBase"
-use_when = "CRUD and relationships endpoints of a model"
+use_when = "CRUD and relationships endpoints of a model (Routes)"
 
 [[extension_points]]
 name = "RestrictedQsRouteMixin.restrict_queryset"
 import = "bazis.core.routes_abstract.jsonapi.RestrictedQsRouteMixin"
-use_when = "the objects of a model a user can see (view) and change: the relationships and `included` of the other routes respect it; override the classmethod in the default route of the model; the core calls it on the class with `user` (None or anonymous without authentication: never raise, return what such a user may see), the route of the request is JsonApiMixin.CTX_ROUTE; accept **kwargs (the check of the linked objects passes link=True: return only the objects the user may link, a visible one left out is 422 ERR_RELATION_LINK)"
+use_when = "the objects of a model a user may see and link, for the relationships, `included` and filters of the other routes: override the classmethod in the default route of the model"
 
 [[extension_points]]
 name = "SchemaFields"
@@ -61,37 +61,37 @@ use_when = "include or exclude fields of a route, per action (CrudApiAction)"
 [[extension_points]]
 name = "JsonapiRouteBase.query_fields"
 import = "bazis.core.routes_abstract.jsonapi.JsonapiRouteBase"
-use_when = "a package changes the LIST schema of a route per user: override the classmethod query_fields(user=None, **kwargs) so that the filter, sort and search of a request reach only the fields that user sees (QueryScope)"
+use_when = "a package changes the LIST schema of a route per user: the fields filter, sort and search reach"
 
 [[extension_points]]
 name = "route_search_fields"
 import = "bazis.core.utils.query_complex.route_search_fields"
-use_when = "a tool (a client generator, the contract of bazis-front) needs the search fields a route searches: its search_fields, as declared, that its LIST schema reaches (no queries)"
+use_when = "a tool needs the search fields a route searches"
 
 [[extension_points]]
 name = "calc_property"
 import = "bazis.core.utils.orm.calc_property"
-use_when = "a calculated field fetched in the same query: FieldAnnotate (an expression of the row), FieldDynamic (an aggregate with func=, related objects, has_* EXISTS), a callable returning the field (lambda: FieldAnnotate(query=Subquery(...)) when the expression needs the loaded models); add it to the route with include={'<name>': None}; as_filter=True for filter"
+use_when = "a calculated field fetched by the query of a route (FieldAnnotate, FieldDynamic, a subquery) or computed from the item (Calculated fields)"
 
 [[extension_points]]
 name = "point_distance"
 import = "bazis.core.utils.geo.point_distance"
-use_when = "a distance in meters on the sphere from a PointField to a point (a GEOS point of parse_point, or an expression of a point such as a Subquery of a point field) in the code: an annotation, a calculated field, an order_by; point_within(field, point, meters) filters; the API has the filter `near` and `sort=<point>__distance(<lon>,<lat>)` without code"
+use_when = "a distance in meters from a PointField to a point in the code; point_within filters (API conventions, Points and distances)"
 
 [[extension_points]]
 name = "bazis_messages"
 import = "bazis.core.management.commands.bazis_messages.Command"
-use_when = "the translations of the project: `manage.py bazis_messages make` (makemessages with the ignores of a project) lists the untranslated and fuzzy entries as JSON, `apply <file.json>` sets them from {language: {msgid: msgstr}} (a list of {msgctxt, msgid, msgstr} for contexts, a list of forms for a plural) and compiles; `status --check` for a CI"
+use_when = "the translations of the project: make, status, apply <file.json>, compile"
 
 [[extension_points]]
 name = "UniqNumberMixin"
 import = "bazis.core.models_abstract.UniqNumberMixin"
-use_when = "a human-readable number of an item from a database sequence (django-sequences, installed by the core): uniq_number on the first save, the property number; NUMBER_LABEL names the sequence; show number with include={'number': None} and exclude uniq_number from the create and update schemas"
+use_when = "a human-readable number of an item from a database sequence"
 
 [[extension_points]]
 name = "translated_name"
 import = "bazis.core.utils.query_complex.translated_name"
-use_when = "reference data named in every language (a TranslatedFieldWithFallback of django-translated-fields, a column per language): the API attribute is in the language of the request, and filter, sort and search use its column of that language; translated_name(model, name) gives that column for a query of the project"
+use_when = "the column of a translated field (TranslatedFieldWithFallback) in the active language, for a query of the project"
 
 [[extension_points]]
 name = "RouteKind"
@@ -101,42 +101,42 @@ use_when = "declare what a custom route does (`kind=` of the http_* decorators, 
 [[extension_points]]
 name = "http_* public / access_action"
 import = "bazis.core.routes_abstract.initial.http_get"
-use_when = "who may call a custom action: public=True opens it to anonymous users (limited by BAZIS_THROTTLE_PUBLIC), access_action=CrudAccessAction.<X> is the permission it requires (bazis-permit enforces both; without it public only adds the throttle; x-bazis shows public always, access_action when declared); an override keeps them unless it declares its own"
+use_when = "who may call a custom action: public=True (anonymous, throttled), access_action= (the permission bazis-permit enforces)"
 
 [[extension_points]]
 name = "route_declare"
 import = "bazis.core.routes_abstract.initial.route_declare"
-use_when = "change kind, public, access_action or dependencies of an inherited route without repeating its decorator: action_transit = route_declare(StatusyRouteSetBase.action_transit, public=True) in the body of the subclass"
+use_when = "change kind, public, access_action or dependencies of an inherited route without repeating its decorator"
 
 [[extension_points]]
 name = "bazis.core.declare"
 import = "bazis.core.declare.ManagedSync"
-use_when = "a package applies declarations in the code (<app>/roles.py, workflow.py, schedules.py) on migrate: discover the modules, apply_after_migrate under the shared lock, ManagedSync creates/updates/takes over the slug objects with a managed flag, managed_orphans lists the ones no longer declared (their fate is the policy of the package); ManagedAdminMixin shows declared objects read-only"
+use_when = "a package applies declarations in the code (<app>/roles.py, workflow.py, schedules.py) on migrate"
 
 [[extension_points]]
 name = "InitialRouteBase.route_check"
 import = "bazis.core.routes_abstract.initial.InitialRouteBase"
-use_when = "a package refuses requests by the facts of a route (bazis-permit: public, access_action) before its function runs, in its transaction: extend route_check(*args, **kwargs) and call super()"
+use_when = "a package refuses requests by the facts of a route before its function runs: extend route_check and call super()"
 
 [[extension_points]]
 name = "throttle"
 import = "bazis.core.throttle.throttle"
-use_when = "limit the request rate of a route: dependencies=[throttle('10/minute', key='user_or_ip'|'ip', scope=None)] (a fixed window in Redis, 429 ERR_THROTTLED with Retry-After); the rate may be a callable read per request (a dynamic setting; an invalid one is logged and does not limit); BAZIS_THROTTLE_ENABLED, BAZIS_THROTTLE_EXEMPT (a function (request, ident) -> bool); the address is request.client.host as uvicorn gives it (forwarded_allow_ips: the trusted proxies, never '*')"
+use_when = "limit the request rate of a route: dependencies=[throttle('10/minute', key='user_or_ip'|'ip')], 429 ERR_THROTTLED"
 
 [[extension_points]]
 name = "DynamicSMTPEmailBackend"
 import = "bazis.core.mail.DynamicSMTPEmailBackend"
-use_when = "send e-mail (django.core.mail.send_mail): the default mailer reads the dynamic settings BAZIS_EMAIL_HOST, _PORT, _HOST_USER, _HOST_PASSWORD, _USE_TLS, _USE_SSL, _TIMEOUT (10 s) (admin) and DEFAULT_FROM_EMAIL; BS_BAZIS_EMAIL_BACKEND replaces the backend (console in development)"
+use_when = "send e-mail with django.core.mail: the SMTP settings and DEFAULT_FROM_EMAIL are dynamic (E-mail)"
 
 [[extension_points]]
 name = "InitialRouteBase.route_responses"
 import = "bazis.core.routes_abstract.initial.InitialRouteBase"
-use_when = "document in OpenAPI the error statuses (SchemaErrors) a route class fails its routes with: extend the classmethod route_responses"
+use_when = "document in OpenAPI the error statuses a route class fails its routes with"
 
 [[extension_points]]
 name = "InitialRouteBase.route_openapi_extra"
 import = "bazis.core.routes_abstract.initial.InitialRouteBase"
-use_when = "add facts to the OpenAPI operation of the routes of a class (security, extensions): extend the classmethod route_openapi_extra, never change the route context"
+use_when = "add facts to the OpenAPI operations of a route class (security, extensions)"
 
 [[extension_points]]
 name = "BazisRouter"
@@ -149,21 +149,21 @@ import = "bazis.core.utils.schemas.BazisSettings"
 use_when = "settings of an app (conf.py), read from BS_* variables"
 
 [[pitfalls]]
-text = "the settings of all installed Bazis packages are loaded and a BS_* variable is read only if a conf.py declares it: the core declares the Django settings a project sets with BS_* (AUTH_USER_MODEL, AUTHENTICATION_BACKENDS, INSTALLED_APPS, MIDDLEWARE, ...); a package's conf.py declares only settings it owns (BAZIS_*, KAFKA_*, its own names such as AUTH_ANONYMOUS_USER_MODEL) and never redeclares or defaults a Django setting"
+text = "a BS_* variable is read only if a conf.py of an installed Bazis package declares it; a package never redeclares or defaults a Django setting"
 
 [[pitfalls]]
-text = "a dynamic setting (editable in the admin: Constance) follows its BS_* variable until a value is set in the admin, with manage.py constance set or config.X = ...; a set value wins over the variable (before bazis 2.16 the first read saved the default)"
+text = "a dynamic setting (Constance) follows its BS_* variable until a value is set in the admin or with manage.py constance set; a set value wins"
 
 [[pitfalls]]
-text = "an empty DEFAULT_FROM_EMAIL (saved in Constance) fails every mail with Invalid address: set the sender in the admin or with manage.py constance set DEFAULT_FROM_EMAIL noreply@<domain>"
+text = "an empty DEFAULT_FROM_EMAIL saved in Constance fails every mail: manage.py constance set DEFAULT_FROM_EMAIL noreply@<domain>"
 check = "bazis.W009"
 
 [[pitfalls]]
-text = "the triggers of the models (pgtrigger: dt_created/dt_updated, the roles of bazis-permit, Meta.triggers) are not in the migrations: migrate installs the missing and outdated ones once all the migrations are applied (bazis 2.16) and removes none (DROP TRIGGER a stale one by its name; pgtrigger prune removes those of other projects too); they fire during the later migrations: uninstall the affected ones (manage.py pgtrigger uninstall <uri>) before a migration that drops or renames a column they read; pgtrigger install/uninstall without a URI also removes the triggers of other projects in a shared database"
+text = "the triggers of the models are not in the migrations: migrate installs the missing and outdated ones and removes none; uninstall the affected ones before a migration that drops or renames a column they read"
 check = "bazis.W008"
 
 [[pitfalls]]
-text = "BS_BAZIS_APPS (or BS_BAZIS_CONFIG_APPS) is an explicit override: '[]' turns off the settings of all Bazis packages, also of the ones the project uses; leave it unset"
+text = "BS_BAZIS_APPS='[]' turns off the settings of all Bazis packages: leave it unset"
 check = "bazis.W002"
 
 [[pitfalls]]
@@ -171,106 +171,97 @@ text = "ALLOWED_HOSTS is ['*'] by default: set BS_ALLOWED_HOSTS in production"
 check = "bazis.W001"
 
 [[pitfalls]]
-text = "MEDIA_URL is redirected to MEDIA_HOST_URL (else ADMIN_HOST_URL); without a host the application serves MEDIA_ROOT only in DEBUG (raster images inline, other files as attachments) and answers 404 otherwise: in production set BS_MEDIA_HOST_URL or serve MEDIA_URL by the web server, do not mount MEDIA_ROOT in the project"
+text = "without DEBUG the application serves no MEDIA_ROOT (404): set BS_MEDIA_HOST_URL or serve MEDIA_URL by the web server"
 
 [[pitfalls]]
-text = "the default cache must be Redis (django-redis): other backends do not support delete_pattern"
+text = "the default cache must be Redis (django-redis)"
 check = "bazis.E001"
 
 [[pitfalls]]
-text = "gettext catalogs are global: when two packages translate the same msgid differently, the first in LOCALE_PATHS wins (the project's locale, then INSTALLED_APPS in order, the project's apps included, then the Bazis packages that are not installed); override the translation in the project's locale or give the field its own verbose_name/title"
+text = "two packages translating one msgid differently: the first catalog of LOCALE_PATHS wins; override it in the project's locale"
 check = "bazis.W004"
 
 [[pitfalls]]
-text = "a language of LANGUAGES other than English needs catalogs: the texts of a package without one stay in English (msgids are English); translate them in the project's locale"
+text = "a language other than English needs catalogs: translate the texts of a package without one in the project's locale"
 check = "bazis.W005"
 
 [[pitfalls]]
-text = "the language of a request is ?lang, then Accept-Language (by weight, base code), then LANGUAGE_CODE; titles must stay lazy (gettext_lazy, verbose_name) so that the cached schemas, schema_* routes and /openapi.json follow it; app.openapi() is in the active language; the lazy texts of the models, parameters and operations of custom routes (Field(title=_('…')), Query(description=_('…')), summary) are translated in the OpenAPI too; lazy examples go in json_schema_extra={'examples': [...]}: pydantic serializes Field(examples=...) when it defines the model"
+text = "titles must stay lazy (gettext_lazy, verbose_name, format_lazy, not an f-string) so that the schemas and the OpenAPI follow the language of the request"
 
 [[pitfalls]]
-text = "a script that fills or edits the .po files of the project: use `manage.py bazis_messages` (make, status, apply <file.json>, compile); makemessages run elsewhere than BASE_DIR, or before `<BASE_DIR>/locale` exists, writes into the first catalog of LOCALE_PATHS, of an installed package"
+text = "edit the .po files of the project only with manage.py bazis_messages, never a script or makemessages elsewhere"
 
 [[pitfalls]]
-text = "coordinates as two FloatFields with ST_MakePoint per row: no index, no `near` filter and no distance sorting; declare a PointField(geography=True) (GiST index) and use `filter=<point>__near=<lon>,<lat>,<distance>` (meters, 500m, 2.5km) and `sort=<point>__distance(<lon>,<lat>)`; the point field must be in the LIST schema of the route"
+text = "coordinates as two FloatFields: declare a PointField(geography=True) for the near filter and the distance sorting"
 
 [[pitfalls]]
-text = "a verbose_name of a model or field composed with an f-string at import is in the language active then and gets into the migrations: compose it with format_lazy"
+text = "an invariant kept only in the hooks of a route is bypassed by the relationships endpoints, the transits, the admin and save(): put it in validate_item"
 
 [[pitfalls]]
-text = "an invariant of an item kept only in the hooks of a route (hook_before_create, hook_after_update) is bypassed by the relationships endpoints, the transits, the admin and save(): put it in JsonApiMixin.validate_item"
+text = "an invariant over several rows checked by count() passes in every parallel request: lock_on_write on the parent, a constraint as the barrier, set_item(item_id, with_lock=True) in an action"
 
 [[pitfalls]]
-text = "an invariant over several rows (no more than N per parent, one open per parent, a number in the parent) checked by count() passes in every parallel request: declare the parent in lock_on_write = ('<fk>',) (every write locks it before the row, in every path) and count in validate_item (lock the parent in save() too before taking a number), keep a UniqueConstraint as the barrier, and take the item of an action that changes it with set_item(item_id, with_lock=True); a parent locked only in validate_item (after the insert) deadlocks with an action that locks it first; a write the constraint refuses answers 409 ERR_CONFLICT, a deadlock 409 ERR_CONFLICT with meta.retry"
+text = "a unique or exclusion constraint answers 409 ERR_CONFLICT; a not-null, check or foreign key violation is a 500: keep such rules in validate_item (422)"
 
 [[pitfalls]]
-text = "an IntegrityError of a unique or an exclusion constraint answers 409 ERR_CONFLICT (bazis 2.16; any integrity error of a create was 409 ERR_REQUEST before), with an error at /data/attributes/<f> or /data/relationships/<f> for each field of a unique constraint of the model of a create or an update when the user writes all its fields (none for a hidden or server-filled field, another table, an action, the relationships endpoints, an exclusion constraint); a not-null, check or foreign key violation is a 500: keep such rules in validate_item (422)"
+text = "an action open to anonymous users (public=True) is limited by BAZIS_THROTTLE_PUBLIC unless it declares its own throttle; a business count is an invariant, not a rate"
 
 [[pitfalls]]
-text = "an action open to anonymous users (public=True) is limited by BAZIS_THROTTLE_PUBLIC ('30/minute' per user or IP address, dynamic, '' turns it off) unless it declares its own throttle; a guessable code or a costly operation must never be open without a rate limit; a limit on a business count is an invariant (validate_item), not a rate"
+text = "behind a proxy the throttle counts the address uvicorn trusts (forwarded_allow_ips, never '*')"
 
 [[pitfalls]]
-text = "the throttle counts the address uvicorn gives (request.client.host): forwarded_allow_ips '*' on a server clients reach directly lets any client choose its address in X-Forwarded-For; a proxy missing from forwarded_allow_ips makes all anonymous users share the address of the proxy and one count"
+text = "send_mail is synchronous: send many mails from a background task after the commit and handle OSError per address"
 
 [[pitfalls]]
-text = "send_mail is synchronous: send many mails from a background task after the commit, not in a request, and handle a failing address or server (OSError: smtplib.SMTPException, a refused or timed out connection) without a bare except"
+text = "the hooks of a route see the item before validate_item: a hook that needs a valid item validates the writes so far with defer_validate_item"
 
 [[pitfalls]]
-text = "the hooks of a route (hook_after_create, hook_after_update, the relationships hooks) see the item before validate_item, which runs at the end of the request: a hook that needs a valid item (before a transit of bazis-statusy or a notification) calls `with defer_validate_item() as scope: scope.validate()` first"
+text = "hook_before_update sees the values in the database, not the data of the request"
 
 [[pitfalls]]
-text = "hook_before_update sees the values in the database, not the data of the request: compare the old and the new values in hook_after_update or with changes.fields in validate_item"
+text = "a Django ValidationError outside validate_item is a 422 with a WARNING, not a rule; the routes never call full_clean(); type the ids of an action as keys (UUID), not str"
 
 [[pitfalls]]
-text = "keep the rules of an item in validate_item: a Django ValidationError raised in a hook or a route answers 422 ERR_ITEM_INVALID too (bazis 2.16, a 500 before; a field of a dict points to /data/relationships/<name> or /data/attributes/<name>, on GET to /query/<name>; else /data) but logs a WARNING as a mistake; type an id in the body or query of an action as the key (UUID), not str (filter(pk='not-a-uuid') raises a Django ValidationError, a malformed number a 500); the routes never call full_clean() (Model.clean() and the validators of the fields do not run); from a hook raise JsonApiBazisException([JsonApiBazisError(message, loc=('body', 'data', 'attributes', name))], status=422): without status= the response is 400, and loc=('attributes', name) points to /attributes/<name>"
+text = "a URLField accepts only a URL of the schemes of its URLValidator, or '': keep it a URLField"
 
 [[pitfalls]]
-text = "a URLField accepts on the API only a URL of the schemes of its URLValidator (http, https, ftp, ftps) within max_length, or '': keep it a URLField (its JSON schema is a flat anyOf of string/uri and an empty string), do not turn it into a CharField; the value is stored normalized (a trailing slash for an empty path)"
+text = "a second route set of a model needs its own get_url_prefix(); a read-only route lists its actions"
 
 [[pitfalls]]
-text = "a second route set of a model needs its own get_url_prefix() (by default the resource path of the model, the URL of the first one); a read-only route lists its actions (no action shows an item past the schema of the route since 2.11.0, the dict_data route is removed)"
+text = "QuerySet.update(), bulk_create(), bulk_update(), raw saves, raw SQL and deletion do not call validate_item"
 
 [[pitfalls]]
-text = "QuerySet.update(), bulk_create(), bulk_update(), a reverse foreign key manager with bulk=True outside the routes, Through.objects.create(), loaddata and deserialization (raw), raw SQL and deletion do not call validate_item; a failed validation of a many-to-many add()/remove()/clear() inside a transaction requires rolling that transaction back (no savepoint)"
+text = "a relation by a foreign key with to_field is not supported by the relation checks"
 
 [[pitfalls]]
-text = "the pointers (source) of the errors of the core, by code; create and update point into the request document, an included item is /included/<i> instead of /data (<i> its index in the included of the document); the relationships endpoints point into their body, the data of the relationship. ERR_VALIDATE: /data/attributes/<f>, /data/relationships/<f>/..., /data/id, /data (missing for a document without data); a related id that cannot be a key of the related model at its identifier, /data/relationships/<f>/data/<j>/id; source.id and source.type name the item when the document gives its id; on the relationships endpoints /data, /data/<j>/id (/data/id). ERR_ITEM_INVALID: /data/attributes/<f>, /data/relationships/<f>, /data; on the relationships endpoints the parameter /related_field_name. ERR_RELATION_ACCESS (403), ERR_RELATION_LINK (422): /data/relationships/<f>; on the relationships endpoints /data/<j>, the refused identifier of a to-many relationship, else /data (a to-one relationship, or an object the change unlinks). Up to 2.10 ERR_VALIDATE pointed to /attributes/<f> and /relationships/<f>, also for an included item, and the relationships endpoints into the document of an update: a client that also serves older servers reads both forms"
+text = "reverse relations are not in the schemas by default; include of a relation outside the schema of the action is 400 ERR_INCLUDE"
 
 [[pitfalls]]
-text = "a relation by a foreign key with to_field: its identifiers are values of that field (checked as such), but the relation checks (relations_access_check, the relationships endpoints) look the objects up by their primary key: such relations are not supported there"
+text = "a create or an update naming a field outside the schema of its action is 422 ERR_VALIDATE extra_forbidden; a read-only one is ignored"
 
 [[pitfalls]]
-text = "reverse relations are not in the schemas by default: add them to `fields` of the route; `include` of a relation that is not in the schema of the action (or a path a.b) is 400 ERR_INCLUDE (/query/include) since 2.12.0"
+text = "a CharField/TextField without blank=True refuses an empty or whitespace-only value on the API (422)"
 
 [[pitfalls]]
-text = "a create or an update that names an attribute or a relationship that is not in the schema of the route (excluded by fields, hidden by a field permission, unknown) is 422 ERR_VALIDATE extra_forbidden at /data/attributes/<f> since 2.12.0; a field of the schema that is read-only there is ignored"
+text = "a calculated field is read-only, does not sort and is not a search field; as_filter=True makes it a filter key"
 
 [[pitfalls]]
-text = "a CharField/TextField without blank=True refuses an empty or whitespace-only value in a create or an update (422 ERR_VALIDATE at the field) since 2.12.0: mark blank=True the texts a client may leave empty; save() in code does not run the schemas"
+text = "filter lookups are not Django lookups: __in, __icontains, an unknown field are 400 ERR_FILTER"
 
 [[pitfalls]]
-text = "a calculated field (calc_property) is read-only, does not sort and is not a search field; as_filter=True makes it a filter key when it is in the LIST schema; an aggregate (FieldDynamic(func=...)) drops the Meta.ordering of the related model since 2.12.0"
-
-[[pitfalls]]
-text = "`filter` lookups are not Django lookups: `__in`, `__icontains`, `__contains` on a text or number field are 400 ERR_FILTER; the supported suffixes are in AGENTS.md"
-
-[[pitfalls]]
-text = "an unknown `filter` field (also after a relation, such as `author__in`) is 400 ERR_FILTER, and a `filter:` restriction or permission condition with one fails the request"
-
-[[pitfalls]]
-text = "`filter`, `sort` and `search` reach only the fields of the LIST schema of the route (and through a relation of it, the objects and the LIST fields of the default route of the related model): a field the route hides, `search` on a route without `search_fields` and `sort` by a to-many relation are 400 ERR_FILTER; show the field in `fields` of the route"
+text = "filter, sort and search reach only the fields of the LIST schema of the route: show a field in `fields` to filter by it"
 
 [[pitfalls]]
 text = "a search field that is not a field of the LIST schema of its route is left out of the search"
 check = "bazis.W007"
 
 [[pitfalls]]
-text = "BS_BAZIS_FILTERS_STRICT=false is a transitional rollback to the unrestricted filter, sort and search of 2.8 (hidden fields and invisible related objects are reachable); it will be removed"
+text = "BS_BAZIS_FILTERS_STRICT=false is a transitional rollback to the unrestricted queries of 2.8"
 check = "bazis.W006"
 
 [[pitfalls]]
-text = "restricting the objects of a model only in get_queryset of its route: the relationships and `included` of the other routes see them; restrict them in restrict_queryset of the default route of the model"
+text = "restricting the objects of a model only in get_queryset: the relationships and `included` of the other routes see them; use restrict_queryset"
 
 [[pitfalls]]
-text = "several route sets of a model that restrict its objects differently, without `default_route = True` in one of them: the last defined one (the import order) is the default route, whose restrict_queryset restricts the objects in the other routes"
+text = "several route sets of a model without `default_route = True` in one: the last defined one is the default route"
 check = "bazis.W003"

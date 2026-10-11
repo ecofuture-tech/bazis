@@ -26,15 +26,21 @@ guides of all Bazis packages, also the ones not installed.
 ### The sections
 
 Read a section with `package_guide("bazis", "<section>")` when the step at hand needs it;
-`guide_search` finds the part of a section that answers a question.
+`guide_search` finds the part of a section that answers a question. An app needs Project
+layout, Models, Routes and Rules; the other sections when the product has what they
+cover.
 
 | Section | Read it when |
 |---|---|
-| Project layout | you create a project or an app: its files, the media and static files, the `BS_*` settings and `BS_INSTALLED_APPS`, the translations (`bazis_messages`), the language of a request |
-| Models | you write a model: the mixins, `validate_item` and the invariants under concurrent requests (also no overlapping intervals of a participant), the declarations, the triggers, `calc_property`, `UniqNumberMixin`, translated data, callable defaults |
-| Routes | you write a route set: its schemas (`fields`), `restrict_queryset`, the default route, custom routes and actions (`@http_get`, `@http_post`, `public`, `access_action`), the hooks of the writes and their order, the errors, throttle, several route sets of a model |
-| API conventions | a client builds a request: `filter`, `sort`, `search`, `include`, the errors, the points and the distances (`near`, `distance`) |
-| E-mail | the product sends mail |
+| Project layout | you create a project or an app: its files, the media and static files, the `BS_*` settings and `BS_INSTALLED_APPS`, the dynamic settings, the translations (`bazis_messages`), the language of a request |
+| Models | you write a model: the mixins and the resource type, `URLField`, the declarations in the code, the triggers (pgtrigger) and `migrate`, `UniqNumberMixin`, data named in every language, callable defaults |
+| Invariants of the items | a rule that every write of an item must keep: `validate_item` and `ItemChanges`, `defer_validate_item`, limits and unique values under concurrent requests (`lock_on_write`, `set_item(with_lock=True)`, tests with `parallel`), no overlapping intervals of a participant |
+| Calculated fields | a field the query of a route computes (`calc_property`, `FieldAnnotate`, `FieldDynamic`, a subquery, the user of the request), or one computed from the item itself |
+| Routes | you write a route set: its schemas (`fields`, `SchemaFields`), `restrict_queryset`, the default route, the routers, a second route set of a model, read-only routes and reports |
+| Custom routes and actions | an endpoint that is no CRUD: `@http_get`/`@http_post`, the models of its body and response, `public` and `access_action`, `route_declare`, the errors in the OpenAPI, the rate limits (`throttle`) |
+| Writes and errors | the hooks of the create, the update and the relationships endpoints and their order, the errors the API answers (`ValidationError`, `JsonApiBazisException`, 409 `ERR_CONFLICT`) and their pointers |
+| API conventions | a client builds a request: `filter` and its lookups, `sort`, `search`, `include`, the pages, sparse fieldsets, the points and the distances (`near`, `distance`) |
+| E-mail | the product sends mail: the dynamic SMTP settings, the sender, the console backend in development, mail from a task |
 | Rules | before you write the code of a project, once: what every model, route and custom endpoint must respect |
 
 ## Project layout
@@ -78,8 +84,10 @@ defaults a Django setting (bazis-users and bazis-authing drop theirs in their ne
 `BS_BAZIS_APPS` (or `BS_BAZIS_CONFIG_APPS`) is only an explicit override: the exact list of
 the packages to load the settings from. Leave it unset; `'[]'` turns off the settings of all Bazis packages, also
 of the ones the project uses (`bazis_doctor` warns, `bazis.W002`). Requirements:
-PostgreSQL with PostGIS and Redis (`BS_CACHES__DEFAULT__LOCATION`). `DEBUG` is true by
-default: set `BS_DEBUG=false` and `BS_SECRET_KEY` (required without DEBUG) in production.
+PostgreSQL with PostGIS and Redis (`BS_CACHES__DEFAULT__LOCATION`): the default cache must
+be Redis (django-redis), other backends lack `delete_pattern` (`bazis.E001`). `DEBUG` is
+true by default: set `BS_DEBUG=false` and `BS_SECRET_KEY` (required without DEBUG) in
+production, and `BS_ALLOWED_HOSTS`, which is `['*']` by default (`bazis.W001`).
 
 A dynamic setting (editable in the admin: the page Constance; the throttle rates, the mail,
 `DEFAULT_FROM_EMAIL`, the page sizes) is read from the database on every use, and its
@@ -127,7 +135,8 @@ other language of `LANGUAGES` does (`bazis.W005` lists the Bazis packages left u
 The catalogs of the project (`<BASE_DIR>/locale` and the `locale` directories of its apps,
 never those of the installed packages) are made, filled and compiled by
 `python manage.py bazis_messages` (GNU gettext required); do not write a script that edits
-`.po` files:
+`.po` files (makemessages run elsewhere than BASE_DIR, or before `<BASE_DIR>/locale`
+exists, writes into the first catalog of `LOCALE_PATHS`, of an installed package):
 
 - `make`: makemessages from BASE_DIR for the languages of `LANGUAGES` but English
   (`-l ru` to choose), without the obsolete (`#~`) entries, ignoring the hidden
@@ -217,6 +226,98 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   of the values written now. A response shows the stored value as it is, so a value
   stored before bazis 2.16 that is not a URL is still read, and refused when it is
   written again: fix such rows by a data migration.
+
+### Declarations in the code (`bazis.core.declare`)
+
+- Declarations in the code (for package authors): `bazis.core.declare` holds what
+  bazis-permit (`roles.py`), bazis-statusy (`workflow.py`) and bazis-bg (`schedules.py`)
+  share to apply `<app>/<module>.py` on `migrate`: `discover` the modules,
+  `apply_after_migrate` (after all migrations, in a transaction under the shared advisory
+  `lock`), `ManagedSync` (create, update, or take over an unmarked object of the same `slug`
+  with a warning; the model has a unique `slug` and a `managed` flag), `managed_orphans`
+  (the managed objects no longer declared; each package decides their fate), and
+  `ManagedAdminMixin` (`bazis.core.admin_abstract`, declared objects read-only).
+
+### Triggers of the models (pgtrigger)
+
+- The core (`dt_created`/`dt_updated`), the packages (the current role of bazis-permit) and
+  the projects (`Meta.triggers` of a model, `pgtrigger.Trigger`) keep rules in PostgreSQL
+  triggers. They are not in the migrations: `migrate` installs the ones the database lacks
+  or has outdated (changed in the code) once all the migrations of the database are
+  applied (bazis 2.16; before, only `manage.py pgtrigger install` did, and the databases
+  of the projects lacked them while the tests had them). A `migrate` with nothing to
+  change runs no DDL; a `migrate` to an earlier migration and `flush` install nothing.
+  Each trigger is installed in a short transaction that waits for the lock of its table
+  at most `BS_BAZIS_TRIGGERS_LOCK_TIMEOUT` seconds (5; 0 - unlimited): behind a long
+  transaction on the table `migrate` fails after its migrations, naming the trigger; run
+  it again.
+- `migrate` never removes a trigger: one no model declares any more (renamed, its model
+  deleted) or of another project in the same database keeps running. `bazis_doctor`
+  warns of the missing or outdated triggers and of the ones no model declares
+  (`bazis.W008`): `manage.py migrate` installs the first (`manage.py pgtrigger install
+  <uri>` one of them); remove one of the others that is not of another project by its
+  name, `DROP TRIGGER <name> ON <table>` and `DROP FUNCTION <name>()` (`manage.py dbshell`);
+  `manage.py pgtrigger ls` lists them all. `manage.py pgtrigger prune`, and `install` and
+  `uninstall` without a URI, remove every trigger of pgtrigger that no model declares, also
+  the ones of another project that shares the database: name the triggers
+  (`app_label.Model:name`).
+- The triggers stay installed while the next migrations run, as the code of their
+  version: they fire on the writes of a data migration (`RunPython`, `RunSQL`), and one
+  that reads a column a migration removes or renames fails those writes (a condition of a
+  trigger on the column even refuses the removal). Run such a migration after `manage.py
+  pgtrigger uninstall <uri>` of the affected triggers; the `migrate` that follows installs
+  them again.
+- Deploy: run `migrate` as a step of its own before the processes of the new version
+  start, never from the processes of the old version once the new one migrated: an old
+  `migrate` sees the triggers of the new version as changed and installs its own again.
+
+### Numbers: `UniqNumberMixin`
+
+- Numbers: `UniqNumberMixin` (`bazis.core.models_abstract`) gives the item `uniq_number`, the
+  next value of a database sequence (django-sequences, installed by the core) on its first
+  save, and the property `number` (its string; override it to format, calling `super()`).
+  The sequence is named by `NUMBER_LABEL` (default: the resource label of the model; give
+  several models one label to share the numbering). Show it with
+  `include={'number': None}`, and exclude `uniq_number` from the create and update schemas
+  (it is an ordinary integer field there).
+
+### Data named in every language
+
+- Data named in every language of the project (statuses, priorities, categories): a
+  `TranslatedFieldWithFallback` of django-translated-fields (a dependency of the core, used
+  by bazis-permit and bazis-statusy), a column per language:
+
+  ```python
+  from translated_fields import TranslatedFieldWithFallback
+
+  class Priority(DtMixin, UuidMixin, JsonApiMixin):
+      name = TranslatedFieldWithFallback(
+          models.CharField(_('Name'), max_length=100), languages=['en', 'ru'])
+  ```
+
+  The columns are `name_en`, `name_ru` (the first language is required, the others may be
+  blank; list the languages of `BS_LANGUAGES` explicitly so that the migrations do not
+  depend on the settings, and add a migration with a language). The API has one attribute
+  `name`, read-only, in the language of the request (the first language when its column
+  is blank); `filter`, `sort` and `search` (`search_fields = ['name']`) by it use the
+  column of the language of the request (a blank translation is matched and sorted as
+  empty, not by the fallback: fill every language). The columns are edited in the admin
+  (`translated_fields.TranslatedFieldAdmin`), or through the API when the route adds them
+  (`include={'name_en': None, 'name_ru': None}`). A query of the project by such a field
+  takes its column in the active language from `translated_name(model, 'name')`
+  (`bazis.core.utils.query_complex`).
+
+### Callable defaults of the fields
+
+- A callable default of a model field (`auto_now`, `timezone.now`, `uuid.uuid4`, `dict`, a
+  database lookup) is never evaluated by the schemas, neither when they are built nor when
+  a request or a response is validated: the field is optional, without a `default` in the
+  OpenAPI, and an omitted field gets the default of the model on save (only the attributes
+  sent by the client are written). Static defaults (`True`, `'new'`) stay in the OpenAPI.
+  The generated OpenAPI must not depend on the process or the time (it is hashed to detect a
+  stale frontend contract): do not put random or time-based values into schemas.
+
+## Invariants of the items
 
 ### Invariants of an item: `validate_item`
 
@@ -401,7 +502,8 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   through model refuses two overlapping intervals of one participant, whatever writes them
   (the create and update of the parent, the relationships endpoint, the admin, parallel
   requests). `set()` writes the rows of the through model without `save()`, so triggers
-  fill the interval (the triggers are installed by `migrate`, see Triggers below):
+  fill the interval (the triggers are installed by `migrate`, see Triggers of the models
+  in Models):
 
   ```python
   import pgtrigger
@@ -452,51 +554,7 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   (checked at the commit). The interval of the through rows is the barrier: never compute
   it in `save()` of the through model, which `set()` does not call.
 
-### Declarations in the code (`bazis.core.declare`)
-
-- Declarations in the code (for package authors): `bazis.core.declare` holds what
-  bazis-permit (`roles.py`), bazis-statusy (`workflow.py`) and bazis-bg (`schedules.py`)
-  share to apply `<app>/<module>.py` on `migrate`: `discover` the modules,
-  `apply_after_migrate` (after all migrations, in a transaction under the shared advisory
-  `lock`), `ManagedSync` (create, update, or take over an unmarked object of the same `slug`
-  with a warning; the model has a unique `slug` and a `managed` flag), `managed_orphans`
-  (the managed objects no longer declared; each package decides their fate), and
-  `ManagedAdminMixin` (`bazis.core.admin_abstract`, declared objects read-only).
-
-### Triggers of the models (pgtrigger)
-
-- The core (`dt_created`/`dt_updated`), the packages (the current role of bazis-permit) and
-  the projects (`Meta.triggers` of a model, `pgtrigger.Trigger`) keep rules in PostgreSQL
-  triggers. They are not in the migrations: `migrate` installs the ones the database lacks
-  or has outdated (changed in the code) once all the migrations of the database are
-  applied (bazis 2.16; before, only `manage.py pgtrigger install` did, and the databases
-  of the projects lacked them while the tests had them). A `migrate` with nothing to
-  change runs no DDL; a `migrate` to an earlier migration and `flush` install nothing.
-  Each trigger is installed in a short transaction that waits for the lock of its table
-  at most `BS_BAZIS_TRIGGERS_LOCK_TIMEOUT` seconds (5; 0 - unlimited): behind a long
-  transaction on the table `migrate` fails after its migrations, naming the trigger; run
-  it again.
-- `migrate` never removes a trigger: one no model declares any more (renamed, its model
-  deleted) or of another project in the same database keeps running. `bazis_doctor`
-  warns of the missing or outdated triggers and of the ones no model declares
-  (`bazis.W008`): `manage.py migrate` installs the first (`manage.py pgtrigger install
-  <uri>` one of them); remove one of the others that is not of another project by its
-  name, `DROP TRIGGER <name> ON <table>` and `DROP FUNCTION <name>()` (`manage.py dbshell`);
-  `manage.py pgtrigger ls` lists them all. `manage.py pgtrigger prune`, and `install` and
-  `uninstall` without a URI, remove every trigger of pgtrigger that no model declares, also
-  the ones of another project that shares the database: name the triggers
-  (`app_label.Model:name`).
-- The triggers stay installed while the next migrations run, as the code of their
-  version: they fire on the writes of a data migration (`RunPython`, `RunSQL`), and one
-  that reads a column a migration removes or renames fails those writes (a condition of a
-  trigger on the column even refuses the removal). Run such a migration after `manage.py
-  pgtrigger uninstall <uri>` of the affected triggers; the `migrate` that follows installs
-  them again.
-- Deploy: run `migrate` as a step of its own before the processes of the new version
-  start, never from the processes of the old version once the new one migrated: an old
-  `migrate` sees the triggers of the new version as changed and installs its own again.
-
-### Calculated fields: `calc_property`
+## Calculated fields
 
 - Calculated fields: `@calc_property([...], as_filter=False)` from `bazis.core.utils.orm`
   declares what the query of the routes fetches for the property in the same pass; the
@@ -531,8 +589,8 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   `FieldAnnotate(source, query)`: an expression of the row. `FieldDynamic(source=<relation>,
   ...)`: with `func` (`'Count'`, `'Sum'`, ...; `source` may end with the field,
   `tickets__hours`) a subquery aggregate over the related objects filtered by `query` (the
-  `Meta.ordering` of the related model is dropped there); with `fields=[...]` a list of
-  dicts of the related objects (`order_by`, `slice`); without them the related objects
+  `Meta.ordering` of the related model is dropped there, bazis 2.12); with `fields=[...]`
+  a list of dicts of the related objects (`order_by`, `slice`); without them the related objects
   themselves (`nested=[...]` for theirs); an `alias` starting with `has_` is an `EXISTS`.
   A subquery over another model is declared by a callable that returns the field: it is
   called on the first query, so its expression may use a model declared later in the
@@ -583,50 +641,6 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   not a filter, a sort or a search field: for that, an annotation (`FieldAnnotate`,
   `as_filter=True`).
 
-### Numbers: `UniqNumberMixin`
-
-- Numbers: `UniqNumberMixin` (`bazis.core.models_abstract`) gives the item `uniq_number`, the
-  next value of a database sequence (django-sequences, installed by the core) on its first
-  save, and the property `number` (its string; override it to format, calling `super()`).
-  The sequence is named by `NUMBER_LABEL` (default: the resource label of the model; give
-  several models one label to share the numbering). Show it with
-  `include={'number': None}`, and exclude `uniq_number` from the create and update schemas
-  (it is an ordinary integer field there).
-
-### Data named in every language
-
-- Data named in every language of the project (statuses, priorities, categories): a
-  `TranslatedFieldWithFallback` of django-translated-fields (a dependency of the core, used
-  by bazis-permit and bazis-statusy), a column per language:
-
-  ```python
-  from translated_fields import TranslatedFieldWithFallback
-
-  class Priority(DtMixin, UuidMixin, JsonApiMixin):
-      name = TranslatedFieldWithFallback(
-          models.CharField(_('Name'), max_length=100), languages=['en', 'ru'])
-  ```
-
-  The columns are `name_en`, `name_ru` (the first language is required, the others may be
-  blank; list the languages of `BS_LANGUAGES` explicitly so that the migrations do not
-  depend on the settings, and add a migration with a language). The API has one attribute
-  `name`, read-only, in the language of the request (the first language when its column
-  is blank); `filter`, `sort` and `search` (`search_fields = ['name']`) by it use the
-  column of the language of the request (a blank translation is matched and sorted as
-  empty, not by the fallback: fill every language). The columns are edited in the admin
-  (`translated_fields.TranslatedFieldAdmin`), or through the API when the route adds them
-  (`include={'name_en': None, 'name_ru': None}`).
-
-### Callable defaults of the fields
-
-- A callable default of a model field (`auto_now`, `timezone.now`, `uuid.uuid4`, `dict`, a
-  database lookup) is never evaluated by the schemas, neither when they are built nor when
-  a request or a response is validated: the field is optional, without a `default` in the
-  OpenAPI, and an omitted field gets the default of the model on save (only the attributes
-  sent by the client are written). Static defaults (`True`, `'new'`) stay in the OpenAPI.
-  The generated OpenAPI must not depend on the process or the time (it is hashed to detect a
-  stale frontend contract): do not put random or time-based values into schemas.
-
 ## Routes
 
 ```python
@@ -651,19 +665,39 @@ class OrderRouteSet(JsonapiRouteBase):
   needs one defines it in its route class and restricts it itself.
 - Reverse relations and calculated fields are not in the schemas by default: add them with
   `SchemaFields(include=...)`. Writable relations are those of the UPDATE (CREATE) schema.
+  A forward relation (a foreign key, a many-to-many field, also with a `through` model)
+  is required in the create schema unless its model field has `blank=True`, `null=True`
+  or a default.
 - A create or an update names only the attributes and relationships of the schema of its
   action: any other (excluded by `fields`, hidden by a field permission of bazis-permit,
-  unknown) is 422 `ERR_VALIDATE` with the title `extra_forbidden` and the pointer
-  `/data/attributes/<f>` (`/data/relationships/<f>`, `/included/<i>/...`); a field of the
+  unknown) is 422 `ERR_VALIDATE` (bazis 2.12) with the title `extra_forbidden` and the
+  pointer `/data/attributes/<f>` (`/data/relationships/<f>`, `/included/<i>/...`); a field of the
   schema that is read-only there (calculated fields, `SchemaField(read_only=True)`, the
   permission `readonly`) is ignored. A text field (`CharField`, `TextField`) without
   `blank=True` refuses an empty value or one of only whitespace (422 `ERR_VALIDATE` at the
-  field), as the forms of Django; the value is stored as sent. A field the client may
-  leave empty is `blank=True`. The responses are not checked for blank values.
+  field, bazis 2.12), as the forms of Django; the value is stored as sent. A field the
+  client may leave empty is `blank=True`. The responses are not checked for blank values,
+  and `save()` in the code does not run the schemas.
   A relation read-only there (`SchemaField(read_only=True)`, the field permission
   `readonly` of bazis-permit) is ignored by an update, and the relationships endpoints
   refuse it as a relation that is not in the schema: 403 `ERR_RELATIONSHIP_READONLY` with
   `source.parameter` `/related_field_name`.
+
+### Fields of a route
+
+`fields = {<action or None>: SchemaFields(...)}` (`None`: every action). By default a schema
+has the attributes and the forward relations of the model, without the internal columns a
+package adds to it (`Model.get_fields_hidden()`, such as the selector arrays
+`autogen_<field>_selectors` of bazis-permit): a route has one only when it names it in
+`include` or `origin`. `origin={...}` replaces them
+with the listed fields (a projection), `include={...}` adds fields (reverse relations,
+calculated fields, a `SchemaField` that overrides one), `exclude={...}` removes fields and
+wins over `include`. The entries of an action are read along the MRO of the route, the
+parent classes first, and in each class its `None` entry, then its entry of the action:
+`include` and `exclude` add up, the last `origin` wins (the action entry of the route,
+else its `None` entry, else the entries of the parents; so a `None` entry of a child
+overrides an action entry of its parent). `is_inherit=False` on the entry of an action
+leaves out the `None` entry of the same class only.
 
 ### The visibility of the objects for the other routes: `restrict_queryset`
 
@@ -701,11 +735,51 @@ class OrderRouteSet(JsonapiRouteBase):
   class of the model (abstract ones never), unless one declares `default_route = True` in
   its class body (not inherited). With several route sets of a model that restrict its
   objects differently, declare it (`bazis_doctor` warns, `bazis.W003`).
-- Logic around writes: the hooks of the route (below). They are for the side effects of
-  the writes of the route; a rule about the item (an invariant) belongs in `validate_item`
-  of the model (see Models), which no way of writing bypasses.
 
-### Custom routes and actions: `@http_get`, `@http_post`
+### Registering the route sets
+
+- Register: `router = BazisRouter(tags=['CRM'])`, `router.register(OrderRouteSet.as_router())`
+  in `<app>/router.py`; the root router (`BazisRouter(prefix='/api/v1')`) registers the app
+  routers by module name: `router.register('crm.router')` (its `router`). `register` also
+  takes a router object (`router.register(files_router)`, a `BazisRouter`); the prefix of
+  `as_router()` is `get_url_prefix()` of the route class.
+
+### Several route sets of a model, read-only routes
+
+- A second route set of a model (a projection, a public calendar) needs its own URL:
+  override the classmethod `get_url_prefix()` (by default the resource path of the model,
+  `/<app>/<model>`), e.g. `return '/rooms/occupancy'`, and mark the main one
+  `default_route = True` (`bazis.W003`). Its own list and items are its `get_queryset`;
+  the relationships, `included` and filters of the other routes use the `restrict_queryset`
+  of the default route.
+- A report (a narrowed list, an aggregate per object) is a route of a proxy model of the
+  project (`class OpenTicket(Ticket): class Meta: proxy = True`): its type is
+  `<app>.open_ticket`, its URL the resource path of the proxy, it has no create and update,
+  and `get_queryset` narrows its list and items (another item is 404):
+
+  ```python
+  class OpenTicketRouteSet(JsonapiRouteBase):
+      model = apps.get_model('support.OpenTicket')
+      actions = ['action_list', 'action_retrieve', 'action_schema_list',
+                 'action_schema_retrieve']
+      fields = {None: SchemaFields(origin={'title': None, 'is_late': None})}
+
+      def get_queryset(self):
+          qs = super().get_queryset().filter(done=False)
+          # who sees the tickets: the restrict_queryset of the default route of Ticket
+          return TicketRouteSet.restrict_queryset(
+              qs, CrudAccessAction.VIEW, user=getattr(self.inject, 'user', None))
+  ```
+- A read-only route lists its actions: `actions = ['action_list', 'action_retrieve',
+  'action_schema_list', 'action_schema_retrieve']` (or `as_router(actions=[...])`). The
+  writes are `action_create`, `action_update`, `action_destroy`, `action_post_relationships`,
+  `action_update_relationships`, `action_delete_relationships` and their schemas
+  `action_schema_create`, `action_schema_update`; the other actions are `action_list_id`
+  (`/_id/`) and `get_route_filter_fields`. No action shows the attributes of an item past
+  the schema of the route (the `dict_data` route was removed in 2.11.0). A route class of
+  a proxy model excludes `action_create` and `action_update` in a list of its own.
+
+## Custom routes and actions
 
 - Custom routes: `@http_get('/{item_id}/card/', kind=RouteKind.ITEM)` (decorators
   `http_get`, `http_post`, `http_put`, `http_patch`, `http_delete` from
@@ -793,29 +867,63 @@ class OrderRouteSet(JsonapiRouteBase):
   extending `route_openapi_extra(route_ctx)` (`x-bazis` is its base; never change the route
   context there). Document only what the route can really return.
 
-### Registering the route sets
+### Request rate limits (throttle)
 
-- Register: `router = BazisRouter(tags=['CRM'])`, `router.register(OrderRouteSet.as_router())`
-  in `<app>/router.py`; the root router (`BazisRouter(prefix='/api/v1')`) registers the app
-  routers by module name: `router.register('crm.router')` (its `router`). `register` also
-  takes a router object (`router.register(files_router)`, a `BazisRouter`); the prefix of
-  `as_router()` is `get_url_prefix()` of the route class.
+`throttle(rate, key='user_or_ip', scope=None)` (`bazis.core.throttle`) is a FastAPI
+dependency that limits the requests of a route in a fixed window counted in the default
+cache (Redis): over the rate the request fails with 429 `ERR_THROTTLED` and the header
+`Retry-After` (seconds to the next window).
 
-### Fields of a route
+```python
+from bazis.core.throttle import throttle
 
-`fields = {<action or None>: SchemaFields(...)}` (`None`: every action). By default a schema
-has the attributes and the forward relations of the model, without the internal columns a
-package adds to it (`Model.get_fields_hidden()`, such as the selector arrays
-`autogen_<field>_selectors` of bazis-permit): a route has one only when it names it in
-`include` or `origin`. `origin={...}` replaces them
-with the listed fields (a projection), `include={...}` adds fields (reverse relations,
-calculated fields, a `SchemaField` that overrides one), `exclude={...}` removes fields and
-wins over `include`. The entries of an action are read along the MRO of the route, the
-parent classes first, and in each class its `None` entry, then its entry of the action:
-`include` and `exclude` add up, the last `origin` wins (the action entry of the route,
-else its `None` entry, else the entries of the parents; so a `None` entry of a child
-overrides an action entry of its parent). `is_inherit=False` on the entry of an action
-leaves out the `None` entry of the same class only.
+class CertificateRouteSet(PermitRouteBase):
+    @http_get('/verify/', public=True, dependencies=[throttle('10/minute', key='ip')])
+    def action_verify(self, code: str, **kwargs): ...
+
+    @http_post('/export/', access_action=CrudAccessAction.VIEW,
+               dependencies=[throttle(lambda: settings.TRAINING_EXPORT_RATE)])
+    def action_export(self, **kwargs): ...
+```
+
+- `rate`: `'<number>/<second|minute|hour|day>'` (or `s`, `m`, `h`, `d`); a callable
+  returning one is read on every request (a dynamic setting of the project, editable in the
+  admin; None or `''` means unlimited). An invalid rate fails at import; an invalid rate of
+  a callable is logged and does not limit.
+- `key`: `user_or_ip` counts the user of the route (`self.inject.user` of bazis-users) when
+  he is authenticated, else the IP address; `ip` always the IP address. On a route that is
+  not a route class `throttle` counts by the IP address.
+- The IP address is `request.client.host`, the address uvicorn gives: Bazis does not read
+  `X-Forwarded-For` itself. Behind a reverse proxy, uvicorn (or the gunicorn worker) takes
+  the client from `X-Forwarded-For` only for the proxies it trusts: `forwarded_allow_ips`
+  of the gunicorn config (the deploy template of the samples reads
+  `BS_FORWARDED_ALLOW_IPS`, default loopback and the private networks), `--proxy-headers
+  --forwarded-allow-ips` of uvicorn. Never `'*'` on a server clients reach directly: any
+  client then picks its address in the header and escapes the limits. If the proxy is not
+  trusted (its address missing from the list), every request has the address of the proxy:
+  all anonymous users share one count and are throttled together.
+- `scope`: routes that name the same scope share the count; by default each route counts
+  its own.
+- An action declared `public=True` without a throttle of its own gets
+  `throttle(BAZIS_THROTTLE_PUBLIC)` (`'30/minute'` per user or IP address, a dynamic
+  setting validated in the environment and the admin; `''` turns it off). A throttle the
+  action declares replaces it.
+- `BAZIS_THROTTLE_ENABLED` (dynamic, true) turns all of them off;
+  `BAZIS_THROTTLE_EXEMPT` (an import path of a function `(request, ident) -> bool`,
+  `ident` is `user:<pk>` or `ip:<address>`) exempts requests, e.g. by a whitelist of the
+  project. The cache failing (Redis down) is logged and lets the requests through.
+- Tests: the pytest plugin of bazis-test-utils (2.5.2) resets the counts before each test
+  (`bazis.core.throttle.throttle_reset()`), so a test of a throttle counts from zero and the
+  other tests never inherit a 429; no fixture of the project clears the cache for it.
+- A limit on a business count (attempts per assignment, messages per day of a user) is an
+  invariant of the data, not a rate: keep it in `validate_item` (see Invariants of the
+  items).
+
+## Writes and errors
+
+- Logic around writes: the hooks of the route (below). They are for the side effects of
+  the writes of the route; a rule about the item (an invariant) belongs in `validate_item`
+  of the model (see Invariants of the items), which no way of writing bypasses.
 
 ### Writes of a route: hooks and their order
 
@@ -928,92 +1036,6 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   names in them as given); the Pydantic messages (`ERR_VALIDATE`) and the messages of
   Django and Python in `ERR_FILTER` (a value that is not a number) are English.
 
-### Request rate limits (throttle)
-
-`throttle(rate, key='user_or_ip', scope=None)` (`bazis.core.throttle`) is a FastAPI
-dependency that limits the requests of a route in a fixed window counted in the default
-cache (Redis): over the rate the request fails with 429 `ERR_THROTTLED` and the header
-`Retry-After` (seconds to the next window).
-
-```python
-from bazis.core.throttle import throttle
-
-class CertificateRouteSet(PermitRouteBase):
-    @http_get('/verify/', public=True, dependencies=[throttle('10/minute', key='ip')])
-    def action_verify(self, code: str, **kwargs): ...
-
-    @http_post('/export/', access_action=CrudAccessAction.VIEW,
-               dependencies=[throttle(lambda: settings.TRAINING_EXPORT_RATE)])
-    def action_export(self, **kwargs): ...
-```
-
-- `rate`: `'<number>/<second|minute|hour|day>'` (or `s`, `m`, `h`, `d`); a callable
-  returning one is read on every request (a dynamic setting of the project, editable in the
-  admin; None or `''` means unlimited). An invalid rate fails at import; an invalid rate of
-  a callable is logged and does not limit.
-- `key`: `user_or_ip` counts the user of the route (`self.inject.user` of bazis-users) when
-  he is authenticated, else the IP address; `ip` always the IP address. On a route that is
-  not a route class `throttle` counts by the IP address.
-- The IP address is `request.client.host`, the address uvicorn gives: Bazis does not read
-  `X-Forwarded-For` itself. Behind a reverse proxy, uvicorn (or the gunicorn worker) takes
-  the client from `X-Forwarded-For` only for the proxies it trusts: `forwarded_allow_ips`
-  of the gunicorn config (the deploy template of the samples reads
-  `BS_FORWARDED_ALLOW_IPS`, default loopback and the private networks), `--proxy-headers
-  --forwarded-allow-ips` of uvicorn. Never `'*'` on a server clients reach directly: any
-  client then picks its address in the header and escapes the limits. If the proxy is not
-  trusted (its address missing from the list), every request has the address of the proxy:
-  all anonymous users share one count and are throttled together.
-- `scope`: routes that name the same scope share the count; by default each route counts
-  its own.
-- An action declared `public=True` without a throttle of its own gets
-  `throttle(BAZIS_THROTTLE_PUBLIC)` (`'30/minute'` per user or IP address, a dynamic
-  setting validated in the environment and the admin; `''` turns it off). A throttle the
-  action declares replaces it.
-- `BAZIS_THROTTLE_ENABLED` (dynamic, true) turns all of them off;
-  `BAZIS_THROTTLE_EXEMPT` (an import path of a function `(request, ident) -> bool`,
-  `ident` is `user:<pk>` or `ip:<address>`) exempts requests, e.g. by a whitelist of the
-  project. The cache failing (Redis down) is logged and lets the requests through.
-- Tests: the pytest plugin of bazis-test-utils (2.5.2) resets the counts before each test
-  (`bazis.core.throttle.throttle_reset()`), so a test of a throttle counts from zero and the
-  other tests never inherit a 429; no fixture of the project clears the cache for it.
-- A limit on a business count (attempts per assignment, messages per day of a user) is an
-  invariant of the data, not a rate: keep it in `validate_item` (see Models).
-
-### Several route sets of a model, read-only routes
-
-- A second route set of a model (a projection, a public calendar) needs its own URL:
-  override the classmethod `get_url_prefix()` (by default the resource path of the model,
-  `/<app>/<model>`), e.g. `return '/rooms/occupancy'`, and mark the main one
-  `default_route = True` (`bazis.W003`). Its own list and items are its `get_queryset`;
-  the relationships, `included` and filters of the other routes use the `restrict_queryset`
-  of the default route.
-- A report (a narrowed list, an aggregate per object) is a route of a proxy model of the
-  project (`class OpenTicket(Ticket): class Meta: proxy = True`): its type is
-  `<app>.open_ticket`, its URL the resource path of the proxy, it has no create and update,
-  and `get_queryset` narrows its list and items (another item is 404):
-
-  ```python
-  class OpenTicketRouteSet(JsonapiRouteBase):
-      model = apps.get_model('support.OpenTicket')
-      actions = ['action_list', 'action_retrieve', 'action_schema_list',
-                 'action_schema_retrieve']
-      fields = {None: SchemaFields(origin={'title': None, 'is_late': None})}
-
-      def get_queryset(self):
-          qs = super().get_queryset().filter(done=False)
-          # who sees the tickets: the restrict_queryset of the default route of Ticket
-          return TicketRouteSet.restrict_queryset(
-              qs, CrudAccessAction.VIEW, user=getattr(self.inject, 'user', None))
-  ```
-- A read-only route lists its actions: `actions = ['action_list', 'action_retrieve',
-  'action_schema_list', 'action_schema_retrieve']` (or `as_router(actions=[...])`). The
-  writes are `action_create`, `action_update`, `action_destroy`, `action_post_relationships`,
-  `action_update_relationships`, `action_delete_relationships` and their schemas
-  `action_schema_create`, `action_schema_update`; the other actions are `action_list_id`
-  (`/_id/`) and `get_route_filter_fields`. No action shows the attributes of an item past
-  the schema of the route (the `dict_data` route was removed in 2.11.0). A route class of
-  a proxy model excludes `action_create` and `action_update` in a list of its own.
-
 ## API conventions
 
 - `filter` is one expression: `filter=status=new&price__gte=20`, `filter=(a=1|b=2)`,
@@ -1021,7 +1043,13 @@ class CertificateRouteSet(PermitRouteBase):
   `customer__exists=true|false` (`customer__isnull` is the opposite), full-text
   `$search=text` (the search fields of the route) or `customer__$search=text` (the search
   fields of the default route of the customers), `crm.customer=<id>,<id>` (the objects
-  related to those customers); `search=text` searches the search fields of the route.
+  related to those customers); `search=text` searches the search fields of the route:
+  the text is split into words (spaces and commas), and an object matches when each word
+  is in one of its search fields (`search=Ann Smith` with the search fields `first_name`
+  and `last_name` finds Ann Smith). A field of the model matches a substring in any case,
+  or as the prefix of the field in `search_fields` says (`^name` starts with, `=name`
+  exact, `@name` full-text, `$name` regex); a field through a relation (`tag__name`)
+  matches only the whole value, as written.
 - The filter, `sort` and `search` reach only what the route shows the user
   (`BAZIS_FILTERS_STRICT`, on by default since 2.9): a key starts with a field of the LIST
   schema of the route (its `fields`; `filterLabel`/`orderLabel` of the schema) or `id` (`pk`); a
@@ -1055,8 +1083,9 @@ class CertificateRouteSet(PermitRouteBase):
 
   Any other suffix (`__in`, `__icontains`, `__contains` on a text or number field), an
   unknown field (also after a relation, such as `customer__in`) and a calculated field that
-  is not `as_filter` are an error 400 `ERR_FILTER`. `iexact`/`istartswith`/`iregex`/
-  `search`/`$search` apply to every word of the value. URL-encode the value of `filter`;
+  is not `as_filter` are an error 400 `ERR_FILTER` (a `filter:` restriction or a condition
+  of a permission with one fails every request it applies to).
+  `iexact`/`istartswith`/`iregex`/`search`/`$search` apply to every word of the value. URL-encode the value of `filter`;
   the server decodes the expression once more and every value once more, so a value with
   `&|()[]~=+%` is percent-encoded twice inside the expression; quotes are removed from
   values.
@@ -1131,8 +1160,8 @@ connection; `DEFAULT_FROM_EMAIL` is the sender (dynamic too, `BS_DEFAULT_FROM_EM
 default `webmaster@localhost` as in Django: set it to an address of the domain). A value
 set in the admin wins over the variable (see Settings: `BS_*`); `bazis_doctor` warns of an
 empty sender, with which every mail fails (`bazis.W009`, a value saved by bazis before
-2.16): set it in the admin or with `manage.py constance set DEFAULT_FROM_EMAIL
-noreply@<domain>`. Send with Django:
+2.16; the mails fail with `Invalid address`): set it in the admin or with `manage.py
+constance set DEFAULT_FROM_EMAIL noreply@<domain>`. Send with Django:
 
 ```python
 from django.core.mail import send_mail
@@ -1163,7 +1192,7 @@ send_mail(_('Your certificate'), text, None, [user.email])   # None: DEFAULT_FRO
   update do not run for the relationships endpoints, the transits, the admin or `save()`.
   An invariant over several rows declares their parent in `lock_on_write` (every write
   locks it first, in every path) and has a database constraint as the barrier (see
-  Models).
+  Invariants of the items).
 - An action open to anonymous users (`public=True`) is limited (the default
   `BAZIS_THROTTLE_PUBLIC`, or its own `throttle`): never leave a guessable code or a costly
   operation open without a rate limit.
