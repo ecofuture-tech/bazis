@@ -51,31 +51,46 @@ def check_triggers_installed(app_configs, databases=None, **kwargs):
     """
     The database has the triggers of the models (pgtrigger), which the core and the
     packages rely on (`dt_created`/`dt_updated`, the current role of bazis-permit) and the
-    tests have: `migrate` installs them once all the migrations are applied. A warning:
-    `migrate` runs the database checks before it installs them. Skipped while the
-    migrations are not applied.
+    tests have: `migrate` installs them once all the migrations are applied. And it has no
+    trigger of pgtrigger that no model declares (stale, or of another project): `migrate`
+    keeps them. Warnings: `migrate` runs the database checks before it installs the
+    triggers. Skipped while the migrations are not applied.
     """
-    from bazis.core.triggers import triggers_not_installed
+    from bazis.core.triggers import triggers_not_declared, triggers_not_installed
 
     messages = []
     for using in databases or ():
         if missing := triggers_not_installed(using):
-            shown = ', '.join(missing[:5]) + (
-                f' and {len(missing) - 5} more' if len(missing) > 5 else ''
-            )
             messages.append(
                 Warning(
                     f'The database {using} lacks {len(missing)} trigger(s) of the models or has '
-                    f'them outdated: {shown}. The rules they keep do not work in this database, '
-                    'while the tests (whose database has them) pass.',
+                    f'them outdated: {_shown(missing)}. The rules they keep do not work in this '
+                    'database, while the tests (whose database has them) pass.',
                     hint=(
-                        f'Run `manage.py migrate --database {using}` (it installs the triggers once '
-                        f'the migrations are applied) or `manage.py pgtrigger install --database {using}`.'
+                        f'Run `manage.py migrate --database {using}` (it installs them once the '
+                        f'migrations are applied) or `manage.py pgtrigger install --database {using}`.'
+                    ),
+                    id='bazis.W008',
+                )
+            )
+        if stale := triggers_not_declared(using):
+            messages.append(
+                Warning(
+                    f'The database {using} has {len(stale)} trigger(s) of pgtrigger that no model '
+                    f'declares: {_shown(stale)}. They still run on the writes of their tables.',
+                    hint=(
+                        'If they are not of another project that shares the database, remove them '
+                        f'with `manage.py pgtrigger prune --database {using}` (migrate keeps them).'
                     ),
                     id='bazis.W008',
                 )
             )
     return messages
+
+
+def _shown(names: list[str], limit: int = 5) -> str:
+    more = f' and {len(names) - limit} more' if len(names) > limit else ''
+    return ', '.join(names[:limit]) + more
 
 
 @register(Tags.database)

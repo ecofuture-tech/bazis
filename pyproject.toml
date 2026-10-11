@@ -40,7 +40,8 @@ dependencies = [
     "django-pgtrigger>=4.17,<5",
     "django-pghistory~=3.9",
     "django-sequences~=3.0",
-    "django-constance~=4.3",
+    # 4.3.5: Config._get_sync_value (bazis.core.constance_conf.base.Config)
+    "django-constance>=4.3.5,<4.4",
     "django-admin-rangefilter~=0.15",
     "django-redis~=7.0",
     "django-translated-fields~=0.14",

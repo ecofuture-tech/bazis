@@ -87,7 +87,14 @@ A dynamic setting (editable in the admin: the page Constance; the throttle rates
 the admin, with `manage.py constance set <NAME> <value>` or `config.<NAME> = ...`; a set
 value wins over the variable (`manage.py constance list` shows the values). Bazis 2.16 no longer
 saves the default when a setting is read: before, the first read saved it, and a variable
-set later had no effect.
+set later had no effect. A value equal to the default is not saved either (it is the value
+already): to keep a value whatever the variable says later, keep it in the `BS_*`
+variable, the source of the value then, or set it in the admin while it differs from the
+default. A database used before 2.16 has the defaults of its first reads saved: to let a
+setting follow its variable again, delete its saved value, `manage.py shell -c "from
+constance.models import Constance; Constance.objects.filter(key__in=['DEFAULT_FROM_EMAIL']).delete()"`
+(the keys with `CONSTANCE_DATABASE_PREFIX`; with `CONSTANCE_DATABASE_CACHE_BACKEND` the
+cached value lasts until it expires).
 
 ### Translations: `bazis_messages`
 
@@ -460,15 +467,28 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
 
 - The core (`dt_created`/`dt_updated`), the packages (the current role of bazis-permit) and
   the projects (`Meta.triggers` of a model, `pgtrigger.Trigger`) keep rules in PostgreSQL
-  triggers. They are not in the migrations: `migrate` installs them (again when changed,
-  and removes the ones no longer declared) once all the migrations of the database are
+  triggers. They are not in the migrations: `migrate` installs the ones the database lacks
+  or has outdated (changed in the code) once all the migrations of the database are
   applied (bazis 2.16; before, only `manage.py pgtrigger install` did, and the databases
-  of the projects lacked them while the tests had them). A `migrate` to an earlier
-  migration and `flush` do not install them. `bazis_doctor` warns when the database lacks
-  a trigger or has an outdated one (`bazis.W008`): run `manage.py migrate` or `manage.py
-  pgtrigger install`. A migration that removes or renames a column a trigger reads runs
-  after `manage.py pgtrigger uninstall` (the deploy script of the sample does it before
-  every `migrate`), or its own data changes fire the old trigger.
+  of the projects lacked them while the tests had them). A `migrate` with nothing to
+  change runs no DDL; a `migrate` to an earlier migration and `flush` install nothing.
+  Each trigger is installed in a short transaction that waits for the lock of its table
+  at most `BS_BAZIS_TRIGGERS_LOCK_TIMEOUT` seconds (5; 0 - unlimited): behind a long
+  transaction on the table `migrate` fails after its migrations, naming the trigger; run
+  it again.
+- `migrate` never removes a trigger: one no model declares any more (renamed, its model
+  deleted) or of another project in the same database keeps running. `bazis_doctor`
+  warns of the missing or outdated triggers and of the ones no model declares
+  (`bazis.W008`): `manage.py migrate` (or `manage.py pgtrigger install <uri>`) installs
+  the first, `manage.py pgtrigger prune` removes the others (`manage.py pgtrigger
+  uninstall <uri>` one of them); `manage.py pgtrigger ls` lists them all.
+- The triggers stay installed while the next migrations run, as the code of their
+  version: they fire on the writes of a data migration (`RunPython`, `RunSQL`), and one
+  that reads a column a migration removes or renames fails those writes (a condition of a
+  trigger on the column even refuses the removal). Run such a migration after `manage.py
+  pgtrigger uninstall` (all of them, or the URIs of the affected ones); the `migrate`
+  that follows installs them again. The deploy script of the sample uninstalls them
+  before every `migrate`.
 
 ### Calculated fields: `calc_property`
 

@@ -25,7 +25,8 @@ class Config(ConfigBase):
         """
         The value saved in the database, else the default (the `BS_*` variable of the
         setting), which is not saved (`backend.DatabaseBackend`): the reads of the settings
-        by Bazis do not try to save it, which would cost a query on every read.
+        by Bazis do not try to save it, which would cost a query on every read. Constance
+        reads a setting outside an event loop with this method since 4.3.5 (required).
         """
         result = self._backend.get(key)
         return default if result is None else result

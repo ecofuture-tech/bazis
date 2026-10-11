@@ -193,12 +193,18 @@ class Settings(BazisSettings):
     ENVIRONMENT_NAME: str = ''
     SERVER_NAME: str = ''
     RELEASE_VERSION: str = ''
-    # the triggers are not in the migrations: the core installs them after `migrate` once
-    # all the migrations are applied (`bazis.core.triggers.install_after_migrate`); the
-    # receiver of pgtrigger would install them also after a partial `migrate`, before the
+    # the triggers are not in the migrations: the core installs the missing and outdated
+    # ones after `migrate` once all the migrations are applied
+    # (`bazis.core.triggers.install_after_migrate`); the receiver of pgtrigger would install
+    # all of them (and prune the others) after every `migrate`, also a partial one before the
     # tables of the later migrations exist, and after every `flush`
     PGTRIGGER_INSTALL_ON_MIGRATE: bool = False
     PGTRIGGER_MIGRATIONS: bool = False
+    # the seconds the installation of a trigger by `migrate` waits for the lock of its table
+    # (0 - unlimited)
+    BAZIS_TRIGGERS_LOCK_TIMEOUT: int = Field(
+        5, title=_('Lock timeout of the installation of a trigger, seconds')
+    )
     DATABASES: DatabaseDefault = DatabaseDefault()
     CACHES: CacheDefault = CacheDefault()
     DATA_UPLOAD_MAX_MEMORY_SIZE: int = Field(

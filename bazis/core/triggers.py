@@ -12,19 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import sys
 from typing import TYPE_CHECKING
 
-from django.db import DEFAULT_DB_ALIAS, connection, connections, transaction
+from django.conf import settings
+from django.core.management import CommandError
+from django.db import DEFAULT_DB_ALIAS, OperationalError, connection, connections, transaction
 
 from pydantic import BaseModel
 
 import pgtrigger
 from pgtrigger.core import OUTDATED, UNINSTALLED
+from pgtrigger.installation import prunable
 
 from bazis.core.declare import lock, migrations_complete
 from bazis.core.utils.model_meta import RelationInfo
 from bazis.core.utils.triggers import trigger_name
+
+
+logger = logging.getLogger(__name__)
+
+#: SQLSTATE lock_not_available: a lock wait reached `lock_timeout`
+LOCK_NOT_AVAILABLE = '55P03'
 
 
 if TYPE_CHECKING:
@@ -269,35 +279,79 @@ class FieldsTransferTrigger(pgtrigger.Trigger):
             """
 
 
+def _pending(model, trigger, using) -> bool:
+    return trigger.get_installation_status(model, database=using)[0] in (UNINSTALLED, OUTDATED)
+
+
 def triggers_not_installed(using: str = DEFAULT_DB_ALIAS) -> list[str]:
     """
     The triggers of the models (pgtrigger, `app_label.Model:name`) that the database lacks
-    or has in an outdated version. Empty for a database other than PostgreSQL or whose
-    migrations are not all applied (its tables may not exist yet).
+    or has in an outdated version (read from `pg_trigger`, without a lock of the tables).
+    Empty for a database other than PostgreSQL or whose migrations are not all applied (its
+    tables may not exist yet).
     """
     if connections[using].vendor != 'postgresql' or not migrations_complete(using):
         return []
     return sorted(
         trigger.get_uri(model)
         for model, trigger in pgtrigger.registered()
-        if trigger.get_installation_status(model, database=using)[0] in (UNINSTALLED, OUTDATED)
+        if _pending(model, trigger, using)
     )
+
+
+def triggers_not_declared(using: str = DEFAULT_DB_ALIAS) -> list[str]:
+    """
+    The triggers of pgtrigger in the database (`<table>:<name>`, named `pgtrigger_...`) that
+    no model declares: stale ones of the project or ones of another project. `migrate`
+    never removes them; `manage.py pgtrigger prune` does.
+    """
+    if connections[using].vendor != 'postgresql' or not migrations_complete(using):
+        return []
+    return sorted(f'{table}:{name}' for table, name, *_ in prunable(database=using))
 
 
 def install_after_migrate(sender, using=DEFAULT_DB_ALIAS, verbosity=1, plan=None, **kwargs):
     """
     The receiver of `post_migrate` of the core: once the migrations of the database are all
-    applied, installs the triggers of the models (as `manage.py pgtrigger install`: the
-    changed ones again, and the ones no longer declared are removed), in a transaction
-    that holds the lock of the declarations (concurrent `migrate` runs install them one
-    after the other). The triggers are not in the migrations (`PGTRIGGER_MIGRATIONS` is
-    off): without this the database would lack them while the test database has them.
-    `flush` sends the signal without a plan and keeps the triggers: skipped then.
+    applied, installs the triggers of the models that the database lacks or has outdated,
+    nothing else: a `migrate` with nothing to change runs no DDL. Each trigger is installed
+    in a short transaction of its own that holds the lock of the declarations (concurrent
+    `migrate` runs install it once) and waits for the lock of its table at most
+    `BAZIS_TRIGGERS_LOCK_TIMEOUT` seconds (a live database is not held up behind a long
+    transaction): past it, `migrate` fails and is run again. The triggers are not in the
+    migrations (`PGTRIGGER_MIGRATIONS` is off): without this the database would lack them
+    while the test database has them. Triggers no model declares are kept (`bazis.W008`
+    names them). `flush` sends the signal without a plan and keeps the triggers: skipped.
     """
-    if plan is None or connections[using].vendor != 'postgresql' or not migrations_complete(using):
+    if plan is None:
         return
-    with transaction.atomic(using=using):
-        lock(using)
-        pgtrigger.install(database=using)
-    if verbosity >= 1:
-        (kwargs.get('stdout') or sys.stdout).write('  Installed the triggers of the models\n')
+    pending = triggers_not_installed(using)
+    timeout = settings.BAZIS_TRIGGERS_LOCK_TIMEOUT
+    installed = []
+    for uri in pending:
+        ((model, trigger),) = pgtrigger.registered(uri)
+        try:
+            with transaction.atomic(using=using):
+                lock(using)
+                with connections[using].cursor() as cursor:
+                    cursor.execute(
+                        "SELECT set_config('lock_timeout', %s, true)", [f'{timeout * 1000}ms']
+                    )
+                # another migrate may have installed it while this one waited
+                if _pending(model, trigger, using):
+                    trigger.install(model, database=using)
+                    installed.append(uri)
+        except OperationalError as err:
+            if getattr(err.__cause__, 'sqlstate', None) != LOCK_NOT_AVAILABLE:
+                raise
+            message = (
+                f'The trigger {uri} is not installed: its table {model._meta.db_table} stayed '
+                f'locked longer than BAZIS_TRIGGERS_LOCK_TIMEOUT ({timeout} s). The migrations '
+                'are applied; run `manage.py migrate` again to install the triggers.'
+            )
+            logger.error(message)
+            raise CommandError(message) from err
+    if installed and verbosity >= 1:
+        (kwargs.get('stdout') or sys.stdout).write(
+            f'  Installed {len(installed)} trigger(s) of the models\n'
+        )

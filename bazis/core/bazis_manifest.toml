@@ -159,7 +159,7 @@ text = "an empty DEFAULT_FROM_EMAIL (saved in Constance) fails every mail with I
 check = "bazis.W009"
 
 [[pitfalls]]
-text = "the triggers of the models (pgtrigger: dt_created/dt_updated, the roles of bazis-permit, Meta.triggers) are not in the migrations: migrate installs them once all the migrations are applied (bazis 2.16); a database without them breaks the rules they keep while the tests pass: manage.py migrate or manage.py pgtrigger install"
+text = "the triggers of the models (pgtrigger: dt_created/dt_updated, the roles of bazis-permit, Meta.triggers) are not in the migrations: migrate installs the missing and outdated ones once all the migrations are applied (bazis 2.16) and removes none (manage.py pgtrigger prune); they fire during the later migrations: uninstall them (manage.py pgtrigger uninstall) before a migration that drops or renames a column they read"
 check = "bazis.W008"
 
 [[pitfalls]]

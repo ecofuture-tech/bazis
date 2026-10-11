@@ -185,3 +185,47 @@ def test_doctor_warns_of_an_empty_sender():
     assert 'manage.py constance set DEFAULT_FROM_EMAIL' in warning['hint']
     # without the database the check does not run
     assert not [it for it in introspect.check_messages() if it['id'] == 'bazis.W009']
+
+
+@pytest.mark.django_db
+def test_a_read_of_a_setting_without_a_value_is_one_query():
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    with CaptureQueriesContext(connection) as queries:
+        for _ in range(3):
+            assert settings.DEFAULT_FROM_EMAIL == configure.CONSTANCE_CONFIG[SENDER][0]
+    assert len(queries) == 3
+    assert not saved(SENDER)
+
+
+@pytest.mark.django_db
+def test_the_absence_of_a_value_is_cached(monkeypatch):
+    """With CONSTANCE_DATABASE_CACHE_BACKEND a setting without a value is not read again."""
+    from django.core.cache import caches
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from constance import settings as constance_settings
+
+    from bazis.core.constance_conf.backend import DatabaseBackend
+
+    monkeypatch.setattr(constance_settings, 'DATABASE_CACHE_BACKEND', 'default')
+    cache = caches['default']
+    keys = ['autofilled', SENDER, f'bazis_unset:{SENDER}']
+    cache.delete_many(keys)
+    try:
+        backend = DatabaseBackend()
+        with CaptureQueriesContext(connection) as queries:
+            assert backend.get(SENDER) is None
+        assert len(queries) == 1
+        with CaptureQueriesContext(connection) as queries:
+            assert backend.get(SENDER) is None
+        assert len(queries) == 0
+
+        backend.set(SENDER, 'office@example.com')
+        with CaptureQueriesContext(connection) as queries:
+            assert backend.get(SENDER) == 'office@example.com'
+        assert len(queries) == 0
+    finally:
+        cache.delete_many(keys)
