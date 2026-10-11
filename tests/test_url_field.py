@@ -18,6 +18,7 @@ A `URLField` (sample `catalog.Attachment.url`) accepts on the API a URL of the s
 string; its JSON schema is a flat `anyOf` of a `string`/`uri` and an empty `string`.
 """
 
+from django.core.exceptions import ImproperlyConfigured
 from django.core.validators import URLValidator
 from django.db import models
 
@@ -164,3 +165,23 @@ def test_the_schemes_of_the_field():
         {'type': 'string', 'maxLength': 0},
         {'type': 'null'},
     ]
+
+
+def test_no_scheme_in_common():
+    """
+    `validators=` narrows the schemes of the default validator: a scheme it does not allow
+    is an error of the configuration, which names the field (a subclass of URLField with
+    its own `default_validators` allows other schemes).
+    """
+    field = models.URLField(validators=[URLValidator(schemes=['mailto'])])
+    field.set_attributes_from_name('contact')
+    field.model = Attachment
+    with pytest.raises(ImproperlyConfigured, match=r'catalog\.Attachment\.contact: .*no scheme'):
+        url_field_type(field)
+
+    class MailtoURLField(models.URLField):
+        default_validators = [URLValidator(schemes=['mailto', 'https'])]
+
+    adapter = TypeAdapter(url_field_type(MailtoURLField()))
+    assert str(adapter.validate_python('mailto:a@example.com')) == 'mailto:a@example.com'
+

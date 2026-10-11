@@ -189,13 +189,19 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
 - A missing `Meta` is inherited from all parents (unlike plain Django).
 - A `URLField` is checked on the API (the routes do not run the validators of the
   fields): a URL of the schemes of its `URLValidator` (http, https, ftp, ftps;
-  `validators=[URLValidator(schemes=['https'])]` narrows them) within its `max_length`, or
-  `''`; `javascript:`, `data:` or a URL without a scheme (`example.com`) is 422
-  `ERR_VALIDATE` at its attribute. It is stored normalized (`https://example.com` becomes
-  `https://example.com/`, the scheme and the host lowercase) and a response shows the
-  stored value as it is. Its JSON schema is a flat `anyOf` of
-  `{type: string, format: uri, maxLength}` and `{type: string, maxLength: 0}` (plus
-  `{type: null}` when it is nullable).
+  `validators=[URLValidator(schemes=['https'])]` narrows them, Django runs every validator
+  of the field) within its `max_length`, or `''`; `javascript:`, `data:` or a URL without
+  a scheme (`example.com`) is 422 `ERR_VALIDATE` at its attribute. Other schemes
+  (`mailto`) need a subclass of `URLField` with its own `default_validators`;
+  `validators=` with no scheme in common with the default one is `ImproperlyConfigured`
+  at the start, naming the field. The value is stored normalized (`https://example.com`
+  becomes `https://example.com/`, the scheme and the host lowercase). Its JSON schema,
+  of the requests and of the responses, is a flat `anyOf` of
+  `{type: string, format: uri, minLength: 1, maxLength}` and
+  `{type: string, maxLength: 0}` (plus `{type: null}` when it is nullable): the contract
+  of the values written now. A response shows the stored value as it is, so a value
+  stored before bazis 2.16 that is not a URL is still read, and refused when it is
+  written again: fix such rows by a data migration.
 
 ### Invariants of an item: `validate_item`
 

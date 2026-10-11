@@ -28,6 +28,7 @@ from django.contrib.postgres.fields import (
     IntegerRangeField,
 )
 from django.core import validators as django_validators
+from django.core.exceptions import ImproperlyConfigured
 from django.core.files.uploadedfile import UploadedFile
 from django.db import models as django_models
 from django.db.backends.postgresql.psycopg_any import Range as PGRange
@@ -369,19 +370,25 @@ def url_type(
 def url_field_type(model_field: django_models.URLField, *, stored: bool = False) -> Any:
     """
     The type of the `URLField` `model_field` (see `url_type`): the schemes its
-    `URLValidator`s all allow (the default one and those of `validators=`) and its
-    `max_length`.
+    `URLValidator`s all allow (the default one and those of `validators=`: they narrow
+    them; none in common is `ImproperlyConfigured`) and its `max_length`.
     """
     allowed = [
         validator.schemes
         for validator in model_field.validators
         if isinstance(validator, django_validators.URLValidator)
     ]
-    schemes = (
-        [scheme for scheme in allowed[0] if all(scheme in it for it in allowed[1:])]
-        if allowed
-        else None
-    )
+    schemes = None
+    if allowed:
+        schemes = [scheme for scheme in allowed[0] if all(scheme in it for it in allowed[1:])]
+        if not schemes:
+            model = getattr(model_field, 'model', None)
+            name = f'{model._meta.label}.{model_field.name}' if model else model_field.name
+            raise ImproperlyConfigured(
+                f'{name}: its URLValidators allow no scheme in common (the default one of '
+                'URLField allows http, https, ftp, ftps: other schemes need a subclass of '
+                'URLField with its own default_validators)'
+            )
     return url_type(schemes, model_field.max_length, stored=stored)
 
 
