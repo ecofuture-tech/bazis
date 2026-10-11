@@ -18,6 +18,7 @@ from copy import deepcopy
 from typing import Any
 
 from django.db.models.fields import Field as DjangoField
+from django.db.models.fields import URLField as DjangoURLField
 
 from pydantic import (
     BaseModel,
@@ -25,7 +26,7 @@ from pydantic import (
 
 from pydantic_core import PydanticUndefined
 
-from bazis.core.utils.django_types import TYPES_DJANGO_TO_SCHEMA_LOOKUP
+from bazis.core.utils.django_types import TYPES_DJANGO_TO_SCHEMA_LOOKUP, url_field_type
 from bazis.core.utils.functools import uniq_id
 from bazis.core.utils.model_meta import (
     RelationInfo,
@@ -212,6 +213,8 @@ class SchemaField:
         """
         if not self.field_db_attr:
             return Any
+        if isinstance(self.field_db_attr, DjangoURLField):
+            return url_field_type(self.field_db_attr)
         try:
             return TYPES_DJANGO_TO_SCHEMA_LOOKUP[self.field_db_attr]
         except KeyError:

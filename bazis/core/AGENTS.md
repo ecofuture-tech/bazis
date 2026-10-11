@@ -187,6 +187,15 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   makes the model a JSON:API resource; its type is `<app_label>.<class name in snake_case>`
   (`CarrierTask` in the app `crm` is `crm.carrier_task`).
 - A missing `Meta` is inherited from all parents (unlike plain Django).
+- A `URLField` is checked on the API (the routes do not run the validators of the
+  fields): a URL of the schemes of its `URLValidator` (http, https, ftp, ftps;
+  `validators=[URLValidator(schemes=['https'])]` narrows them) within its `max_length`, or
+  `''`; `javascript:`, `data:` or a URL without a scheme (`example.com`) is 422
+  `ERR_VALIDATE` at its attribute. It is stored normalized (`https://example.com` becomes
+  `https://example.com/`, the scheme and the host lowercase) and a response shows the
+  stored value as it is. Its JSON schema is a flat `anyOf` of
+  `{type: string, format: uri, maxLength}` and `{type: string, maxLength: 0}` (plus
+  `{type: null}` when it is nullable).
 
 ### Invariants of an item: `validate_item`
 

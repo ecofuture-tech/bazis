@@ -302,8 +302,11 @@ class SchemaFactory:
                 field.enum = field.enum or list(dict(choices).keys()) if choices else None
                 field.enum_dict = field.enum_dict or dict(choices) if choices else None
 
+                # not for these types: a URLField has its length in its type
+                # (url_field_type), a length of the union would nest its anyOf
                 if not field.enum and not isinstance(
-                    field.field_db_attr, django_models.EmailField | django_models.FileField
+                    field.field_db_attr,
+                    django_models.EmailField | django_models.FileField | django_models.URLField,
                 ):
                     field.min_length = (
                         field.min_length

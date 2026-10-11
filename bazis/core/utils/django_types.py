@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -26,6 +27,7 @@ from django.contrib.postgres.fields import (
     DecimalRangeField,
     IntegerRangeField,
 )
+from django.core import validators as django_validators
 from django.core.files.uploadedfile import UploadedFile
 from django.db import models as django_models
 from django.db.backends.postgresql.psycopg_any import Range as PGRange
@@ -33,6 +35,7 @@ from django.db.backends.postgresql.psycopg_any import Range as PGRange
 from fastapi import UploadFile
 
 from pydantic import (
+    AfterValidator,
     AnyUrl,
     BaseModel,
     EmailStr,
@@ -40,12 +43,17 @@ from pydantic import (
     GetCoreSchemaHandler,
     GetJsonSchemaHandler,
     IPvAnyAddress,
-    constr,
+    StringConstraints,
+    UrlConstraints,
+    ValidationError,
+    ValidatorFunctionWrapHandler,
+    WithJsonSchema,
+    WrapValidator,
     model_validator,
 )
 from pydantic.json_schema import JsonSchemaValue
 
-from pydantic_core import PydanticCustomError, core_schema
+from pydantic_core import PydanticCustomError, PydanticKnownError, core_schema
 
 from .functools import ClassLookupDict
 
@@ -313,6 +321,70 @@ class RangeType:
         return v
 
 
+def url_type(
+    schemes: Sequence[str] | None = None, max_length: int | None = None, *, stored: bool = False
+) -> Any:
+    """
+    The type of a `URLField`: a URL of one of the `schemes` (by default those of Django's
+    `URLValidator`: http, https, ftp, ftps) of at most `max_length` characters, also once
+    normalized (pydantic adds the trailing slash of an empty path, quotes the spaces), or
+    an empty string; an invalid value is one error of the field. The JSON schema is flat:
+    `{type: string, format: uri, maxLength}` or `{type: string, maxLength: 0}` (a nullable
+    field adds `{type: null}` itself). `stored` is the type of a response, with the same
+    schema: the value of the database as it is (one written by a script, or through the
+    API before bazis 2.16, which did not check it), so that a read never fails on it.
+
+    Tags: RAG, EXPORT
+    """
+    empty = Annotated[str, StringConstraints(max_length=0)]
+    if stored:
+        url_schema = {'type': 'string', 'format': 'uri', 'minLength': 1}
+        if max_length is not None:
+            url_schema['maxLength'] = max_length
+        return Annotated[str, WithJsonSchema(url_schema)] | empty
+
+    schemes = list(django_validators.URLValidator.schemes if schemes is None else schemes)
+
+    def normalized_fits(url: AnyUrl) -> AnyUrl:
+        if max_length is not None and len(str(url)) > max_length:
+            raise PydanticKnownError('url_too_long', {'max_length': max_length})
+        return url
+
+    def one_error(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+        try:
+            return handler(value)
+        except ValidationError as e:
+            # the error of the URL (the first alternative), not one per alternative
+            error = e.errors()[0]
+            raise PydanticKnownError(error['type'], error.get('ctx')) from None
+
+    url = Annotated[
+        AnyUrl,
+        UrlConstraints(allowed_schemes=schemes, max_length=max_length),
+        AfterValidator(normalized_fits),
+    ]
+    return Annotated[url | empty, WrapValidator(one_error)]
+
+
+def url_field_type(model_field: django_models.URLField, *, stored: bool = False) -> Any:
+    """
+    The type of the `URLField` `model_field` (see `url_type`): the schemes its
+    `URLValidator`s all allow (the default one and those of `validators=`) and its
+    `max_length`.
+    """
+    allowed = [
+        validator.schemes
+        for validator in model_field.validators
+        if isinstance(validator, django_validators.URLValidator)
+    ]
+    schemes = (
+        [scheme for scheme in allowed[0] if all(scheme in it for it in allowed[1:])]
+        if allowed
+        else None
+    )
+    return url_type(schemes, model_field.max_length, stored=stored)
+
+
 # Django field to Pydantic type mapping
 # Used for automatic schema generation from Django models
 TYPES_DJANGO_TO_SCHEMA = {
@@ -339,9 +411,8 @@ TYPES_DJANGO_TO_SCHEMA = {
     django_models.SmallIntegerField: Annotated[int, Field(ge=-32768, le=32767)],
     django_models.TextField: str,
     django_models.TimeField: time,
-    django_models.URLField: (
-        AnyUrl | Annotated[str, constr(strip_whitespace=True, min_length=0, max_length=0)] | None
-    ),
+    # the type of a field with its schemes and length: url_field_type
+    django_models.URLField: url_type(),
     django_models.UUIDField: UUID,
     django_models.GenericIPAddressField: IPvAnyAddress,
     django_models.FilePathField: str,

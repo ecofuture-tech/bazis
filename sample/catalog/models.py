@@ -31,7 +31,10 @@ from bazis.core.utils.orm import FieldAnnotate, FieldDynamic, calc_property
 
 
 class Attachment(JsonApiMixin):
+    """A file of a memo, or a link to it (`url`: a URL of http, https, ftp or ftps)."""
+
     name = models.CharField('Name', max_length=255)
+    url = models.URLField('URL', blank=True)
 
 
 class Category(JsonApiMixin):

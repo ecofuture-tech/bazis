@@ -18,6 +18,7 @@ from itertools import groupby
 from typing import TYPE_CHECKING, Any, TypeVar, get_type_hints
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import URLField
 
 from pydantic import (
     BaseModel,
@@ -31,6 +32,7 @@ from pydantic import (
 from pydantic_core import PydanticUndefined
 
 from bazis.core.models_abstract import InitialBase, ProxyTypeAbstract
+from bazis.core.utils.django_types import url_field_type
 from bazis.core.utils.functools import get_attr, uniq_id
 
 from .cache import get_schema_from_cache, set_schema_to_cache
@@ -420,6 +422,9 @@ class SchemaResourceBuilder:
         for field in [field for field in self.fields if not field.field_db_rel or field.schema_out]:
             # if there is an explicit field in the model, get default information from it
             field_type = field.py_type
+            if is_response_schema and isinstance(field.field_db_attr, URLField):
+                # a response shows the stored value as it is, with the schema of a URL
+                field_type = url_field_type(field.field_db_attr, stored=True)
 
             # if there is an extended description of the field, use it
             if field.schema_out:
