@@ -174,22 +174,35 @@ def test_identifier_of_a_relation_to_another_field():
 @pytest.mark.django_db(transaction=True)
 def test_lookup_by_a_value_that_is_not_a_key(sample_app, caplog):
     """
-    An action that looks an item up by a `str` that cannot be a UUID (`filter(pk=...)`
-    raises a Django ValidationError outside validate_item) answers 422 `ERR_ITEM_INVALID`
-    at `/data`, not a 500, and logs a WARNING; a valid id is looked up.
+    A GET action that looks an item up by a `str` that cannot be a UUID (`filter(pk=...)`
+    raises a Django ValidationError outside validate_item) answers 422 `ERR_ITEM_INVALID`,
+    not a 500, and logs a WARNING: without a field the error has no pointer (the request
+    has no body); a ValidationError of a field points to its query parameter. A valid id is
+    looked up.
     """
     client = get_api_client(sample_app)
     country = Country.objects.create(name='Norway')
+    url = '/api/v1/entity/country/name/'
 
-    response = client.get('/api/v1/entity/country/name/', params={'country_id': 'not-a-uuid'})
+    response = client.get(url, params={'country_id': 'not-a-uuid'})
 
     assert response.status_code == 422, response.text
     (error,) = response.json()['errors']
-    assert (error['code'], error['source']) == ('ERR_ITEM_INVALID', {'pointer': '/data'})
+    assert error['code'] == 'ERR_ITEM_INVALID' and 'source' not in error
     assert 'not-a-uuid' in error['detail']
     assert any(
         r.levelname == 'WARNING' and 'outside validate_item' in r.getMessage()
         for r in caplog.records
     )
-    response = client.get('/api/v1/entity/country/name/', params={'country_id': str(country.pk)})
+
+    response = client.get(url, params={'country_id': '9b657232-4178-4d7f-8b0c-e8ab16f2b309'})
+    assert response.status_code == 422, response.text
+    (error,) = response.json()['errors']
+    assert (error['code'], error['detail'], error['source']) == (
+        'ERR_ITEM_INVALID',
+        'No such country',
+        {'pointer': '/query/country_id'},
+    )
+
+    response = client.get(url, params={'country_id': str(country.pk)})
     assert (response.status_code, response.json()) == (200, 'Norway')

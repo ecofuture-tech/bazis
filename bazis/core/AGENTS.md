@@ -730,9 +730,11 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   `validate_item`: 422 `ERR_ITEM_INVALID`, pointer `/data/attributes/<field>` or
   `/data/relationships/<field>` (`/data` without a field). A Django `ValidationError`
   raised anywhere else (a hook, a route, a lookup by a value that cannot be a key such as
-  `filter(pk='not-a-uuid')`) answers 422 `ERR_ITEM_INVALID` too, at
-  `/data/attributes/<field>` for a dict and at `/data` otherwise, and logs a WARNING with
-  its traceback (bazis 2.16; a 500 before): it is a safety net, keep the rules in
+  `filter(pk='not-a-uuid')`) answers 422 `ERR_ITEM_INVALID` too: a field of a dict at
+  `/data/relationships/<field>` (a relation of the model of the route) or
+  `/data/attributes/<field>`, a message without a field at `/data`; on GET (no body) a
+  field at its query parameter `/query/<field>` and a message without a field with no
+  pointer. It logs a WARNING with its traceback (bazis 2.16; a 500 before): it is a safety net, keep the rules in
   `validate_item` and type the ids of the request schemas as keys. The `ValueError` of a
   lookup by a malformed number or date is still a 500. The routes do not call
   `full_clean()`: `Model.clean()` and the `validators` of the fields do not run on the API.
@@ -776,7 +778,8 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
     `source.type` name the item when the document gives its id. On the relationships
     endpoints `/data`, `/data/<j>/id` (`/data/id`).
   - `ERR_ITEM_INVALID`: `/data/attributes/<f>`, `/data/relationships/<f>`, `/data`. On the
-    relationships endpoints the parameter `/related_field_name`.
+    relationships endpoints the parameter `/related_field_name`; a Django `ValidationError`
+    of a GET route `/query/<f>`.
   - `ERR_INCLUDE` (400): `/query/include`. `ERR_FILTER` (400): `/query/filter`,
     `/query/sort`, `/query/search`.
   - `ERR_RELATION_ACCESS` (403), `ERR_RELATION_LINK` (422): `/data/relationships/<f>`. On

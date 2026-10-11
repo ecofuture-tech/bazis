@@ -209,7 +209,9 @@ class JsonApiItemInvalidException(JsonApiBazisException):
     The same exception leaves a save outside the API; `error` is the Django
     `ValidationError` (the admin shows it in the form), `item` the invalid item. The
     application answers a Django `ValidationError` raised outside `validate_item` with it
-    too, without an item (a field of a dict is an attribute then).
+    too, without an item: `model` (the model of the route) tells the relations from the
+    attributes, and on a request without a body (`loc=('query',)`) the pointer of a field
+    is the query parameter `/query/<name>` and a message without a field has none.
 
     Tags: RAG, EXPORT
     """
@@ -221,6 +223,7 @@ class JsonApiItemInvalidException(JsonApiBazisException):
         error: DjangoValidationError,
         *,
         item=None,
+        model=None,
         source: str = 'save',
         loc: tuple = None,
     ) -> None:
@@ -228,7 +231,8 @@ class JsonApiItemInvalidException(JsonApiBazisException):
         self.item = item
         self.source = source
         self.loc = loc or ('body', 'data')
-        relations = item.get_fields_info().relations if item is not None else ()
+        model = type(item) if item is not None else model
+        relations = model.get_fields_info().relations if model is not None else ()
         if hasattr(error, 'error_dict'):
             messages_by_field = error.message_dict
         else:
@@ -237,6 +241,8 @@ class JsonApiItemInvalidException(JsonApiBazisException):
         for name, messages in messages_by_field.items():
             if source == 'relationships':
                 error_loc = ('path', 'related_field_name')
+            elif self.loc == ('query',):
+                error_loc = None if name == NON_FIELD_ERRORS else ('query', name)
             elif name == NON_FIELD_ERRORS:
                 error_loc = self.loc
             else:

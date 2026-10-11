@@ -505,9 +505,12 @@ def _initialize_app(app): # noqa: C901
         """
         A Django ValidationError raised outside `validate_item` (in a hook, a route, or a
         lookup by a value that cannot be a key, `filter(pk='not-a-uuid')`) is 422
-        `ERR_ITEM_INVALID`, as one of `validate_item`, without an item: the pointer of the
-        field of a dict, `/data` otherwise. It is logged as a WARNING with its traceback:
-        the rule belongs in `validate_item`, the type of a value in the request schema.
+        `ERR_ITEM_INVALID`, as one of `validate_item`, without an item. The field of a dict
+        points to `/data/relationships/<name>` (a relation of the model of the route) or
+        `/data/attributes/<name>`, a message without a field to `/data`; on GET and HEAD
+        (no body) the field is the query parameter `/query/<name>`, a message without a
+        field has no pointer. It is logged as a WARNING with its traceback: the rule
+        belongs in `validate_item`, the type of a value in the request schema.
         """
         logger.warning(
             'A Django ValidationError outside validate_item answered 422 on %s %s: %s',
@@ -516,7 +519,14 @@ def _initialize_app(app): # noqa: C901
             exc.messages,
             exc_info=exc,
         )
-        return await json_api_bazis_exception_handler(request, JsonApiItemInvalidException(exc))
+        route_ctx = getattr(getattr(request.scope.get('route'), 'endpoint', None), 'route_ctx', None)
+        model = getattr(getattr(route_ctx, 'route_cls', None), 'model', None)
+        if not hasattr(model, 'get_fields_info'):
+            model = None
+        loc = ('query',) if request.method in ('GET', 'HEAD') else None
+        return await json_api_bazis_exception_handler(
+            request, JsonApiItemInvalidException(exc, model=model, loc=loc)
+        )
 
     @app.exception_handler(OperationalError)
     async def json_api_operational_error_handler(

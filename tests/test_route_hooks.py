@@ -17,7 +17,7 @@ The hooks of the writes of a route, their order and what they see, the errors a 
 answers with, and a read-only route: the statements of the guide (bazis/core/AGENTS.md).
 """
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -248,6 +248,30 @@ def test_django_validation_error_of_a_hook(sample_app, monkeypatch, caplog):
     (record,) = [r for r in caplog.records if 'outside validate_item' in r.getMessage()]
     assert record.levelname == 'WARNING'
     assert f'POST {URL}' in record.getMessage()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_django_validation_error_of_a_relation_in_a_hook(sample_app, monkeypatch):
+    """
+    A field of the ValidationError that is a relation of the model of the route points to
+    `/data/relationships/<name>`; a message without a field to `/data`.
+    """
+
+    def hook_before_create(self, item):
+        raise ValidationError({'room': 'The room is closed', NON_FIELD_ERRORS: 'Not today'})
+
+    monkeypatch.setattr(BookingRouteSet, 'hook_before_create', hook_before_create)
+    client = TestClient(sample_app, raise_server_exceptions=False)
+
+    response = client.post(
+        URL, json=booking(), headers={'Content-Type': 'application/vnd.api+json'}
+    )
+
+    assert response.status_code == 422, response.content
+    assert {(it['detail'], it['source']['pointer']) for it in response.json()['errors']} == {
+        ('The room is closed', '/data/relationships/room'),
+        ('Not today', '/data'),
+    }
 
 
 @pytest.mark.django_db(transaction=True)

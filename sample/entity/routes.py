@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from django.apps import apps
+from django.core.exceptions import ValidationError
 
 from sample.route_mixins import ContextTestRouteMixin
 
@@ -96,12 +97,16 @@ class CountryRouteSet(JsonapiRouteBase):
         return 'Hello'
 
     @http_get('/name/')
-    def action_name(self, country_id: str, **kwargs) -> str | None:
+    def action_name(self, country_id: str, **kwargs) -> str:
         """
         The name of a country by its id, typed `str` (the guide types it `UUID`): an id
-        that cannot be a UUID fails in the lookup with a Django ValidationError.
+        that cannot be a UUID fails in the lookup with a Django ValidationError, an unknown
+        one with the ValidationError of the parameter.
         """
-        return self.model.objects.filter(pk=country_id).values_list('name', flat=True).first()
+        name = self.model.objects.filter(pk=country_id).values_list('name', flat=True).first()
+        if name is None:
+            raise ValidationError({'country_id': 'No such country'})
+        return name
 
     @http_get('/capital/', dependencies=[throttle('2/minute', scope='country_geo')])
     def action_capital(self, **kwargs) -> str:
