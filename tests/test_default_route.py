@@ -114,3 +114,51 @@ def test_check_several_route_sets_without_default(keep_default_routes, monkeypat
 def test_check_default_routes_without_app(monkeypatch):
     monkeypatch.setattr(introspect, 'loaded_app', lambda: None)
     assert check_default_routes(None) == []
+
+
+def test_check_an_unregistered_default_route(keep_default_routes, monkeypatch):
+    """
+    bazis.W010: a route set no router registers, defined last (imported for another
+    reason), is the default route and restricts the objects otherwise than the registered
+    ones; not reported when it declares `default_route = True` or restricts them alike.
+    """
+    served = {FolderRouteSet: [], TagRouteSet: []}
+    monkeypatch.setattr(introspect, 'loaded_app', lambda: object())
+    monkeypatch.setattr(introspect, 'route_sets', lambda app: served)
+
+    def w010():
+        return [(it.id, it.obj) for it in check_default_routes(None) if it.id == 'bazis.W010']
+
+    assert w010() == []
+
+    # defined last, not registered, restricts otherwise: the default route by accident
+    class FolderStrayRouteSet(RestrictedQsRouteMixin):
+        model = Folder
+
+        @classmethod
+        def restrict_queryset(cls, qs, access_action, user=None, **kwargs):
+            return qs.none()
+
+    assert Folder.get_default_route() is FolderStrayRouteSet
+    messages = [it for it in check_default_routes(None) if it.id == 'bazis.W010']
+    assert [(it.id, it.obj) for it in messages] == [('bazis.W010', 'visibility.Folder')]
+    assert 'FolderStrayRouteSet' in messages[0].msg
+    assert 'default_route = True' in messages[0].hint
+
+    # the same restriction as the registered route set: harmless
+    class FolderSameRouteSet(FolderRouteSet):
+        pass
+
+    assert Folder.get_default_route() is FolderSameRouteSet
+    assert w010() == []
+
+    # declared on purpose (a default route that is not routed)
+    class FolderDeclaredRouteSet(RestrictedQsRouteMixin):
+        model = Folder
+        default_route = True
+
+        @classmethod
+        def restrict_queryset(cls, qs, access_action, user=None, **kwargs):
+            return qs.none()
+
+    assert w010() == []

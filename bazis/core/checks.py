@@ -174,8 +174,11 @@ def check_default_routes(app_configs, **kwargs):
     and `included` of the other routes (its `restrict_queryset`). With several route sets
     of a model in the application that restrict its objects differently, the last defined
     one is the default unless one of them declares `default_route = True`: the order of
-    the imports decides otherwise. Needs the application (`bazis_doctor` loads it);
-    skipped without it.
+    the imports decides otherwise (bazis.W003). A route set that no router registers is
+    the default route the same way when it is defined last (a module imported for another
+    reason): bazis.W010 if it restricts the objects otherwise than the registered route
+    sets of the model and does not declare `default_route = True`. Needs the application
+    (`bazis_doctor` loads it); skipped without it.
     """
     from bazis.core import introspect
     from bazis.core.routes_abstract.jsonapi.mixins import restrict_queryset_override
@@ -184,13 +187,38 @@ def check_default_routes(app_configs, **kwargs):
         return []
 
     by_model: dict[type, list[type]] = {}
-    for route_cls in introspect.route_sets(app):
+    served = introspect.route_sets(app)
+    for route_cls in served:
         if (model := getattr(route_cls, 'model', None)) is not None:
             by_model.setdefault(model, []).append(route_cls)
 
     messages = []
     for model, route_classes in by_model.items():
-        if len({id(restrict_queryset_override(it)) for it in route_classes}) < 2:
+        default = model.get_default_route()
+        restricts = {id(restrict_queryset_override(it)) for it in route_classes}
+        if (
+            default is not None
+            and default not in served
+            and not vars(default).get('default_route')
+            and id(restrict_queryset_override(default)) not in restricts
+        ):
+            messages.append(
+                Warning(
+                    f'The default route of the model is {_qualname(default)}, a route set no '
+                    f'router registers (defined last by the order of the imports): its '
+                    f'restrict_queryset, not that of '
+                    f'{", ".join(sorted(_qualname(it) for it in route_classes))}, restricts '
+                    f'the objects of the model in the relationships and `included` of the '
+                    f'other routes.',
+                    hint=(
+                        'Declare `default_route = True` in the route set that must restrict '
+                        'the objects of the model (or in this one if it is meant to).'
+                    ),
+                    obj=model._meta.label,
+                    id='bazis.W010',
+                )
+            )
+        if len(restricts) < 2:
             continue
         if sum(1 for it in route_classes if vars(it).get('default_route')) == 1:
             continue

@@ -734,7 +734,10 @@ leaves out the `None` entry of the same class only.
 - The default route of a model (`Model.get_default_route()`) is the last defined route
   class of the model (abstract ones never), unless one declares `default_route = True` in
   its class body (not inherited). With several route sets of a model that restrict its
-  objects differently, declare it (`bazis_doctor` warns, `bazis.W003`).
+  objects differently, declare it (`bazis_doctor` warns, `bazis.W003`). A route set no
+  router registers counts too: imported for another reason after the routed one, it
+  becomes the default route (`bazis.W010` when it restricts the objects otherwise and does
+  not declare `default_route = True`).
 
 ### Registering the route sets
 

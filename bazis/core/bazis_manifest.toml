@@ -265,3 +265,7 @@ text = "restricting the objects of a model only in get_queryset: the relationshi
 [[pitfalls]]
 text = "several route sets of a model without `default_route = True` in one: the last defined one is the default route"
 check = "bazis.W003"
+
+[[pitfalls]]
+text = "a route set no router registers, imported after the routed one, is the default route of its model: declare `default_route = True` on the intended one"
+check = "bazis.W010"
