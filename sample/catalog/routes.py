@@ -14,6 +14,9 @@
 
 from django.apps import apps
 
+from pydantic import BaseModel
+
+from bazis.core.routes_abstract.initial import http_post
 from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
 from bazis.core.schemas.enums import CrudApiAction
 from bazis.core.schemas.fields import SchemaField, SchemaFields
@@ -34,9 +37,18 @@ class CategoryRouteSet(JsonapiRouteBase):
     }
 
 
+class SubscribeRequest(BaseModel):
+    email: str
+
+
+class SubscribeResponse(BaseModel):
+    id: int
+
+
 class MemoRouteSet(JsonapiRouteBase):
     """
-    The code of a memo is set when it is created; the body is read-only on an update.
+    The code of a memo is set when it is created; the body is read-only on an update. A
+    guest subscribes to a memo by an action.
     """
 
     model = apps.get_model('catalog.Memo')
@@ -56,6 +68,16 @@ class MemoRouteSet(JsonapiRouteBase):
         ),
     }
 
+    @http_post('/{item_id}/subscribe/', response_model=SubscribeResponse, public=True)
+    def action_subscribe(self, item_id: str, data: SubscribeRequest, **kwargs):
+        """
+        A guest subscribes to a memo: the memo is locked first (as an action that checks
+        its item), then the reader is created.
+        """
+        memo = self.set_item(item_id, with_lock=True)
+        reader = apps.get_model('catalog.Reader').objects.create(memo=memo, email=data.email)
+        return SubscribeResponse(id=reader.pk)
+
 
 class CardRouteSet(JsonapiRouteBase):
     model = apps.get_model('catalog.Card')
@@ -63,6 +85,10 @@ class CardRouteSet(JsonapiRouteBase):
 
 class StepRouteSet(JsonapiRouteBase):
     model = apps.get_model('catalog.Step')
+
+
+class ReaderRouteSet(JsonapiRouteBase):
+    model = apps.get_model('catalog.Reader')
 
 
 class BusyMemoRouteSet(JsonapiRouteBase):

@@ -198,10 +198,12 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   from django.utils.translation import gettext_lazy as _
 
   class Booking(DtMixin, UuidMixin, JsonApiMixin):
+      # every write of a booking locks its room first, until the commit: the bookings of
+      # a room are checked one after the other (Invariants under concurrent requests)
+      lock_on_write = ('room',)
+
       def validate_item(self, changes):
           if changes.is_new or changes.fields & {'room', 'dt_start', 'dt_end'}:
-              # serializes the bookings of the room until the commit of the request
-              Room.objects.select_for_update().get(pk=self.room_id)
               if Booking.objects.filter(room=self.room_id, dt_start__lt=self.dt_end,
                                         dt_end__gt=self.dt_start).exclude(pk=self.pk).exists():
                   raise ValidationError({'room': _('The room is booked at this time')})
@@ -242,17 +244,59 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
 ### Invariants under concurrent requests
 
 - Invariants under concurrent requests ("no more than N per parent", "one open per
-  parent", a number in the parent): a check by `count()` passes in every parallel request
-  (each sees only the committed rows) unless the requests are serialized. Lock the parent
-  row with `select_for_update()` before counting (the lock holds until the commit of the
-  request: the next request waits, then counts the committed row), take the next number
-  under that lock, and keep a `UniqueConstraint` as the barrier that no code path can
-  bypass:
+  parent", "an e-mail once per parent", a number in the parent): a check by `count()`
+  passes in every parallel request (each sees only the committed rows) unless the requests
+  are serialized. Serialize the writes on the parent row: name the foreign key in
+  `lock_on_write`, count in `validate_item`, and keep a `UniqueConstraint` as the barrier
+  that no code path can bypass:
+
+  ```python
+  class Application(DtMixin, UuidMixin, JsonApiMixin):
+      lock_on_write = ('vacancy',)
+
+      vacancy = models.ForeignKey(Vacancy, on_delete=models.CASCADE,
+                                  related_name='applications')
+      email = models.EmailField()
+
+      class Meta:
+          constraints = [models.UniqueConstraint(fields=['vacancy', 'email'],
+                                                 name='application_email_uniq')]
+
+      def validate_item(self, changes):
+          if changes.is_new or 'vacancy' in changes.fields:
+              # under the lock of the vacancy; the item is in the database already: counted
+              if self.vacancy.applications.count() > self.vacancy.max_applications:
+                  raise ValidationError({'vacancy': _('No more applications')})
+  ```
+
+  `lock_on_write` (a class attribute of `JsonApiMixin`: names of foreign keys) locks the
+  rows they point to (`SELECT ... FOR NO KEY UPDATE`, by the current values: the new
+  parent when the item moves; an empty key locks nothing) before every write of an item,
+  whatever writes it: the create and update routes, the actions, the admin, scripts,
+  commands, background tasks, the transits of bazis-statusy (every `save()`). The lock
+  holds until the commit: the next write under the same parent waits, then its
+  `validate_item` counts the committed row. Do not lock the parent again in
+  `validate_item`: the lock is held. Not covered, as with `validate_item`:
+  `QuerySet.update()`, `bulk_create()`, `bulk_update()` and raw SQL.
+
+  The order of the locks matters as much as the locks. An action that locks the parent
+  itself and then creates the item (`Vacancy.objects.select_for_update(no_key=True)
+  .get(pk=data.vacancy)`, or `self.set_item(item_id, with_lock=True)` on the route of the
+  parent) takes them in the order of the create route. Locking the parent only in
+  `validate_item`, which runs after the insert, inverts it: such an action and a create of
+  the same unique value deadlock, and PostgreSQL aborts one of them (409 `ERR_CONFLICT`
+  with `meta.retry`, see Errors).
+
+- A number in the parent is taken before the write, so `save()` locks the parent before
+  it computes the number (the lock of `lock_on_write` that follows is the same lock: it
+  does not wait):
 
   ```python
   from django.db.models import Max
 
   class Attempt(DtMixin, UuidMixin, JsonApiMixin):
+      lock_on_write = ('assignment',)
+
       assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE,
                                      related_name='attempts')
       number = models.PositiveIntegerField(editable=False)
@@ -263,21 +307,18 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
 
       def save(self, *args, **kwargs):
           if self._state.adding and not self.number:
-              # the number under the lock of the parent (validate_item runs after the save)
-              Assignment.objects.select_for_update().get(pk=self.assignment_id)
+              Assignment.objects.select_for_update(no_key=True).get(pk=self.assignment_id)
               last = self.assignment.attempts.aggregate(m=Max('number'))['m'] or 0
               self.number = last + 1
           super().save(*args, **kwargs)
 
       def validate_item(self, changes):
           if changes.is_new:
-              assignment = Assignment.objects.select_for_update().get(pk=self.assignment_id)
-              # the item is already in the database: it is counted
-              if assignment.attempts.count() > assignment.max_attempts:
+              if self.assignment.attempts.count() > self.assignment.max_attempts:
                   raise ValidationError({'assignment': _('No attempts left')})
   ```
 
-  A custom action that changes its item takes it with `self.set_item(item_id,
+- A custom action that changes its item takes it with `self.set_item(item_id,
   with_lock=True)` (`SELECT ... FOR NO KEY UPDATE`: parallel calls run one after the other)
   and checks its state after the lock (a submit of an attempt that is no longer open is
   refused, not graded twice). A write the constraint still refuses (a race the code missed,
@@ -288,8 +329,9 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   reads it again, locked). Take the locks in one order everywhere: such an action holds
   its item first, so an action that also locks the parent (or another row) must not race
   a create that locks the same parent first and then the item — lock the parent first in
-  both, or keep the item action from locking the parent, otherwise the two may deadlock
-  (PostgreSQL aborts one of them with a 500).
+  both, or keep the item action from locking the parent. A deadlock the code did not
+  avoid answers 409 `ERR_CONFLICT` with `meta.retry` (the client may send the request
+  again); it is a safety net, not the design.
 
 ### Declarations in the code (`bazis.core.declare`)
 
@@ -660,6 +702,14 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   other exception 500 (the traceback in `detail` only with DEBUG), also another
   `IntegrityError` (a foreign key to a missing object, checked at the commit; a not-null
   or check constraint: keep such rules in `validate_item`, 422).
+- A request PostgreSQL aborts for a parallel one, a deadlock (SQLSTATE 40P01) or a
+  serialization failure (40001), answers 409 `ERR_CONFLICT` "The request conflicted with a
+  parallel one: retry it" with `meta.retry: true` (`meta.sqlstate` with DEBUG; bazis 2.16,
+  a 500 before). Its transaction is rolled back and the same request may succeed when the
+  client sends it again; the core does not repeat it (the request may have done what a
+  rollback does not undo: a mail, a task, a count of a throttle). Avoid the deadlock
+  itself with one order of the locks (`lock_on_write`, see Invariants under concurrent
+  requests). Any other `OperationalError` is a 500.
 - The pointers (`source`) of the errors of the core, by code. Create and update point into
   the request document; an included item is `/included/<i>` instead of `/data`, `<i>` its
   index in the `included` of the document. The relationships endpoints point into their
@@ -916,8 +966,9 @@ send_mail(_('Your certificate'), text, None, [user.email])   # None: DEFAULT_FRO
 - Keep an invariant of an item (no overlap, a limit, a consistency of fields) in
   `validate_item` of the model, not in the hooks of a route: the hooks of create and
   update do not run for the relationships endpoints, the transits, the admin or `save()`.
-  An invariant over several rows locks their parent (`select_for_update()`) and has a
-  database constraint as the barrier (see Models).
+  An invariant over several rows declares their parent in `lock_on_write` (every write
+  locks it first, in every path) and has a database constraint as the barrier (see
+  Models).
 - An action open to anonymous users (`public=True`) is limited (the default
   `BAZIS_THROTTLE_PUBLIC`, or its own `throttle`): never leave a guessable code or a costly
   operation open without a rate limit.

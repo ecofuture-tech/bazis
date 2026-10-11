@@ -24,6 +24,11 @@ import = "bazis.core.models_abstract.JsonApiMixin"
 use_when = "an invariant of an item (no overlap, a limit, a consistency of fields) that every write must keep: override validate_item(self, changes) and raise a Django ValidationError; it runs once per write after the values are in the database and before the commit, for the routes (create, update, relationships), the transits of bazis-statusy and any save() or many-to-many manager change (admin, scripts, tasks); changes is bazis.core.item_validation.ItemChanges (fields, relations, is_new, source, user); the API answers 422 ERR_ITEM_INVALID"
 
 [[extension_points]]
+name = "JsonApiMixin.lock_on_write"
+import = "bazis.core.models_abstract.JsonApiMixin"
+use_when = "an invariant counted under the lock of a parent (no more than N per parent, a unique value per parent): lock_on_write = ('<fk>',) locks the row of the foreign key (FOR NO KEY UPDATE, by its current value) before every write of an item, whatever writes it, so validate_item counts under the lock and every path takes the locks in the order of an action that locks the parent first"
+
+[[extension_points]]
 name = "defer_validate_item"
 import = "bazis.core.item_validation.defer_validate_item"
 use_when = "several writes of an item in a script, a command or a task validated once at the end, with the user who makes them; in a hook of a route, `with defer_validate_item() as scope: scope.validate()` validates the writes so far (the route validates at the end of the request, after its hooks)"
@@ -185,7 +190,7 @@ text = "a verbose_name of a model or field composed with an f-string at import i
 text = "an invariant of an item kept only in the hooks of a route (hook_before_create, hook_after_update) is bypassed by the relationships endpoints, the transits, the admin and save(): put it in JsonApiMixin.validate_item"
 
 [[pitfalls]]
-text = "an invariant over several rows (no more than N per parent, one open per parent, a number in the parent) checked by count() passes in every parallel request: lock the parent with select_for_update() in validate_item (and in save() before taking the number), keep a UniqueConstraint as the barrier, and take the item of an action that changes it with set_item(item_id, with_lock=True); a write the constraint refuses answers 409 ERR_CONFLICT"
+text = "an invariant over several rows (no more than N per parent, one open per parent, a number in the parent) checked by count() passes in every parallel request: declare the parent in lock_on_write = ('<fk>',) (every write locks it before the row, in every path) and count in validate_item (lock the parent in save() too before taking a number), keep a UniqueConstraint as the barrier, and take the item of an action that changes it with set_item(item_id, with_lock=True); a parent locked only in validate_item (after the insert) deadlocks with an action that locks it first; a write the constraint refuses answers 409 ERR_CONFLICT, a deadlock 409 ERR_CONFLICT with meta.retry"
 
 [[pitfalls]]
 text = "an IntegrityError of a unique or an exclusion constraint answers 409 ERR_CONFLICT (bazis 2.16; any integrity error of a create was 409 ERR_REQUEST before); a not-null, check or foreign key violation is a 500: keep such rules in validate_item (422)"

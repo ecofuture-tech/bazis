@@ -343,6 +343,13 @@ class JsonApiMixin(InitialBase):
 
     _default_route = None
 
+    #: the foreign keys whose target rows every write of an item locks before it writes
+    #: (`SELECT ... FOR NO KEY UPDATE` by their current values, until the commit): a model
+    #: whose `validate_item` counts under the lock of its parent declares the parent here,
+    #: so that every path (the routes, the actions, the admin, scripts) locks the parent
+    #: before the row and in the same order as an action that locks the parent first
+    lock_on_write: tuple[str, ...] = ()
+
     class Meta:
         """
         Meta class for JsonApiMixin, marked as abstract.
@@ -399,9 +406,10 @@ class JsonApiMixin(InitialBase):
 
     def save(self, *args, **kwargs):
         """
-        Saves the item and validates it (`validate_item`), if the model overrides it.
+        Saves the item and validates it (`validate_item`), if the model overrides it,
+        after the rows of `lock_on_write` are locked.
         """
-        if not self.has_validate_item():
+        if not self.lock_on_write and not self.has_validate_item():
             return super().save(*args, **kwargs)
         item_save(
             self,

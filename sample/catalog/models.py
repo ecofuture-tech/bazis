@@ -108,6 +108,7 @@ class Step(JsonApiMixin):
     """
 
     MAX_PER_MEMO = 3
+    lock_on_write = ('memo',)
 
     memo = models.ForeignKey(Memo, on_delete=models.CASCADE, related_name='steps')
     number = models.PositiveIntegerField('Number', editable=False)
@@ -119,18 +120,47 @@ class Step(JsonApiMixin):
 
     def save(self, *args, **kwargs):
         if self._state.adding and not self.number:
-            # the number under the lock of the memo (validate_item runs after the save)
-            Memo.objects.select_for_update().get(pk=self.memo_id)
+            # the number is taken before the write: under the lock lock_on_write takes
+            # later, taken here already
+            Memo.objects.select_for_update(no_key=True).get(pk=self.memo_id)
             last = self.memo.steps.aggregate(m=Max('number'))['m'] or 0
             self.number = last + 1
         super().save(*args, **kwargs)
 
     def validate_item(self, changes):
         if changes.is_new:
-            Memo.objects.select_for_update().get(pk=self.memo_id)
-            # the item is already in the database: it is counted
+            # under the lock of the memo (lock_on_write); the item is in the database
+            # already: it is counted
             if self.memo.steps.count() > self.MAX_PER_MEMO:
                 raise ValidationError({'memo': 'No more steps in this memo'})
+
+
+class Reader(JsonApiMixin):
+    """
+    The recipe of the guide for a limit counted in `validate_item` under the lock of the
+    parent: no more than MAX_PER_MEMO readers per memo, each e-mail once per memo (a unique
+    constraint). The memo is locked before every write of a reader (`lock_on_write`), so a
+    create runs in the order of the action that locks the memo first and then adds a
+    reader (`MemoRouteSet.action_subscribe`): no deadlock between them.
+    """
+
+    MAX_PER_MEMO = 3
+    lock_on_write = ('memo',)
+
+    memo = models.ForeignKey(Memo, on_delete=models.CASCADE, related_name='readers')
+    email = models.CharField('E-mail', max_length=254)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['memo', 'email'], name='catalog_reader_email_uniq')
+        ]
+
+    def validate_item(self, changes):
+        if changes.is_new or 'memo' in changes.fields:
+            # under the lock of the memo (lock_on_write); the item is in the database
+            # already: it is counted
+            if Reader.objects.filter(memo=self.memo_id).count() > self.MAX_PER_MEMO:
+                raise ValidationError({'memo': 'No more readers of this memo'})
 
 
 class BusyMemo(Memo):

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-10 12:05+0000\n"
+"POT-Creation-Date: 2026-10-11 14:07+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,19 +16,23 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: app_factory.py:404 routes_abstract/jsonapi/route_base.py:817
-#: routes_abstract/jsonapi/route_base.py:831
-#: routes_abstract/jsonapi/route_base.py:851
+#: app_factory.py:409 routes_abstract/jsonapi/route_base.py:819
+#: routes_abstract/jsonapi/route_base.py:833
+#: routes_abstract/jsonapi/route_base.py:861
 msgid "Item not found"
 msgstr "Объект не найден"
 
-#: app_factory.py:479
+#: app_factory.py:484 app_factory.py:514
 msgid "Conflict"
 msgstr "Конфликт данных"
 
-#: app_factory.py:480
+#: app_factory.py:485
 msgid "The change conflicts with the current data"
 msgstr "Изменение конфликтует с текущими данными"
+
+#: app_factory.py:516
+msgid "The request conflicted with a parallel one: retry it"
+msgstr "Запрос столкнулся с параллельным: повторите его"
 
 #: conf.py:158
 msgid "Application port"
@@ -131,34 +135,38 @@ msgstr ""
 msgid "Mail server use SSL"
 msgstr ""
 
-#: conf.py:280
+#: conf.py:281
+msgid "Mail server timeout, seconds (0 - unlimited)"
+msgstr "Тайм-аут почтового сервера, секунды (0 - без ограничения)"
+
+#: conf.py:286
 msgid "Default outgoing email address"
 msgstr ""
 
-#: conf.py:283
+#: conf.py:289
 msgid "Export settings"
 msgstr ""
 
-#: conf.py:284
+#: conf.py:290
 msgid "Maximum IDs in list route"
 msgstr ""
 
-#: conf.py:288
+#: conf.py:294
 msgid "Filter, sort and search only by the fields of the route"
 msgstr ""
 
-#: conf.py:293
+#: conf.py:299
 msgid "Limit the request rate of routes"
 msgstr "Ограничивать частоту запросов к маршрутам"
 
-#: conf.py:297
+#: conf.py:303
 msgid ""
 "Request rate of the public actions per user or IP address (empty - unlimited)"
 msgstr ""
 "Частота запросов к публичным действиям одного пользователя или IP-адреса "
 "(пусто — без ограничения)"
 
-#: conf.py:302
+#: conf.py:308
 msgid ""
 "Import path of a function (request, ident) exempting a request from the "
 "limits"
@@ -189,19 +197,19 @@ msgstr "Слишком много запросов: повторите позж�
 msgid "Validation error"
 msgstr "Ошибка валидации"
 
-#: models_abstract.py:560
+#: models_abstract.py:578
 msgid "Creation time"
 msgstr "Время добавления"
 
-#: models_abstract.py:561
+#: models_abstract.py:579
 msgid "Update time"
 msgstr "Время обновления"
 
-#: models_abstract.py:616
+#: models_abstract.py:634
 msgid "Unique object number"
 msgstr "Уникальный номер объекта"
 
-#: models_abstract.py:619
+#: models_abstract.py:637
 msgid ""
 "This field is generated at the DB level according to the uniqueness "
 "principle specified in the model. It may not be unique across the entire "
@@ -213,61 +221,61 @@ msgstr ""
 "для случая уникализации только для заданного типа. Поле не должно "
 "использоваться напрямую, вместо него следует использовать :py:attr:`~number`"
 
-#: models_abstract.py:682
+#: models_abstract.py:700
 msgid "Proxy-type of document"
 msgstr "Proxy-тип документа"
 
-#: routes_abstract/jsonapi/route_base.py:434
+#: routes_abstract/jsonapi/route_base.py:436
 #, python-brace-format
 msgid "The relationships cannot be included: {names}"
 msgstr "Нельзя включить связи: {names}"
 
-#: routes_abstract/jsonapi/route_base.py:439
+#: routes_abstract/jsonapi/route_base.py:441
 msgid "Invalid include"
 msgstr "Недопустимый параметр include"
 
-#: routes_abstract/jsonapi/route_base.py:929
+#: routes_abstract/jsonapi/route_base.py:939
 #, python-brace-format
 msgid "The relationship {name} cannot be changed"
 msgstr "Связь {name} нельзя изменить"
 
-#: routes_abstract/jsonapi/route_base.py:933
+#: routes_abstract/jsonapi/route_base.py:943
 msgid "Relationship is read-only"
 msgstr "Связь только для чтения"
 
-#: routes_abstract/jsonapi/route_base.py:1089
+#: routes_abstract/jsonapi/route_base.py:1099
 #, python-brace-format
 msgid "The related object of {name} cannot be linked"
 msgstr "Связанный объект {name} нельзя привязать"
 
-#: routes_abstract/jsonapi/route_base.py:1091
+#: routes_abstract/jsonapi/route_base.py:1101
 msgid "Link not allowed"
 msgstr "Привязка запрещена"
 
-#: routes_abstract/jsonapi/route_base.py:1096
+#: routes_abstract/jsonapi/route_base.py:1106
 #, python-brace-format
 msgid "No access to the related object of {name}"
 msgstr "Нет доступа к связанному объекту {name}"
 
-#: routes_abstract/jsonapi/route_base.py:1098
+#: routes_abstract/jsonapi/route_base.py:1108
 msgid "Access denied"
 msgstr "Доступ запрещён"
 
-#: routes_abstract/jsonapi/route_base.py:1253
+#: routes_abstract/jsonapi/route_base.py:1263
 msgid "Data type is invalid"
 msgstr "Недопустимый тип данных"
 
-#: routes_abstract/jsonapi/route_base.py:1339
+#: routes_abstract/jsonapi/route_base.py:1349
 #, python-brace-format
 msgid "The object does not exist. Type: {type}. ID: {id}"
 msgstr "Объект не существует. Тип: {type}. ID: {id}"
 
-#: routes_abstract/jsonapi/route_base.py:1414
+#: routes_abstract/jsonapi/route_base.py:1424
 #, python-brace-format
 msgid "{model} is not JSON:API compliant"
 msgstr "{model} не является ресурсом JSON:API"
 
-#: routes_abstract/jsonapi/route_base.py:1418
+#: routes_abstract/jsonapi/route_base.py:1428
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has related objects in non-JSON:API models. "
@@ -276,11 +284,11 @@ msgstr ""
 "Нельзя удалить объект: на него ссылаются объекты моделей вне JSON:API "
 "(количество: {count})"
 
-#: routes_abstract/jsonapi/route_base.py:1437
+#: routes_abstract/jsonapi/route_base.py:1447
 msgid "Error deleting protected model"
 msgstr "Ошибка удаления защищённого объекта"
 
-#: routes_abstract/jsonapi/route_base.py:1440
+#: routes_abstract/jsonapi/route_base.py:1450
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has protected related objects of type "

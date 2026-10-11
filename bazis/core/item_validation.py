@@ -26,6 +26,10 @@ each item once at its end (the routes of the core, the transits of bazis-statusy
 The models that do not override `validate_item` pay nothing: no snapshot of their
 values, no savepoint, no signal receiver.
 
+`JsonApiMixin.lock_on_write` names the foreign keys whose rows every save of an item
+locks before it writes (`lock_on_write()`): `validate_item` counts under the lock of the
+parent, and every path takes the locks in one order, the parent first.
+
 Not validated (they do not call `save()` or send `m2m_changed`): `QuerySet.update()`,
 `bulk_create()`, `bulk_update()`, the reverse foreign key managers with `bulk=True` (their
 default) outside the routes, the rows of a `through` model written directly
@@ -49,7 +53,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError
-from django.db import transaction
+from django.db import router, transaction
 from django.db.models.signals import m2m_changed
 
 from bazis.core.errors import JsonApiItemInvalidException
@@ -344,18 +348,44 @@ def defer_validate_item(
         _CTX_SCOPE.reset(token)
 
 
+def lock_on_write(item, using=None):
+    """
+    Locks the rows the foreign keys `lock_on_write` of the model of the item point to
+    (`SELECT ... FOR NO KEY UPDATE`, the lock of `set_item(..., with_lock=True)`) by their
+    current values, in their order; an empty one is skipped. The locks are held until the
+    end of the transaction, and a row the transaction holds already is not waited for.
+    """
+    model = type(item)
+    using = using or router.db_for_write(model, instance=item)
+    for name in model.lock_on_write:
+        field = model._meta.get_field(name)
+        if not field.concrete or not (field.many_to_one or field.one_to_one):
+            raise ImproperlyConfigured(
+                f'{model._meta.label}.lock_on_write: {name} is not a foreign key'
+            )
+        value = getattr(item, field.attname)
+        if value is None:
+            continue
+        rows = field.related_model._base_manager.db_manager(using)
+        rows.select_for_update(no_key=True).filter(**{field.target_field.name: value}).exists()
+
+
 def item_save(item, save, *, update_fields=None, using=None):
     """
-    Saves the item with `save()` and validates it: at the end of the block it is saved in,
-    or at once, in a savepoint, so that a failure rolls this save back.
+    Saves the item with `save()` after the locks of `lock_on_write`, and validates it: at
+    the end of the block it is saved in, or at once, in a savepoint, so that a failure
+    rolls this save back.
     """
     is_new = item._state.adding
+    validated = validates_items(type(item))
 
     def write(scope):
+        lock_on_write(item, using)
         save()
-        scope.changed(item, fields=changed_fields(item, is_new, update_fields), is_new=is_new)
-        scope.snapshot_keep(item)
-        snapshot_take(item, update_fields)
+        if validated:
+            scope.changed(item, fields=changed_fields(item, is_new, update_fields), is_new=is_new)
+            scope.snapshot_keep(item)
+            snapshot_take(item, update_fields)
 
     if (scope := _CTX_SCOPE.get()) is not None:
         write(scope)

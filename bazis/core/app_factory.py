@@ -103,7 +103,7 @@ def _initialize_app(app): # noqa: C901
     from urllib.parse import unquote, urlsplit
 
     from django.conf import settings
-    from django.db import IntegrityError
+    from django.db import IntegrityError, OperationalError
     from django.utils.translation import get_language, gettext_lazy, to_locale
 
     from fastapi import Request
@@ -119,7 +119,12 @@ def _initialize_app(app): # noqa: C901
     from starlette.staticfiles import StaticFiles
     from starlette.status import HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_CONTENT
 
-    from psycopg.errors import ExclusionViolation, UniqueViolation
+    from psycopg.errors import (
+        DeadlockDetected,
+        ExclusionViolation,
+        SerializationFailure,
+        UniqueViolation,
+    )
 
     from bazis.core.i18n import LanguageMiddleware, expand_lang
     from bazis.core.utils.functools import get_attr
@@ -479,6 +484,38 @@ def _initialize_app(app): # noqa: C901
                     title=str(gettext_lazy('Conflict')),
                     detail=str(gettext_lazy('The change conflicts with the current data')),
                     meta={'constraint': cause.diag.constraint_name} if settings.DEBUG else None,
+                )
+            ],
+            HTTP_409_CONFLICT,
+        )
+
+    @app.exception_handler(OperationalError)
+    async def json_api_operational_error_handler(
+        request: Request, exc: OperationalError
+    ) -> JSONResponse:
+        """
+        A request that PostgreSQL aborted for a parallel one (a deadlock, 40P01, or a
+        serialization failure, 40001) is 409 `ERR_CONFLICT` with `meta.retry`: the
+        transaction of the request is rolled back, and the same request may succeed when
+        the client sends it again (the core does not repeat it: the request may have done
+        what a database rollback does not undo). Any other OperationalError stays a 500.
+        """
+        cause = exc.__cause__
+        if not isinstance(cause, DeadlockDetected | SerializationFailure):
+            raise exc
+        meta = {'retry': True}
+        if settings.DEBUG:
+            meta['sqlstate'] = cause.sqlstate
+        return exc_encoder(
+            [
+                SchemaError(
+                    status=HTTP_409_CONFLICT,
+                    code='ERR_CONFLICT',
+                    title=str(gettext_lazy('Conflict')),
+                    detail=str(
+                        gettext_lazy('The request conflicted with a parallel one: retry it')
+                    ),
+                    meta=meta,
                 )
             ],
             HTTP_409_CONFLICT,
