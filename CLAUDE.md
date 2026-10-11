@@ -59,7 +59,8 @@ The framework is split into packages in separate repositories of `ecofuture-tech
 its own `CLAUDE.md`, Tests and Release workflows. Release them in dependency order (CI of a
 package installs its Bazis dependencies from PyPI):
 
-1. `bazis` → `bazis-test-utils`
+1. `bazis-test-utils` → `bazis` (bazis-test-utils does not depend on Bazis, and the tests
+   of the core import its helpers, such as `parallel`)
 2. `bazis-users`, `bazis-ws`, `bazis-bulk`, `bazis-uploadable`
 3. `bazis-author`, `bazis-authing` (users) → `bazis-permit` (users, author for its tests)
 4. `bazis-statusy` (permit), `bazis-bg` (author)
