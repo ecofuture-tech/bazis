@@ -22,14 +22,14 @@ aborts for a parallel one (a deadlock, a serialization failure) is 409 `ERR_CONF
 import threading
 
 from django.core.exceptions import ImproperlyConfigured
-from django.db import OperationalError, connection, connections
+from django.db import OperationalError, connection
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 
 from fastapi.testclient import TestClient
 
 import pytest
-from bazis_test_utils.utils import get_api_client
+from bazis_test_utils.utils import get_api_client, parallel
 from catalog.models import Card, Memo, Reader, Step
 from catalog.routes import MemoRouteSet
 from entity.models import Country
@@ -111,9 +111,10 @@ def test_parallel_requests(sample_app):
 @pytest.mark.django_db(transaction=True)
 def test_no_more_than_n_under_concurrency(sample_app):
     """
-    The recipe of the guide (sample `catalog.Step`): the parent locked in `save` and
-    `validate_item`, the number taken under the lock, a unique constraint as the barrier:
-    of 6 parallel creates 3 pass, numbered 1 to 3, the others are 422.
+    The recipe of the guide (sample `catalog.Step`): the parent declared in
+    `lock_on_write` and locked in `save` before the number, the count in `validate_item`,
+    a unique constraint as the barrier: of 6 parallel creates 3 pass, numbered 1 to 3, the
+    others are 422.
     """
     memo = Memo.objects.create(title='Plan')
 
@@ -167,7 +168,7 @@ def test_action_and_create_of_the_same_item(sample_app):
         calls = [lambda memo=memo: subscribe(sample_app, memo, 'a@example.com')] * 4 + [
             lambda memo=memo: add_reader(sample_app, memo, 'a@example.com')
         ] * 4
-        responses = parallel_calls(calls)
+        responses = parallel(calls)
         statuses = [r.status_code for r in responses]
         assert sorted(s for s in statuses if s not in (200, 201)) == [409] * 7, [
             (r.status_code, r.content) for r in responses
@@ -186,7 +187,7 @@ def test_action_and_create_under_the_limit(sample_app):
     calls = [lambda i=i: subscribe(sample_app, memo, f'a{i}@example.com') for i in range(4)] + [
         lambda i=i: add_reader(sample_app, memo, f'c{i}@example.com') for i in range(4)
     ]
-    statuses = [r.status_code for r in parallel_calls(calls)]
+    statuses = [r.status_code for r in parallel(calls)]
     assert sorted(s for s in statuses if s not in (200, 201)) == [422] * 5, statuses
     assert Reader.objects.filter(memo=memo).count() == Reader.MAX_PER_MEMO
 
@@ -220,7 +221,7 @@ def test_deadlock_is_a_conflict_to_retry(sample_app, monkeypatch):
     monkeypatch.setattr(Reader, 'validate_item', validate_item)
     memo = Memo.objects.create(title='Plan')
 
-    responses = parallel_calls(
+    responses = parallel(
         [
             lambda: add_reader(sample_app, memo, 'a@example.com'),
             lambda: subscribe(sample_app, memo, 'a@example.com'),
@@ -333,43 +334,3 @@ def test_lock_on_write_without_validate_item(monkeypatch):
     with pytest.raises(ImproperlyConfigured, match='name is not a foreign key'):
         Card.objects.create(name='Typo')
     assert not Card.objects.filter(name='Typo').exists()
-
-
-def parallel_calls(funcs):
-    """The results of the calls of `funcs` started at once in threads, in their order."""
-    barrier = threading.Barrier(len(funcs))
-    results = [None] * len(funcs)
-
-    def worker(index, func):
-        try:
-            barrier.wait()
-            results[index] = func()
-        finally:
-            connections.close_all()
-
-    threads = [threading.Thread(target=worker, args=item) for item in enumerate(funcs)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-    return results
-
-
-def parallel(count, func):
-    """The results of `count` calls of `func` started at once in threads."""
-    barrier = threading.Barrier(count)
-    results = []
-
-    def worker():
-        try:
-            barrier.wait()
-            results.append(func())
-        finally:
-            connections.close_all()
-
-    threads = [threading.Thread(target=worker) for _ in range(count)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-    return results

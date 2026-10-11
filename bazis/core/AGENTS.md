@@ -333,6 +333,26 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   avoid answers 409 `ERR_CONFLICT` with `meta.retry` (the client may send the request
   again); it is a safety net, not the design.
 
+- Test every such invariant with parallel requests: `parallel(count, func)` or
+  `parallel([f1, f2, ...])` of bazis-test-utils runs the calls at once in threads and
+  returns their results in order (its guide, "Parallel requests"). The invariant holds and
+  the answers are 201, 409 or 422, never 500; also for two paths that create the same item
+  (an action and the create route):
+
+  ```python
+  from bazis_test_utils.utils import get_api_client, parallel
+
+  @pytest.mark.django_db(transaction=True)  # the endpoints see only committed data
+  def test_no_more_than_3_attempts(sample_app, assignment):
+      def attempt():
+          return get_api_client(sample_app).post('/api/v1/school/attempt/', json_data={
+              'data': {'type': 'school.attempt', 'relationships': {'assignment': {
+                  'data': {'type': 'school.assignment', 'id': str(assignment.pk)}}}},
+          }).status_code
+
+      assert sorted(parallel(6, attempt)) == [201] * 3 + [422] * 3
+  ```
+
 ### Declarations in the code (`bazis.core.declare`)
 
 - Declarations in the code (for package authors): `bazis.core.declare` holds what
