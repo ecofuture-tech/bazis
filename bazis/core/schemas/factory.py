@@ -328,9 +328,13 @@ class SchemaFactory:
     def fields_patch(self, fields_restricts: dict[str, set[str]]) -> list[SchemaField]:  # noqa: C901
         """
         The method creates duplicates of fields and patches them based on the
-        restrictions from fields_restricts.
+        restrictions from fields_restricts. A `disable` hides the field, except a field
+        required to create an item in the schema of a create: an item cannot be created
+        without it (bazis-permit warns, permit.W009). An update, the relationships endpoints
+        and the other schemas never keep a disabled field, whatever its requiredness.
         """
         is_view_op = self.api_action.access_action == CrudAccessAction.VIEW
+        is_add_op = self.api_action.access_action == CrudAccessAction.ADD
 
         def restricts_clean(_restricts: set[str]) -> set[str]:
             # for read operations, remove the restrictions "required", "null", "empty"
@@ -388,7 +392,7 @@ class SchemaFactory:
             elif FieldAvail.writeonly.name in restricts:
                 field.write_only = True
 
-            if (not field.required or is_view_op) and FieldAvail.disable.name in restricts:
+            if FieldAvail.disable.name in restricts and not (field.required and is_add_op):
                 continue
             # # if the field is read-only, and the schema does not support this - exclude the field
             # if field.read_only and not self.api_action.for_read_only:
