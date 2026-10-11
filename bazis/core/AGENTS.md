@@ -661,6 +661,9 @@ class CertificateRouteSet(PermitRouteBase):
   `BAZIS_THROTTLE_EXEMPT` (an import path of a function `(request, ident) -> bool`,
   `ident` is `user:<pk>` or `ip:<address>`) exempts requests, e.g. by a whitelist of the
   project. The cache failing (Redis down) is logged and lets the requests through.
+- Tests: the pytest plugin of bazis-test-utils (2.5.2) resets the counts before each test
+  (`bazis.core.throttle.throttle_reset()`), so a test of a throttle counts from zero and the
+  other tests never inherit a 429; no fixture of the project clears the cache for it.
 - A limit on a business count (attempts per assignment, messages per day of a user) is an
   invariant of the data, not a rate: keep it in `validate_item` (see Models).
 

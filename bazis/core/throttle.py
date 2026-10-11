@@ -50,6 +50,9 @@ logger = logging.getLogger(__name__)
 #: always the IP address
 THROTTLE_KEYS = ('user_or_ip', 'ip')
 
+#: the prefix of the cache keys of the counters
+KEY_PREFIX = 'bazis:throttle'
+
 
 class Throttle:
     """
@@ -107,7 +110,7 @@ class Throttle:
 
         now = time.time()
         window = int(now // period)
-        key = f'bazis:throttle:{self.scope or scope}:{ident}:{period}:{window}'
+        key = f'{KEY_PREFIX}:{self.scope or scope}:{ident}:{period}:{window}'
         try:
             cache.add(key, 0, timeout=period)
             try:
@@ -139,6 +142,17 @@ def throttle(
     Tags: RAG, EXPORT
     """
     return Depends(Throttle(rate, key=key, scope=scope))
+
+
+def throttle_reset() -> None:
+    """
+    Forgets the requests counted by every throttle, in all their windows (the keys of
+    `KEY_PREFIX` in the default cache): the pytest plugin of bazis-test-utils calls it before
+    each test, so that a test does not inherit the counts of the tests run before it. A
+    cache without `delete_pattern` (only django-redis has it) keeps them.
+    """
+    if (delete_pattern := getattr(cache, 'delete_pattern', None)) is not None:
+        delete_pattern(f'{KEY_PREFIX}:*')
 
 
 def split_throttles(dependencies) -> tuple[list[Throttle], list]:

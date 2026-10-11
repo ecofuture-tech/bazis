@@ -39,7 +39,7 @@ from bazis.core.routes_abstract.initial import (
     http_get,
     route_declare,
 )
-from bazis.core.throttle import Throttle, parse_rate, throttle
+from bazis.core.throttle import Throttle, parse_rate, throttle, throttle_reset
 
 
 URL = '/api/v1/entity/country/'
@@ -47,9 +47,11 @@ URL = '/api/v1/entity/country/'
 
 @pytest.fixture(autouse=True)
 def throttle_counts():
-    cache.delete_pattern('bazis:throttle:*')
+    # the plugin of bazis-test-utils >= 2.5.2 resets them before each test: remove when the
+    # test extra requires it
+    throttle_reset()
     yield
-    cache.delete_pattern('bazis:throttle:*')
+    throttle_reset()
 
 
 def exempt_local(request, ident):
@@ -76,6 +78,24 @@ def test_throttle(sample_app):
     assert 1 <= int(response.headers['Retry-After']) <= 60
     assert client.get(f'{URL}greeting/').status_code == 200
     assert client.get(URL).status_code == 200
+
+
+@pytest.mark.django_db
+def test_throttle_reset(sample_app, monkeypatch):
+    """
+    `throttle_reset` forgets the counts of every throttle and only them; a cache without
+    `delete_pattern` keeps them.
+    """
+    client = get_api_client(sample_app)
+    assert statuses(client, 'capital/', 3) == [200, 200, 429]
+    cache.set('other', 1)
+    throttle_reset()
+    assert cache.get('other') == 1
+    assert statuses(client, 'capital/', 3) == [200, 200, 429]
+    cache.delete('other')
+
+    monkeypatch.setattr('bazis.core.throttle.cache', object())
+    throttle_reset()
 
 
 @pytest.mark.django_db
