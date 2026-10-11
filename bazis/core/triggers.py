@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
 from typing import TYPE_CHECKING
 
-from django.db import connection
+from django.db import DEFAULT_DB_ALIAS, connection, connections, transaction
 
 from pydantic import BaseModel
 
 import pgtrigger
+from pgtrigger.core import OUTDATED, UNINSTALLED
 
+from bazis.core.declare import lock, migrations_complete
 from bazis.core.utils.model_meta import RelationInfo
 from bazis.core.utils.triggers import trigger_name
 
@@ -264,3 +267,37 @@ class FieldsTransferTrigger(pgtrigger.Trigger):
 
                 RETURN NEW;
             """
+
+
+def triggers_not_installed(using: str = DEFAULT_DB_ALIAS) -> list[str]:
+    """
+    The triggers of the models (pgtrigger, `app_label.Model:name`) that the database lacks
+    or has in an outdated version. Empty for a database other than PostgreSQL or whose
+    migrations are not all applied (its tables may not exist yet).
+    """
+    if connections[using].vendor != 'postgresql' or not migrations_complete(using):
+        return []
+    return sorted(
+        trigger.get_uri(model)
+        for model, trigger in pgtrigger.registered()
+        if trigger.get_installation_status(model, database=using)[0] in (UNINSTALLED, OUTDATED)
+    )
+
+
+def install_after_migrate(sender, using=DEFAULT_DB_ALIAS, verbosity=1, plan=None, **kwargs):
+    """
+    The receiver of `post_migrate` of the core: once the migrations of the database are all
+    applied, installs the triggers of the models (as `manage.py pgtrigger install`: the
+    changed ones again, and the ones no longer declared are removed), in a transaction
+    that holds the lock of the declarations (concurrent `migrate` runs install them one
+    after the other). The triggers are not in the migrations (`PGTRIGGER_MIGRATIONS` is
+    off): without this the database would lack them while the test database has them.
+    `flush` sends the signal without a plan and keeps the triggers: skipped then.
+    """
+    if plan is None or connections[using].vendor != 'postgresql' or not migrations_complete(using):
+        return
+    with transaction.atomic(using=using):
+        lock(using)
+        pgtrigger.install(database=using)
+    if verbosity >= 1:
+        (kwargs.get('stdout') or sys.stdout).write('  Installed the triggers of the models\n')

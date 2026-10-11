@@ -31,7 +31,7 @@ Read a section with `package_guide("bazis", "<section>")` when the step at hand 
 | Section | Read it when |
 |---|---|
 | Project layout | you create a project or an app: its files, the media and static files, the `BS_*` settings and `BS_INSTALLED_APPS`, the translations (`bazis_messages`), the language of a request |
-| Models | you write a model: the mixins, `validate_item` and the invariants under concurrent requests, the declarations, `calc_property`, `UniqNumberMixin`, translated data, callable defaults |
+| Models | you write a model: the mixins, `validate_item` and the invariants under concurrent requests (also no overlapping intervals of a participant), the declarations, the triggers, `calc_property`, `UniqNumberMixin`, translated data, callable defaults |
 | Routes | you write a route set: its schemas (`fields`), `restrict_queryset`, the default route, custom routes and actions (`@http_get`, `@http_post`, `public`, `access_action`), the hooks of the writes and their order, the errors, throttle, several route sets of a model |
 | API conventions | a client builds a request: `filter`, `sort`, `search`, `include`, the errors, the points and the distances (`near`, `distance`) |
 | E-mail | the product sends mail |
@@ -80,6 +80,14 @@ the packages to load the settings from. Leave it unset; `'[]'` turns off the set
 of the ones the project uses (`bazis_doctor` warns, `bazis.W002`). Requirements:
 PostgreSQL with PostGIS and Redis (`BS_CACHES__DEFAULT__LOCATION`). `DEBUG` is true by
 default: set `BS_DEBUG=false` and `BS_SECRET_KEY` (required without DEBUG) in production.
+
+A dynamic setting (editable in the admin: the page Constance; the throttle rates, the mail,
+`DEFAULT_FROM_EMAIL`, the page sizes) is read from the database on every use, and its
+`BS_*` variable is its default: the setting follows the variable until a value is set in
+the admin, with `manage.py constance set <NAME> <value>` or `config.<NAME> = ...`; a set
+value wins over the variable (`manage.py constance list` shows the values). Bazis 2.16 no longer
+saves the default when a setting is read: before, the first read saved it, and a variable
+set later had no effect.
 
 ### Translations: `bazis_messages`
 
@@ -380,6 +388,63 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
       assert sorted(parallel(6, attempt)) == [201] * 3 + [422] * 3
   ```
 
+- No overlapping intervals of a participant ("an interviewer has no two interviews at the
+  same time", "a host no two sessions"): the rows of a many-to-many relation with a
+  `through` model hold the interval of their parent, and an exclusion constraint of the
+  through model refuses two overlapping intervals of one participant, whatever writes them
+  (the create and update of the parent, the relationships endpoint, the admin, parallel
+  requests). `set()` writes the rows of the through model without `save()`, so triggers
+  fill the interval (the triggers are installed by `migrate`, see Triggers below):
+
+  ```python
+  import pgtrigger
+  from django.contrib.postgres.constraints import ExclusionConstraint
+  from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators
+
+  class Session(DtMixin, UuidMixin, JsonApiMixin):
+      dt_start = models.DateTimeField(_('Start'))
+      dt_end = models.DateTimeField(_('End'))
+      # optional on the create: blank=True
+      hosts = models.ManyToManyField(Person, through='SessionHost', blank=True,
+                                     related_name='sessions')
+
+      class Meta:
+          triggers = [pgtrigger.Trigger(   # the periods follow the time of the session
+              name='session_period_sync', when=pgtrigger.After, operation=pgtrigger.Update,
+              condition=pgtrigger.AnyChange('dt_start', 'dt_end'),
+              func='UPDATE events_sessionhost SET period = tstzrange(NEW.dt_start, NEW.dt_end) '
+                   'WHERE session_id = NEW.id; RETURN NULL;')]
+
+  class SessionHost(InitialBase):
+      session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='+')
+      host = models.ForeignKey(Person, on_delete=models.CASCADE, related_name='+')
+      period = DateTimeRangeField(editable=False)   # filled by the trigger
+
+      class Meta:
+          constraints = [
+              models.UniqueConstraint(fields=['session', 'host'], name='session_host_uniq'),
+              ExclusionConstraint(name='session_host_no_overlap', expressions=[
+                  ('host', RangeOperators.EQUAL), ('period', RangeOperators.OVERLAPS)]),
+          ]
+          triggers = [pgtrigger.Trigger(
+              name='session_host_period', when=pgtrigger.Before,
+              operation=pgtrigger.Insert | pgtrigger.Update,
+              func='NEW.period := (SELECT tstzrange(dt_start, dt_end) FROM events_session '
+                   'WHERE id = NEW.session_id); RETURN NEW;')]
+  ```
+
+  The migration that creates them starts with `BtreeGistExtension()`
+  (`django.contrib.postgres.operations`: the equality of a key in a GiST index). The SQL of
+  the triggers names the tables (`<app>_<model>`). The relation is written like any
+  many-to-many relation: in the create and the update of the parent (optional with
+  `blank=True`, required otherwise) and by its relationships endpoint; its reverse side
+  (`person.sessions`) is read-only. An overlap answers 409 `ERR_CONFLICT` without a
+  pointer (see Errors). For a 422 at the field, check the overlap in `validate_item` of the
+  parent under a lock of the participants (`pg_advisory_xact_lock`) and make the constraint
+  `deferrable=models.Deferrable.DEFERRED`, so that the check answers before the constraint
+  (checked at the commit). The interval of the through rows is the barrier: never compute
+  it in `save()` of the through model, which `set()` does not call.
+
 ### Declarations in the code (`bazis.core.declare`)
 
 - Declarations in the code (for package authors): `bazis.core.declare` holds what
@@ -390,6 +455,20 @@ class Order(DtMixin, UuidMixin, JsonApiMixin):
   with a warning; the model has a unique `slug` and a `managed` flag), `managed_orphans`
   (the managed objects no longer declared; each package decides their fate), and
   `ManagedAdminMixin` (`bazis.core.admin_abstract`, declared objects read-only).
+
+### Triggers of the models (pgtrigger)
+
+- The core (`dt_created`/`dt_updated`), the packages (the current role of bazis-permit) and
+  the projects (`Meta.triggers` of a model, `pgtrigger.Trigger`) keep rules in PostgreSQL
+  triggers. They are not in the migrations: `migrate` installs them (again when changed,
+  and removes the ones no longer declared) once all the migrations of the database are
+  applied (bazis 2.16; before, only `manage.py pgtrigger install` did, and the databases
+  of the projects lacked them while the tests had them). A `migrate` to an earlier
+  migration and `flush` do not install them. `bazis_doctor` warns when the database lacks
+  a trigger or has an outdated one (`bazis.W008`): run `manage.py migrate` or `manage.py
+  pgtrigger install`. A migration that removes or renames a column a trigger reads runs
+  after `manage.py pgtrigger uninstall` (the deploy script of the sample does it before
+  every `migrate`), or its own data changes fire the old trigger.
 
 ### Calculated fields: `calc_property`
 
@@ -638,6 +717,13 @@ class OrderRouteSet(JsonapiRouteBase):
           item = self.set_item(item_id)
           ...
   ```
+
+  A required text of a body (a reason, a comment) strips the whitespace before its length
+  is checked: `reason: Annotated[str, StringConstraints(strip_whitespace=True,
+  min_length=1)]` (pydantic), since `Field(min_length=1)` accepts `"   "`; test it with a
+  text of only spaces (422). The attributes of a JSON:API document already refuse such a
+  text in a field that is not `blank`, and the payloads of the transits of bazis-statusy
+  are stripped.
 
   A route that changes the item goes through the checks of an update (see Rules). Every
   operation of a route class has the OpenAPI extension
@@ -1014,8 +1100,13 @@ The core configures the mail of Django: `MAILERS['default']` (Django 6.1) uses
 that reads the dynamic settings `BAZIS_EMAIL_HOST`, `BAZIS_EMAIL_PORT`,
 `BAZIS_EMAIL_HOST_USER`, `BAZIS_EMAIL_HOST_PASSWORD`, `BAZIS_EMAIL_USE_TLS`,
 `BAZIS_EMAIL_USE_SSL`, `BAZIS_EMAIL_TIMEOUT` (seconds, default 10, 0 - unlimited)
-(editable in the admin, `BS_BAZIS_EMAIL_*` as their initial values) every time it opens a
-connection; `DEFAULT_FROM_EMAIL` is the sender. Send with Django:
+(editable in the admin, `BS_BAZIS_EMAIL_*` as their defaults) every time it opens a
+connection; `DEFAULT_FROM_EMAIL` is the sender (dynamic too, `BS_DEFAULT_FROM_EMAIL`,
+default `webmaster@localhost` as in Django: set it to an address of the domain). A value
+set in the admin wins over the variable (see Settings: `BS_*`); `bazis_doctor` warns of an
+empty sender, with which every mail fails (`bazis.W009`, a value saved by bazis before
+2.16): set it in the admin or with `manage.py constance set DEFAULT_FROM_EMAIL
+noreply@<domain>`. Send with Django:
 
 ```python
 from django.core.mail import send_mail

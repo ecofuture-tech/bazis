@@ -177,6 +177,7 @@ def unreachable(monkeypatch, host='127.0.0.1', port='1'):
     monkeypatch.setitem(settings_dict, 'PORT', port)
 
 
+@pytest.mark.django_db  # the database checks of the core read it
 def test_check_messages_databases(database_check):
     database_check()
     assert checked(introspect.check_messages()) == []

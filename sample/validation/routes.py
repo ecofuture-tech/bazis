@@ -36,3 +36,7 @@ class PersonRouteSet(JsonapiRouteBase):
 
 class BookingRouteSet(JsonapiRouteBase):
     model = apps.get_model('validation.Booking')
+
+
+class SessionRouteSet(JsonapiRouteBase):
+    model = apps.get_model('validation.Session')

@@ -668,8 +668,11 @@ def get_relation_kwargs(field_name, rel: RelationInfo):  # noqa: C901
             limit_choices_to = models.Q(**limit_choices_to)
         kwargs['queryset'] = kwargs['queryset'].filter(limit_choices_to)
 
-    # M2M with through model is read-only
-    if rel.has_custom_through_model:
+    # The reverse side of a many-to-many relation with a through model of the project is
+    # read-only. The forward side is written like any many-to-many relation (`set()` adds
+    # the rows of the through model: its other fields need defaults or are filled by the
+    # database), optional with `blank` or a default.
+    if rel.has_custom_through_model and rel.reverse:
         kwargs['read_only'] = True
         kwargs.pop('queryset', None)
 

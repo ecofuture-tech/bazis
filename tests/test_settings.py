@@ -105,3 +105,83 @@ def test_persisted_constance_value_and_override_are_separate():
         assert getattr(configure.settings, DYNAMIC_KEY) == 42
         assert getattr(config, DYNAMIC_KEY) == 72
     assert getattr(configure.settings, DYNAMIC_KEY) == 72
+
+
+SENDER = 'DEFAULT_FROM_EMAIL'
+
+
+def saved(key):
+    from constance.models import Constance
+
+    return Constance.objects.filter(key=key).exists()
+
+
+@pytest.fixture
+def sender_default(monkeypatch):
+    """Sets the default of the sender, as a BS_DEFAULT_FROM_EMAIL of the process does."""
+    from constance import settings as constance_settings
+
+    def set_default(value):
+        monkeypatch.setitem(
+            constance_settings.CONFIG, SENDER, (value, *constance_settings.CONFIG[SENDER][1:])
+        )
+
+    return set_default
+
+
+def test_default_sender_is_the_django_default():
+    assert configure.Settings.model_fields[SENDER].default == 'webmaster@localhost'
+
+
+@pytest.mark.django_db
+def test_a_read_does_not_save_the_default(sender_default):
+    """
+    The reads (of Bazis, of constance: the admin, `manage.py constance get`) do not save
+    the default: a later BS_* variable of the setting takes effect.
+    """
+    from constance import config
+
+    sender_default('noreply@first.example')
+    assert settings.DEFAULT_FROM_EMAIL == getattr(config, SENDER) == 'noreply@first.example'
+    assert not saved(SENDER)
+
+    sender_default('noreply@second.example')
+    assert settings.DEFAULT_FROM_EMAIL == 'noreply@second.example'
+
+
+@pytest.mark.django_db
+def test_a_set_value_wins_over_the_default(sender_default):
+    from constance import config
+
+    # the value of the default is not saved: nothing to keep
+    setattr(config, SENDER, configure.CONSTANCE_CONFIG[SENDER][0])
+    assert not saved(SENDER)
+
+    setattr(config, SENDER, 'office@example.com')
+    assert saved(SENDER)
+    sender_default('noreply@other.example')
+    assert settings.DEFAULT_FROM_EMAIL == 'office@example.com'
+
+    # once saved, the value of the default is saved too
+    setattr(config, SENDER, 'noreply@other.example')
+    sender_default('noreply@third.example')
+    assert settings.DEFAULT_FROM_EMAIL == 'noreply@other.example'
+
+
+@pytest.mark.django_db
+def test_doctor_warns_of_an_empty_sender():
+    from constance import config
+
+    from bazis.core import introspect
+
+    def warnings():
+        messages = introspect.check_messages(databases=['default'])
+        return [it for it in messages if it['id'] == 'bazis.W009']
+
+    assert warnings() == []
+    setattr(config, SENDER, '')
+    (warning,) = warnings()
+    assert 'DEFAULT_FROM_EMAIL' in warning['message']
+    assert 'manage.py constance set DEFAULT_FROM_EMAIL' in warning['hint']
+    # without the database the check does not run
+    assert not [it for it in introspect.check_messages() if it['id'] == 'bazis.W009']

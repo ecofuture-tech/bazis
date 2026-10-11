@@ -15,12 +15,18 @@
 """
 Models of the tests of `JsonApiMixin.validate_item`: a booking of a room must not overlap
 another booking of the room and must not have more participants than the room has seats.
+The recipe of the guide "no overlapping intervals of a participant": a host has no two
+sessions at the same time (`Session`, `SessionHost`).
 """
 
+from django.contrib.postgres.constraints import ExclusionConstraint
+from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from bazis.core.models_abstract import DtMixin, JsonApiMixin, UuidMixin
+import pgtrigger
+
+from bazis.core.models_abstract import DtMixin, InitialBase, JsonApiMixin, UuidMixin
 
 
 class Room(DtMixin, UuidMixin, JsonApiMixin):
@@ -79,3 +85,55 @@ class Equipment(DtMixin, UuidMixin, JsonApiMixin):
 
     def validate_item(self, changes):
         self.calls.append((self.pk, changes))
+
+
+class Session(DtMixin, UuidMixin, JsonApiMixin):
+    title = models.CharField('Title', max_length=255)
+    dt_start = models.DateTimeField('Start')
+    dt_end = models.DateTimeField('End')
+    # optional on the create: the hosts may be added later
+    hosts = models.ManyToManyField(
+        Person, through='SessionHost', blank=True, related_name='sessions'
+    )
+
+    class Meta:
+        triggers = [
+            # the periods of the hosts follow the time of the session
+            pgtrigger.Trigger(
+                name='session_period_sync',
+                when=pgtrigger.After,
+                operation=pgtrigger.Update,
+                condition=pgtrigger.AnyChange('dt_start', 'dt_end'),
+                func=(
+                    'UPDATE validation_sessionhost SET period = tstzrange(NEW.dt_start, NEW.dt_end) '
+                    'WHERE session_id = NEW.id; RETURN NULL;'
+                ),
+            ),
+        ]
+
+
+class SessionHost(InitialBase):
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='+')
+    host = models.ForeignKey(Person, on_delete=models.CASCADE, related_name='+')
+    # the time of the session, filled by the trigger (`set()` writes the rows without save())
+    period = DateTimeRangeField(editable=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['session', 'host'], name='session_host_uniq'),
+            ExclusionConstraint(
+                name='session_host_no_overlap',
+                expressions=[('host', RangeOperators.EQUAL), ('period', RangeOperators.OVERLAPS)],
+            ),
+        ]
+        triggers = [
+            pgtrigger.Trigger(
+                name='session_host_period',
+                when=pgtrigger.Before,
+                operation=pgtrigger.Insert | pgtrigger.Update,
+                func=(
+                    'NEW.period := (SELECT tstzrange(dt_start, dt_end) FROM validation_session '
+                    'WHERE id = NEW.session_id); RETURN NEW;'
+                ),
+            ),
+        ]

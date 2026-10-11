@@ -46,6 +46,67 @@ def check_cache_backend(app_configs, **kwargs):
     return []
 
 
+@register(Tags.database)
+def check_triggers_installed(app_configs, databases=None, **kwargs):
+    """
+    The database has the triggers of the models (pgtrigger), which the core and the
+    packages rely on (`dt_created`/`dt_updated`, the current role of bazis-permit) and the
+    tests have: `migrate` installs them once all the migrations are applied. A warning:
+    `migrate` runs the database checks before it installs them. Skipped while the
+    migrations are not applied.
+    """
+    from bazis.core.triggers import triggers_not_installed
+
+    messages = []
+    for using in databases or ():
+        if missing := triggers_not_installed(using):
+            shown = ', '.join(missing[:5]) + (
+                f' and {len(missing) - 5} more' if len(missing) > 5 else ''
+            )
+            messages.append(
+                Warning(
+                    f'The database {using} lacks {len(missing)} trigger(s) of the models or has '
+                    f'them outdated: {shown}. The rules they keep do not work in this database, '
+                    'while the tests (whose database has them) pass.',
+                    hint=(
+                        f'Run `manage.py migrate --database {using}` (it installs the triggers once '
+                        f'the migrations are applied) or `manage.py pgtrigger install --database {using}`.'
+                    ),
+                    id='bazis.W008',
+                )
+            )
+    return messages
+
+
+@register(Tags.database)
+def check_default_from_email(app_configs, databases=None, **kwargs):
+    """
+    The sender of the mails (`DEFAULT_FROM_EMAIL`, a dynamic setting read from the
+    database) is not empty: Django refuses to send a mail without one. Skipped while the
+    migrations are not applied.
+    """
+    from django.db import DEFAULT_DB_ALIAS
+
+    from bazis.core.declare import migrations_complete
+
+    if DEFAULT_DB_ALIAS not in (databases or ()) or not migrations_complete(DEFAULT_DB_ALIAS):
+        return []
+    if str(settings.DEFAULT_FROM_EMAIL).strip():
+        return []
+    return [
+        Warning(
+            'DEFAULT_FROM_EMAIL, the sender of the mails, is empty: sending a mail fails with '
+            '"Invalid address".',
+            hint=(
+                'Set the sender in the admin (Constance) or with `manage.py constance set '
+                'DEFAULT_FROM_EMAIL noreply@<domain>`: a value saved there wins over '
+                'BS_DEFAULT_FROM_EMAIL.'
+            ),
+            id='bazis.W009',
+        )
+    ]
+
+
 @register(Tags.security, deploy=True)
 def check_allowed_hosts(app_configs, **kwargs):
     """

@@ -389,7 +389,7 @@ if SETTINGS_MODULE:
 
         SETTINGS_MODULE.__dict__['CONSTANCE_CONFIG'] = CONSTANCE_CONFIG
         SETTINGS_MODULE.__dict__.setdefault(
-            'CONSTANCE_BACKEND', 'constance.backends.database.DatabaseBackend'
+            'CONSTANCE_BACKEND', 'bazis.core.constance_conf.backend.DatabaseBackend'
         )
 
         # Ensure all required apps are in INSTALLED_APPS

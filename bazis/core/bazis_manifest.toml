@@ -152,6 +152,17 @@ use_when = "settings of an app (conf.py), read from BS_* variables"
 text = "the settings of all installed Bazis packages are loaded and a BS_* variable is read only if a conf.py declares it: the core declares the Django settings a project sets with BS_* (AUTH_USER_MODEL, AUTHENTICATION_BACKENDS, INSTALLED_APPS, MIDDLEWARE, ...); a package's conf.py declares only settings it owns (BAZIS_*, KAFKA_*, its own names such as AUTH_ANONYMOUS_USER_MODEL) and never redeclares or defaults a Django setting"
 
 [[pitfalls]]
+text = "a dynamic setting (editable in the admin: Constance) follows its BS_* variable until a value is set in the admin, with manage.py constance set or config.X = ...; a set value wins over the variable (before bazis 2.16 the first read saved the default)"
+
+[[pitfalls]]
+text = "an empty DEFAULT_FROM_EMAIL (saved in Constance) fails every mail with Invalid address: set the sender in the admin or with manage.py constance set DEFAULT_FROM_EMAIL noreply@<domain>"
+check = "bazis.W009"
+
+[[pitfalls]]
+text = "the triggers of the models (pgtrigger: dt_created/dt_updated, the roles of bazis-permit, Meta.triggers) are not in the migrations: migrate installs them once all the migrations are applied (bazis 2.16); a database without them breaks the rules they keep while the tests pass: manage.py migrate or manage.py pgtrigger install"
+check = "bazis.W008"
+
+[[pitfalls]]
 text = "BS_BAZIS_APPS (or BS_BAZIS_CONFIG_APPS) is an explicit override: '[]' turns off the settings of all Bazis packages, also of the ones the project uses; leave it unset"
 check = "bazis.W002"
 

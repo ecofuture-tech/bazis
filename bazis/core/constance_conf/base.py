@@ -21,6 +21,15 @@ class Config(ConfigBase):
     custom attribute setting behavior.
     """
 
+    def _get_sync_value(self, key, default):
+        """
+        The value saved in the database, else the default (the `BS_*` variable of the
+        setting), which is not saved (`backend.DatabaseBackend`): the reads of the settings
+        by Bazis do not try to save it, which would cost a query on every read.
+        """
+        result = self._backend.get(key)
+        return default if result is None else result
+
     def __setattr__(self, key, value):
         """
         Overrides the default __setattr__ method to set attributes on the configuration

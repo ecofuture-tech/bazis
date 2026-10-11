@@ -193,6 +193,10 @@ class Settings(BazisSettings):
     ENVIRONMENT_NAME: str = ''
     SERVER_NAME: str = ''
     RELEASE_VERSION: str = ''
+    # the triggers are not in the migrations: the core installs them after `migrate` once
+    # all the migrations are applied (`bazis.core.triggers.install_after_migrate`); the
+    # receiver of pgtrigger would install them also after a partial `migrate`, before the
+    # tables of the later migrations exist, and after every `flush`
     PGTRIGGER_INSTALL_ON_MIGRATE: bool = False
     PGTRIGGER_MIGRATIONS: bool = False
     DATABASES: DatabaseDefault = DatabaseDefault()
@@ -281,8 +285,9 @@ class Settings(BazisSettings):
         title=_('Mail server timeout, seconds (0 - unlimited)'),
         json_schema_extra={'dynamic': True},
     )
+    # the default of Django: an empty sender fails every mail
     DEFAULT_FROM_EMAIL: str = Field(
-        '',
+        'webmaster@localhost',
         title=_('Default outgoing email address'),
         json_schema_extra={'dynamic': True},
     )

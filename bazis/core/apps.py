@@ -14,6 +14,7 @@
 
 from django.apps import apps
 from django.db.backends.signals import connection_created
+from django.db.models.signals import post_migrate
 
 from bazis.core.utils.apps import BaseConfig
 
@@ -33,7 +34,15 @@ class BazisCoreConfig(BaseConfig):
         super().ready()
         from bazis.core import checks  # noqa: F401  registers the system checks
         from bazis.core.item_validation import connect_m2m
+        from bazis.core.triggers import install_after_migrate
         from bazis.core.utils.orm import close_with_thread
 
         connect_m2m(apps.get_models())
         connection_created.connect(close_with_thread, dispatch_uid='bazis.core.close_with_thread')
+        # the core has no models module: Django sends post_migrate only for the applications
+        # with models, such as pgtrigger
+        post_migrate.connect(
+            install_after_migrate,
+            sender=apps.get_app_config('pgtrigger'),
+            dispatch_uid='bazis.core.triggers',
+        )
