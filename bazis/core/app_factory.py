@@ -24,6 +24,8 @@ import sys
 import types
 
 
+logger = logging.getLogger(__name__)
+
 _STATE_KEY = 'bazis.core._app_singleton'
 _state = sys.modules.get(_STATE_KEY)
 if _state is None:
@@ -103,6 +105,7 @@ def _initialize_app(app): # noqa: C901
     from urllib.parse import unquote, urlsplit
 
     from django.conf import settings
+    from django.core.exceptions import ValidationError as DjangoValidationError
     from django.db import IntegrityError, OperationalError
     from django.utils.translation import get_language, gettext_lazy, to_locale
 
@@ -130,7 +133,13 @@ def _initialize_app(app): # noqa: C901
     from bazis.core.utils.functools import get_attr
     from bazis.core.utils.orm import close_old_connections
 
-    from .errors import JsonApiBazisException, SchemaError, SchemaErrors, SchemaErrorSource
+    from .errors import (
+        JsonApiBazisException,
+        JsonApiItemInvalidException,
+        SchemaError,
+        SchemaErrors,
+        SchemaErrorSource,
+    )
 
     #: the media files shown inline when the application serves them (DEBUG)
     MEDIA_INLINE = re.compile(r'\.(png|jpe?g|gif|webp|avif|bmp)$', re.IGNORECASE)  # noqa: N806
@@ -488,6 +497,26 @@ def _initialize_app(app): # noqa: C901
             ],
             HTTP_409_CONFLICT,
         )
+
+    @app.exception_handler(DjangoValidationError)
+    async def json_api_django_validation_error_handler(
+        request: Request, exc: DjangoValidationError
+    ) -> JSONResponse:
+        """
+        A Django ValidationError raised outside `validate_item` (in a hook, a route, or a
+        lookup by a value that cannot be a key, `filter(pk='not-a-uuid')`) is 422
+        `ERR_ITEM_INVALID`, as one of `validate_item`, without an item: the pointer of the
+        field of a dict, `/data` otherwise. It is logged as a WARNING with its traceback:
+        the rule belongs in `validate_item`, the type of a value in the request schema.
+        """
+        logger.warning(
+            'A Django ValidationError outside validate_item answered 422 on %s %s: %s',
+            request.method,
+            request.url.path,
+            exc.messages,
+            exc_info=exc,
+        )
+        return await json_api_bazis_exception_handler(request, JsonApiItemInvalidException(exc))
 
     @app.exception_handler(OperationalError)
     async def json_api_operational_error_handler(

@@ -207,7 +207,9 @@ class JsonApiItemInvalidException(JsonApiBazisException):
     (`loc`); on the relationships endpoints, which take only the relation of the path, it
     is the path parameter `/related_field_name`.
     The same exception leaves a save outside the API; `error` is the Django
-    `ValidationError` (the admin shows it in the form), `item` the invalid item.
+    `ValidationError` (the admin shows it in the form), `item` the invalid item. The
+    application answers a Django `ValidationError` raised outside `validate_item` with it
+    too, without an item (a field of a dict is an attribute then).
 
     Tags: RAG, EXPORT
     """
@@ -215,13 +217,18 @@ class JsonApiItemInvalidException(JsonApiBazisException):
     status = HTTP_422_UNPROCESSABLE_CONTENT
 
     def __init__(
-        self, error: DjangoValidationError, *, item, source: str = 'save', loc: tuple = None
+        self,
+        error: DjangoValidationError,
+        *,
+        item=None,
+        source: str = 'save',
+        loc: tuple = None,
     ) -> None:
         self.error = error
         self.item = item
         self.source = source
         self.loc = loc or ('body', 'data')
-        relations = item.get_fields_info().relations
+        relations = item.get_fields_info().relations if item is not None else ()
         if hasattr(error, 'error_dict'):
             messages_by_field = error.message_dict
         else:

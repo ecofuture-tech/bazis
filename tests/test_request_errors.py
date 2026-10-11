@@ -16,11 +16,12 @@
 A malformed request document is 422 `ERR_VALIDATE` pointing into the document the client
 sent: a related id that cannot be a key of the related model, a document without `data`,
 the body of the relationships endpoints (`/data`, `/data/<index>/id`, without the names of
-the Pydantic types).
+the Pydantic types). A Django ValidationError outside validate_item is 422 too.
 """
 
 import pytest
 from bazis_test_utils.utils import get_api_client
+from entity.models import Country
 
 from tests import factories
 
@@ -168,3 +169,27 @@ def test_identifier_of_a_relation_to_another_field():
         by_price.model_validate(identifier | {'id': 'not-a-price'})
     with pytest.raises(ValidationError):
         by_pk.model_validate(identifier | {'id': '10.50'})
+
+
+@pytest.mark.django_db(transaction=True)
+def test_lookup_by_a_value_that_is_not_a_key(sample_app, caplog):
+    """
+    An action that looks an item up by a `str` that cannot be a UUID (`filter(pk=...)`
+    raises a Django ValidationError outside validate_item) answers 422 `ERR_ITEM_INVALID`
+    at `/data`, not a 500, and logs a WARNING; a valid id is looked up.
+    """
+    client = get_api_client(sample_app)
+    country = Country.objects.create(name='Norway')
+
+    response = client.get('/api/v1/entity/country/name/', params={'country_id': 'not-a-uuid'})
+
+    assert response.status_code == 422, response.text
+    (error,) = response.json()['errors']
+    assert (error['code'], error['source']) == ('ERR_ITEM_INVALID', {'pointer': '/data'})
+    assert 'not-a-uuid' in error['detail']
+    assert any(
+        r.levelname == 'WARNING' and 'outside validate_item' in r.getMessage()
+        for r in caplog.records
+    )
+    response = client.get('/api/v1/entity/country/name/', params={'country_id': str(country.pk)})
+    assert (response.status_code, response.json()) == (200, 'Norway')

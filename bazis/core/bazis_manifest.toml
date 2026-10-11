@@ -211,7 +211,7 @@ text = "the hooks of a route (hook_after_create, hook_after_update, the relation
 text = "hook_before_update sees the values in the database, not the data of the request: compare the old and the new values in hook_after_update or with changes.fields in validate_item"
 
 [[pitfalls]]
-text = "a Django ValidationError is 422 only from validate_item: raised in a hook or a route it is a 500, and the routes never call full_clean() (Model.clean() and the validators of the fields do not run); from a hook raise JsonApiBazisException([JsonApiBazisError(message, loc=('body', 'data', 'attributes', name))], status=422): without status= the response is 400, and loc=('attributes', name) points to /attributes/<name>"
+text = "keep the rules of an item in validate_item: a Django ValidationError raised in a hook or a route answers 422 ERR_ITEM_INVALID too (bazis 2.16, a 500 before; a dict points to /data/attributes/<name>, else /data) but logs a WARNING as a mistake; type an id in the body or query of an action as the key (UUID), not str (filter(pk='not-a-uuid') raises a Django ValidationError, a malformed number a 500); the routes never call full_clean() (Model.clean() and the validators of the fields do not run); from a hook raise JsonApiBazisException([JsonApiBazisError(message, loc=('body', 'data', 'attributes', name))], status=422): without status= the response is 400, and loc=('attributes', name) points to /attributes/<name>"
 
 [[pitfalls]]
 text = "a second route set of a model needs its own get_url_prefix() (by default the resource path of the model, the URL of the first one); a read-only route lists its actions (no action shows an item past the schema of the route since 2.11.0, the dict_data route is removed)"

@@ -559,12 +559,16 @@ class OrderRouteSet(JsonapiRouteBase):
   `**kwargs` are the parameters of FastAPI (a path parameter `item_id: str`, a Pydantic
   model the JSON body, a typed name a query parameter); `self.inject.user` is the user
   with bazis-users; `self.set_item(item_id)` loads the item the route shows (404
-  otherwise) and `self.item` is it then:
+  otherwise) and `self.item` is it then. An id in the body or the query of an action is
+  typed as the primary key of its model (`UUID` for `UuidMixin`, `int` otherwise), never
+  `str`: the request schema answers a malformed one 422 `ERR_VALIDATE` before any lookup
+  (`filter(pk='not-a-uuid')` raises a Django `ValidationError`, see Errors):
 
   ```python
   class ExportRequest(BaseModel):
       date_from: date
       date_to: date
+      site: UUID | None = None  # the id of a Site, typed as its key
 
   class ExportResponse(BaseModel):
       task: str
@@ -678,8 +682,13 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
 - A rule about an item: raise a Django `ValidationError({'<field>': message})` in
   `validate_item`: 422 `ERR_ITEM_INVALID`, pointer `/data/attributes/<field>` or
   `/data/relationships/<field>` (`/data` without a field). A Django `ValidationError`
-  raised anywhere else (a hook, a route) is a 500. The routes do not call `full_clean()`:
-  `Model.clean()` and the `validators` of the fields do not run on the API.
+  raised anywhere else (a hook, a route, a lookup by a value that cannot be a key such as
+  `filter(pk='not-a-uuid')`) answers 422 `ERR_ITEM_INVALID` too, at
+  `/data/attributes/<field>` for a dict and at `/data` otherwise, and logs a WARNING with
+  its traceback (bazis 2.16; a 500 before): it is a safety net, keep the rules in
+  `validate_item` and type the ids of the request schemas as keys. The `ValueError` of a
+  lookup by a malformed number or date is still a 500. The routes do not call
+  `full_clean()`: `Model.clean()` and the `validators` of the fields do not run on the API.
 - From a hook or a custom route: `raise JsonApiBazisException([JsonApiBazisError(message,
   loc=('body', 'data', 'attributes', '<field>'), code='ERR_...')], status=422)`
   (`bazis.core.errors`). The status of the response is the status of the exception (400

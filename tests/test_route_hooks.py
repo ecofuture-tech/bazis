@@ -220,8 +220,12 @@ def test_error_of_a_hook_without_a_status(sample_app, monkeypatch):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_django_validation_error_of_a_hook_is_a_server_error(sample_app, monkeypatch):
-    """Only validate_item turns a Django ValidationError into 422; in a hook it is 500."""
+def test_django_validation_error_of_a_hook(sample_app, monkeypatch, caplog):
+    """
+    A Django ValidationError raised in a hook (outside validate_item) is 422
+    `ERR_ITEM_INVALID` with the pointer of its field, and a WARNING names the route (it was
+    a 500): the rule belongs in validate_item.
+    """
 
     def hook_before_create(self, item):
         raise ValidationError({'title': 'Not on Fridays'})
@@ -233,8 +237,17 @@ def test_django_validation_error_of_a_hook_is_a_server_error(sample_app, monkeyp
         URL, json=booking(), headers={'Content-Type': 'application/vnd.api+json'}
     )
 
-    assert response.status_code == 500
+    assert response.status_code == 422, response.content
+    (error,) = response.json()['errors']
+    assert (error['code'], error['detail'], error['source']) == (
+        'ERR_ITEM_INVALID',
+        'Not on Fridays',
+        {'pointer': '/data/attributes/title'},
+    )
     assert not Booking.objects.exists()
+    (record,) = [r for r in caplog.records if 'outside validate_item' in r.getMessage()]
+    assert record.levelname == 'WARNING'
+    assert f'POST {URL}' in record.getMessage()
 
 
 @pytest.mark.django_db(transaction=True)

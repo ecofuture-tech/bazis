@@ -95,6 +95,14 @@ class CountryRouteSet(JsonapiRouteBase):
     def action_greeting(self, **kwargs) -> str:
         return 'Hello'
 
+    @http_get('/name/')
+    def action_name(self, country_id: str, **kwargs) -> str | None:
+        """
+        The name of a country by its id, typed `str` (the guide types it `UUID`): an id
+        that cannot be a UUID fails in the lookup with a Django ValidationError.
+        """
+        return self.model.objects.filter(pk=country_id).values_list('name', flat=True).first()
+
     @http_get('/capital/', dependencies=[throttle('2/minute', scope='country_geo')])
     def action_capital(self, **kwargs) -> str:
         return 'Capital'
