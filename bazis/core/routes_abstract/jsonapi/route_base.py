@@ -491,14 +491,11 @@ class JsonapiRouteBase(InitialRouteBase):
                 )
         return factory.fields_list
 
-    def query_scope(self) -> QueryScope | None:
+    def query_scope(self) -> QueryScope:
         """
         What the filter, the sorting and the search of the request may reach
-        (`QueryScope.for_route` with the user of the route), or None when
-        `BAZIS_FILTERS_STRICT` is off (transitional: not restricted, as before 2.9).
+        (`QueryScope.for_route` with the user of the route).
         """
-        if not settings.BAZIS_FILTERS_STRICT:
-            return None
         if (scope := vars(self).get('_query_scope')) is None:
             scope = self._query_scope = QueryScope.for_route(
                 type(self), user=getattr(self.inject, 'user', None)
@@ -510,14 +507,12 @@ class JsonapiRouteBase(InitialRouteBase):
         `include` names only the relations the schema of the action can include (its
         `fields`; an update also the ones of the create): any other name, also a path
         (`a.b`), is 400 `ERR_INCLUDE` (pointer `/query/include`), as JSON:API requires for
-        a path the server cannot include. Not checked when `BAZIS_FILTERS_STRICT` is off
-        (transitional: such names are left out, as before 2.12). The relations a package
-        hides from the user (the field permissions of bazis-permit) are left out without
+        a path the server cannot include. The relations a package hides from the user (the field permissions of bazis-permit) are left out without
         an error.
         """
         includes = getattr(self.inject, 'include', None)
         api_action = self.route_ctx.store.get('api_action')
-        if not includes or api_action is None or not settings.BAZIS_FILTERS_STRICT:
+        if not includes or api_action is None:
             return
         actions = [api_action]
         if api_action == CrudApiAction.UPDATE:

@@ -19,7 +19,6 @@ geography point (`location`), a geometry point in WGS 84 (`entrance`) and in ano
 projection (`mercator`). `secret` is not in the schema of the route.
 """
 
-from django.conf import settings
 from django.contrib.gis.geos import Point
 from django.db.models import F
 
@@ -193,11 +192,11 @@ def test_filter_refused(sample_app, places, filter_str):
     assert_bad_request(get(sample_app, filter=filter_str), 'filter')
 
 
-@pytest.mark.django_db(transaction=True)
-def test_not_strict_reaches_every_point_field(sample_app, places, monkeypatch):
-    """Without the scope (`BAZIS_FILTERS_STRICT` off) any point field of the model sorts."""
-    monkeypatch.setattr(settings, 'BAZIS_FILTERS_STRICT', False)
-    assert names(sample_app, sort=f'secret__distance({SPB})')[0] == 'spb'
+@pytest.mark.django_db
+def test_without_a_scope_every_point_field_sorts(places):
+    """Without a scope (a sorting of the code) any point field of the model sorts."""
+    qs = SortingSearching(f'secret__distance({SPB})').apply(Place.objects.all(), scope=None)
+    assert qs[0].name == 'spb'
 
 
 def test_sort_terms_keep_the_point():

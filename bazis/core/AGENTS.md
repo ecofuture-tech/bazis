@@ -1060,8 +1060,7 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   or as the prefix of the field in `search_fields` says (`^name` starts with, `=name`
   exact, `@name` full-text, `$name` regex); a field through a relation (`tag__name`)
   matches only the whole value, as written.
-- The filter, `sort` and `search` reach only what the route shows the user
-  (`BAZIS_FILTERS_STRICT`, on by default since 2.9): a key starts with a field of the LIST
+- The filter, `sort` and `search` reach only what the route shows the user: a key starts with a field of the LIST
   schema of the route (its `fields`; `filterLabel`/`orderLabel` of the schema) or `id` (`pk`); a
   relation of it leads into the objects the default route of the related model shows (its
   `restrict_queryset` for `view` with the user of the route), where the key goes on with
@@ -1077,9 +1076,7 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   relations they lead to are). `QueryToOrm`/`SearchToOrm` without `scope` (permission
   conditions, `filter:` restrictions) and the services with `scope=None` are not
   restricted. A package that changes the LIST schema per user overrides the classmethod
-  `query_fields(user=None, **kwargs)` of the route. `BS_BAZIS_FILTERS_STRICT=false`
-  restores the unrestricted queries of 2.8 for a transition (`bazis.W006`); it will be
-  removed.
+  `query_fields(user=None, **kwargs)` of the route.
   The lookup suffixes after a field are not Django lookups; only these exist (plus `isnull`
   for every field):
   - text `TextField`: none (substring), `iexact`, `istartswith`, `iregex`, `search`, `$search`;
@@ -1106,8 +1103,7 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
 - `include` (retrieve, create, update) names relations of the schema of the action (an
   update also those of the create schema); a relation that is not in it (a reverse
   relation not added to `fields`, an attribute, a path `a.b`) is 400 `ERR_INCLUDE` with the
-  pointer `/query/include` (with `BAZIS_FILTERS_STRICT`; without it, left out as before
-  2.12). A relation in the schema that a package hides from the user (the field
+  pointer `/query/include`. A relation in the schema that a package hides from the user (the field
   permission `disable` of bazis-permit) is left out without an error, and `included` has
   only the objects the default route of the related model shows.
 - Errors are JSON:API error objects (see Errors).

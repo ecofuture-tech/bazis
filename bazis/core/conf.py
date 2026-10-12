@@ -251,11 +251,6 @@ class Settings(BazisSettings):
         json_schema_extra={'dynamic': True},
     )
     BAZIS_LIST_ID_LIMIT: int = Field(10000, title=_('Maximum IDs in list route'))
-    # transitional (2.9): false restores the unrestricted filter, sorting and search of the
-    # versions before 2.9; to be removed in a next release
-    BAZIS_FILTERS_STRICT: bool = Field(
-        True, title=_('Filter, sort and search only by the fields of the route')
-    )
 
     # request rate limits (bazis.core.throttle), counted in the default cache
     BAZIS_THROTTLE_ENABLED: bool = Field(

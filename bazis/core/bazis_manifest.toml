@@ -256,10 +256,6 @@ text = "a search field that is not a field of the LIST schema of its route is le
 check = "bazis.W007"
 
 [[pitfalls]]
-text = "BS_BAZIS_FILTERS_STRICT=false is a transitional rollback to the unrestricted queries of 2.8"
-check = "bazis.W006"
-
-[[pitfalls]]
 text = "restricting the objects of a model only in get_queryset: the relationships and `included` of the other routes see them; use restrict_queryset"
 
 [[pitfalls]]

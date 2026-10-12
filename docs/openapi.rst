@@ -151,8 +151,7 @@ Full-Text Search in Filtering
 What the Filter Reaches
 -----------------------
 
-The filter, ``sort`` and ``search`` reach only what the route shows the user (``BAZIS_FILTERS_STRICT``, on by
-default since 2.9). A key starts with a field of the LIST schema of the route (``filterLabel``/``orderLabel``) or
+The filter, ``sort`` and ``search`` reach only what the route shows the user. A key starts with a field of the LIST schema of the route (``filterLabel``/``orderLabel``) or
 ``id``. A relation of the schema leads into the related objects the default route of the related model shows (its
 ``restrict_queryset`` for ``view``), and the key goes on with the fields of the LIST schema of that route; a model
 without a route gives only ``id`` (``pk``), ``__exists`` and ``__isnull``. ``sort`` follows to-one relations only, an object

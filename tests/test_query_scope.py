@@ -14,13 +14,12 @@
 
 """
 The filter, the sorting and the search of a request reach only the fields of the LIST
-schema of the route (`BAZIS_FILTERS_STRICT`), and through a relation of the schema only
+schema of the route, and through a relation of the schema only
 the objects the default route of the related model shows, with the fields of its schema.
 `visibility.note_brief` is a route of the notes without their name and label; the route of
 `visibility.Tag` hides the hidden tags.
 """
 
-from django.conf import settings
 from django.db import models
 from django.db.models import F, Subquery
 from django.test.utils import isolate_apps
@@ -31,7 +30,7 @@ from entity.models import ExtendedEntity, ParentEntity
 from visibility.models import Folder, Label, Note, Tag
 from visibility.routes import NoteBriefRouteSet, NoteRouteSet, TagRouteSet
 
-from bazis.core.checks import check_filters_strict, check_search_fields
+from bazis.core.checks import check_search_fields
 from bazis.core.utils.query_complex import QueryScope, QueryToOrm, route_search_fields
 
 from tests import factories
@@ -352,21 +351,6 @@ def test_search_fields_check_uses_the_schemas_of_the_routes(
     # the search fields of the notes: name, tag__name
     with django_assert_num_queries(0):
         assert [it for it in check_search_fields(None) if it.id == 'bazis.W007'] == []
-
-
-@pytest.mark.django_db(transaction=True)
-def test_strict_off_restores_the_unrestricted_query(sample_app, data, monkeypatch):
-    assert check_filters_strict(None) == []
-    monkeypatch.setattr(settings, 'BAZIS_FILTERS_STRICT', False)
-    assert [it.id for it in check_filters_strict(None)] == ['bazis.W006']
-
-    secret = [str(data['secret'].pk)]
-    assert ids(sample_app, BRIEF, filter='name=Secret topic') == secret
-    assert ids(sample_app, BRIEF, search='Secret') == secret
-    assert ids(sample_app, BRIEF, filter='label__name=label') == secret
-    assert ids(sample_app, NOTES, filter='tags__name=hidden') == [str(data['with_hidden'].pk)]
-    assert ids(sample_app, NOTES, search='hidden') == [str(data['with_hidden'].pk)]
-    assert len(ids(sample_app, BRIEF, sort='name')) == 3
 
 
 @pytest.mark.django_db(transaction=True)

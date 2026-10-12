@@ -18,8 +18,6 @@ the forms of Django require (`blank=False`) is not blank, and `include` names on
 relations the route can include. They were left out (or written) without an error.
 """
 
-from django.conf import settings
-
 import pytest
 from bazis_test_utils.utils import get_api_client
 from catalog.models import Card, Memo
@@ -181,15 +179,3 @@ def test_include_of_the_relations_of_the_schema(sample_app):
         f'{MEMOS}{memo.pk}/?include=cards', json_data=memo_document(memo, title='new')
     )
     assert response.status_code == 200, response.text
-
-
-@pytest.mark.django_db(transaction=True)
-def test_include_unchecked_without_strict_queries(sample_app, monkeypatch):
-    """`BAZIS_FILTERS_STRICT=false` (transitional) leaves the unknown names out."""
-    monkeypatch.setattr(settings, 'BAZIS_FILTERS_STRICT', False)
-    memo = Memo.objects.create(title='memo')
-
-    response = get_api_client(sample_app).get(f'{MEMOS}{memo.pk}/?include=unknown')
-
-    assert response.status_code == 200, response.text
-    assert 'included' not in response.json() or response.json()['included'] == []

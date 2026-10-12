@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-12 12:06+0000\n"
+"POT-Creation-Date: 2026-10-12 12:10+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,9 +16,9 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: app_factory.py:415 routes_abstract/jsonapi/route_base.py:913
-#: routes_abstract/jsonapi/route_base.py:927
-#: routes_abstract/jsonapi/route_base.py:974
+#: app_factory.py:415 routes_abstract/jsonapi/route_base.py:908
+#: routes_abstract/jsonapi/route_base.py:922
+#: routes_abstract/jsonapi/route_base.py:969
 msgid "Item not found"
 msgstr ""
 
@@ -136,19 +136,15 @@ msgid "Maximum IDs in list route"
 msgstr ""
 
 #: conf.py:257
-msgid "Filter, sort and search only by the fields of the route"
-msgstr ""
-
-#: conf.py:262
 msgid "Limit the request rate of routes"
 msgstr ""
 
-#: conf.py:266
+#: conf.py:261
 msgid ""
 "Request rate of the public actions per user or IP address (empty - unlimited)"
 msgstr ""
 
-#: conf.py:271
+#: conf.py:266
 msgid ""
 "Import path of a function (request, ident) exempting a request from the "
 "limits"
@@ -199,68 +195,68 @@ msgstr ""
 msgid "The related object of {name} does not exist"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:533
+#: routes_abstract/jsonapi/route_base.py:528
 #, python-brace-format
 msgid "The relationships cannot be included: {names}"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:538
+#: routes_abstract/jsonapi/route_base.py:533
 msgid "Invalid include"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1055
+#: routes_abstract/jsonapi/route_base.py:1050
 #, python-brace-format
 msgid "The relationship {name} cannot be changed"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1059
+#: routes_abstract/jsonapi/route_base.py:1054
 msgid "Relationship is read-only"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1242
+#: routes_abstract/jsonapi/route_base.py:1237
 #, python-brace-format
 msgid "The related object of {name} cannot be linked"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1244
+#: routes_abstract/jsonapi/route_base.py:1239
 msgid "Link not allowed"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1249
+#: routes_abstract/jsonapi/route_base.py:1244
 #, python-brace-format
 msgid "No access to the related object of {name}"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1251
+#: routes_abstract/jsonapi/route_base.py:1246
 msgid "Access denied"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1406
+#: routes_abstract/jsonapi/route_base.py:1401
 msgid "Data type is invalid"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1492
+#: routes_abstract/jsonapi/route_base.py:1487
 #, python-brace-format
 msgid "The object does not exist. Type: {type}. ID: {id}"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1567
+#: routes_abstract/jsonapi/route_base.py:1562
 #, python-brace-format
 msgid "{model} is not JSON:API compliant"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1571
+#: routes_abstract/jsonapi/route_base.py:1566
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has related objects in non-JSON:API models. "
 "(count: {count})"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1590
+#: routes_abstract/jsonapi/route_base.py:1585
 msgid "Error deleting protected model"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1593
+#: routes_abstract/jsonapi/route_base.py:1588
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has protected related objects of type "

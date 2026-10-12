@@ -497,8 +497,7 @@ The filter, the sorting and the search reach only what the route shows the user:
 starts with a field of the LIST schema of the route, a relation of it leads into the
 objects the default route of the related model shows (its `restrict_queryset`) and its
 LIST fields, and the search uses the `search_fields` of the route (none: no search). Any
-other key is 400 `ERR_FILTER`, as an unknown field. `BS_BAZIS_FILTERS_STRICT=false` turns
-it off for a transition (see `docs/releases/2.9.0.md`).
+other key is 400 `ERR_FILTER`, as an unknown field.
 
 The lookup suffixes are not Django lookups; a field accepts only these (and `isnull`).
 A relation accepts `exists` and `isnull` (`true`/`false`) or a field of the related model:
