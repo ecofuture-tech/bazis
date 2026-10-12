@@ -51,10 +51,6 @@ def ensure_app_initialized():
     return app
 
 
-def get_app():
-    return ensure_app_initialized()
-
-
 def _create_app_base():
     # ruff: noqa: E402
     import os

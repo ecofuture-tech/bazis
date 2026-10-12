@@ -1608,10 +1608,3 @@ class JsonapiRouteBase(InitialRouteBase):
                         for model_name, count in protected_models.items()
                     ]
                 ) from err
-
-    @classmethod
-    def route_instance(cls, request, **kwargs):
-        """
-        Returns an instance of the route class for the given request.
-        """
-        return cls.raw_call(request, path='/', **kwargs)

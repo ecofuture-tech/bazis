@@ -31,7 +31,7 @@ from pydantic import (
 
 from pydantic_core import PydanticUndefined
 
-from bazis.core.models_abstract import InitialBase, ProxyTypeAbstract
+from bazis.core.models_abstract import InitialBase
 from bazis.core.utils.django_types import url_field_type
 from bazis.core.utils.functools import get_attr, uniq_id
 
@@ -620,14 +620,7 @@ class SchemaResourceBuilder:
                                 for it in qs
                             ]
                     else:
-                        is_proxy_type = issubclass(
-                            field.field_db_rel.related_model, ProxyTypeAbstract
-                        )
-
-                        if is_proxy_type:
-                            resource_label = get_attr(data, f'{field.source}.proxy_type')
-                        else:
-                            resource_label = field.field_db_rel.related_model.get_resource_label()
+                        resource_label = field.field_db_rel.related_model.get_resource_label()
 
                         if field.field_db_rel.reverse:
                             id_val = get_attr(data, f'{field.source}.id')
@@ -707,24 +700,3 @@ class SchemaResourceBuilder:
                 json_schema_extra=field_params,
             ),
         )
-
-
-def jsonapi_schema_build(schema_name, id_type, **kwargs):
-    """
-    Build a JSON:API schema dynamically, utilizing a cache to avoid redundant schema
-    creation.
-    """
-    schema = get_schema_from_cache(schema_name)
-    if schema:
-        return schema
-
-    schema = create_model(
-        schema_name,
-        **{
-            'id': (id_type, ...),
-            'type': (str, ...),
-            'attributes': (create_model(f'{schema_name}__attributes', **kwargs), None),
-        },
-    )
-    set_schema_to_cache(schema_name, schema)
-    return schema
