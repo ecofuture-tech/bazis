@@ -895,7 +895,7 @@ class QueryToOrm:
         scope: QueryScope | None = None,
     ):
         """
-        Initializes the Filtering instance with the model, query string, filter aliases, and context.
+        Initializes the QueryToOrm instance with the model, query string, filter aliases, and context.
 
         :param model: The Django model to filter.
         :param query_str: The query string to parse and apply as filters.
@@ -1291,7 +1291,7 @@ class QueryToOrm:
 
 class SearchToOrm:
     """
-    Searching constructs a Q object based on the provided model, search string, and
+    SearchToOrm constructs a Q object based on the provided model, search string, and
     search fields. It is used to filter querysets according to the search criteria.
     """
 
@@ -1299,7 +1299,7 @@ class SearchToOrm:
 
     def __init__(self, model, search, search_fields=None, *, scope: QueryScope | None = None):
         """
-        Initializes the Searching class with the model, search string, and optional
+        Initializes the SearchToOrm instance with the model, search string, and optional
         search fields. Without a scope, if no search fields are provided, it defaults to
         fields of types defined in DJANGO_SEARCH_FIELDS. With a scope (the search of an API
         request) only the search fields the scope reaches are searched, a relation into the

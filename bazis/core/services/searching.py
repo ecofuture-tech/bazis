@@ -17,12 +17,10 @@ from django.utils.translation import gettext_lazy as _
 
 from fastapi import Depends
 
-from typing_extensions import deprecated
-
 from bazis.core.errors import JsonApiBazisError, JsonApiBazisException
 from bazis.core.routes_abstract.initial import InitialRouteBase, RouteContext
 from bazis.core.services.route_ctx import REQUEST_SCOPE, get_route_ctx, request_query_scope
-from bazis.core.utils.query_complex import DJANGO_SEARCH_FIELDS, QueryScope, SearchToOrm
+from bazis.core.utils.query_complex import QueryScope, SearchToOrm
 
 
 class ServiceSearching:
@@ -34,7 +32,6 @@ class ServiceSearching:
     """
 
     search: str
-    field_related: str = None
     route_cls: type[InitialRouteBase]
 
     def __init__(self, search: str = None, route_ctx: RouteContext = Depends(get_route_ctx)):
@@ -71,21 +68,3 @@ class ServiceSearching:
                 status=400,
             ) from e
         return queryset.filter(search.q)
-
-
-@deprecated('Filtering is deprecated, use bazis.core.utils.query_complex.SearchToOrm instead.')
-class Searching:
-    """
-    Tags: RAG, EXPORT
-    """
-
-    def __init__(self, model, search, search_fields=None):
-        self.model = model
-        self.search = search and search.strip()
-        self.search_fields = search_fields or [
-            f.name for f in model._meta.get_fields() if type(f) in DJANGO_SEARCH_FIELDS
-        ]
-
-    def __call__(self):
-        search = SearchToOrm(self.model, self.search, search_fields=self.search_fields)
-        return search.q
