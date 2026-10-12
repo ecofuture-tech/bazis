@@ -976,7 +976,10 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   object a reverse foreign key unlinks is deleted if the foreign key cannot be null, else
   its foreign key is cleared; a many-to-many relationship only unlinks. Deleting the
   object needs the `delete` access of the default route of its model (see
-  `restrict_queryset`), otherwise 403 `ERR_RELATION_ACCESS` and nothing is written.
+  `restrict_queryset`), otherwise 403 `ERR_RELATION_ACCESS` and nothing is written; a
+  route that does not override `restrict_queryset` allows it, a model without a route
+  refuses it (403: no route tells the access). A create unlinks nothing, so it deletes
+  nothing.
 - The hooks see an item that is not validated yet: `validate_item` runs once per item at
   the end of the request, with the writes of the hooks. A hook that needs a valid item
   (before a transit of bazis-statusy, whose validators would answer first, or before a

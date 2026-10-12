@@ -1159,6 +1159,22 @@ class JsonapiRouteBase(InitialRouteBase):
                     raise relation_missing(
                         f_name, missing, positions, is_list, relationship_body=relationship_body
                     )
+                # an object the change deletes of a model without a route: no route tells
+                # whether the user may delete it
+                if (
+                    unlinked_deleted(field_info)
+                    and not getattr(rel_model, 'get_default_route', lambda: None)()
+                ):
+                    __, unlinked = self._relation_change(
+                        item, field_info, f_name, set(positions), action
+                    )
+                    if unlinked:
+                        loc = (
+                            relationship_body_loc(unlinked, positions, is_list)
+                            if relationship_body
+                            else ('body', 'data', 'relationships', f_name)
+                        )
+                        raise self._relation_refused(f_name, loc, linkable_only=False)
                 continue
 
             ids, unlinked = self._relation_change(item, field_info, f_name, set(positions), action)

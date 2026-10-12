@@ -269,3 +269,37 @@ def test_set_writes_only_the_changed_links_of_a_required_foreign_key():
     assert set(room.equipment.all()) == set(linked[1:] + [moved])
     assert not Equipment.objects.filter(pk=linked[0].pk).exists()
     Equipment.calls.clear()
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('way', ['update', 'PATCH', 'DELETE'])
+def test_an_unlinked_object_of_a_model_without_a_route_is_not_deleted(sample_app, monkeypatch, way):
+    """No route tells whether the user may delete it: 403, nothing is written."""
+    monkeypatch.setattr(DependentEntity, '_default_route', None)
+    parent = ParentEntity.objects.create(name='A')
+    kept, unlinked = dependent(parent), dependent(parent)
+    objs = [unlinked] if way == 'DELETE' else [kept]
+
+    response = write(
+        get_api_client(sample_app),
+        way,
+        parent,
+        'dependent_entities',
+        'entity.dependent_entity',
+        *objs,
+    )
+
+    assert response.status_code == 403, response.text
+    assert response.json()['errors'][0]['code'] == 'ERR_RELATION_ACCESS'
+    assert set(parent.dependent_entities.all()) == {kept, unlinked}
+
+    # linking needs no route (the object is only looked up)
+    response = write(
+        get_api_client(sample_app),
+        'POST' if way != 'update' else 'update',
+        parent,
+        'dependent_entities',
+        'entity.dependent_entity',
+        *([kept, unlinked] if way == 'update' else [kept]),
+    )
+    assert response.status_code < 300, response.text
