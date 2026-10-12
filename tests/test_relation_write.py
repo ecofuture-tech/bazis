@@ -22,6 +22,9 @@ an update deleted it, `PATCH` of the relationships endpoints left it, `DELETE` f
 500, and no access was asked for).
 """
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+
 import pytest
 from bazis_test_utils.utils import get_api_client
 from entity.models import ChildEntity, DependentEntity, DependentEntityNull, ParentEntity
@@ -30,8 +33,10 @@ from entity.routes import (
     DependentEntityRouteSet,
     ParentEntityRouteSet,
 )
+from validation.models import Equipment, Room
 
 from bazis.core.schemas.enums import CrudAccessAction
+from bazis.core.utils.orm import relation_write
 
 
 PARENTS = '/api/v1/entity/parent_entity/'
@@ -241,3 +246,26 @@ def test_unlinking_a_reverse_many_to_many_needs_no_delete_access(
     assert response.status_code < 300, response.text
     assert list(child.parent_entities.all()) == [kept]
     assert ParentEntity.objects.filter(pk=unlinked.pk).exists()
+
+
+@pytest.mark.django_db
+def test_set_writes_only_the_changed_links_of_a_required_foreign_key():
+    """
+    `set` of a reverse foreign key that cannot be null, of a model that validates its
+    items (saved one by one): the objects linked already are not saved again.
+    """
+    room, other = Room.objects.create(name='Blue'), Room.objects.create(name='Green')
+    linked = [Equipment.objects.create(name=f'E{i}', room=room) for i in range(5)]
+    moved = Equipment.objects.create(name='Moved', room=other)
+    Equipment.calls.clear()
+
+    with CaptureQueriesContext(connection) as queries:
+        relation_write(room.equipment, 'set', linked)
+    assert Equipment.calls == []
+    assert not [it for it in queries if it['sql'].startswith(('UPDATE', 'DELETE'))]
+
+    relation_write(room.equipment, 'set', linked[1:] + [moved])
+    assert [pk for pk, _ in Equipment.calls] == [moved.pk]
+    assert set(room.equipment.all()) == set(linked[1:] + [moved])
+    assert not Equipment.objects.filter(pk=linked[0].pk).exists()
+    Equipment.calls.clear()

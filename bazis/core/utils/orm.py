@@ -183,25 +183,20 @@ def relation_write(rel, action: str, objs: Iterable) -> None:
                 rel.set(objs)
             else:
                 getattr(rel, action)(*objs)
-        elif rel.field.null:
+        elif not rel.field.null and action == 'remove':
+            # the foreign key cannot be null: an unlinked object is deleted
+            rel.filter(pk__in=[obj.pk for obj in objs]).delete()
+        else:
+            # set() links only the new objects; for a foreign key that cannot be null it
+            # leaves the unlinked ones, deleted below
             if saves_items(rel.model):
                 reverse_items_link(rel, action, objs)
             elif action == 'set':
                 rel.set(objs)
             else:
                 getattr(rel, action)(*objs)
-        else:
-            # the foreign key cannot be null: an unlinked object is deleted
-            pks = [obj.pk for obj in objs]
-            if action == 'remove':
-                rel.filter(pk__in=pks).delete()
-                return
-            if saves_items(rel.model):
-                reverse_items_link(rel, 'add', objs)
-            else:
-                rel.add(*objs)
-            if action == 'set':
-                rel.exclude(pk__in=pks).delete()
+            if not rel.field.null and action == 'set':
+                rel.exclude(pk__in=[obj.pk for obj in objs]).delete()
 
 
 def unique_constraint_error(model: type[Model], name: str) -> tuple[tuple[str, ...], str] | None:
