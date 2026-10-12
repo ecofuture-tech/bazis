@@ -29,14 +29,11 @@ from typing import Any, get_type_hints
 
 from django.apps import apps
 from django.conf import settings
-from django.contrib.gis.geos import GEOSGeometry
 from django.contrib.postgres.expressions import ArraySubquery
-from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import FieldDoesNotExist
 from django.db import connections, models, router, transaction
 from django.db.models import (
     Aggregate,
-    Count,
     Exists,
     F,
     ForeignKey,
@@ -50,7 +47,6 @@ from django.db.models import (
     Q,
     QuerySet,
     Subquery,
-    Sum,
     Value,
 )
 from django.db.models.constants import LOOKUP_SEP
@@ -155,128 +151,6 @@ def translated_column(name: str, field: TranslatedField) -> str:
     return to_attribute(name, field.languages[0])
 
 
-class CountAll(Func):
-    """
-    Custom SQL function to count all rows.
-
-    Tags: RAG, EXPORT
-    """
-
-    template = 'COUNT(*)'
-
-    def __init__(self):
-        """
-        Initialize the CountAll function with an output field of IntegerField.
-        """
-        super().__init__(output_field=IntegerField())
-
-
-class SumNoGroup(Sum):
-    """
-    Custom Sum aggregate function that does not require grouping.
-
-    Tags: RAG, EXPORT
-    """
-
-    contains_aggregate = False
-
-
-class CountNoGroup(Count):
-    """
-    Custom Count aggregate function that does not require grouping.
-
-    Tags: RAG, EXPORT
-    """
-
-    contains_aggregate = False
-
-
-class ArrayCat(Func):
-    """
-    Custom function for concatenating arrays in PostgreSQL,
-    using the "||" operator.
-
-    Tags: RAG, EXPORT
-    """
-
-    # We do not set a function name because we use an expression with the "||" operator
-    template = '%(expressions)s'
-
-    def __init__(self, *expressions, field_type=None, **extra):
-        """
-        :param expressions: Expressions (usually ArrayAgg) that need to be concatenated.
-        :param field_type: Field type for array elements. IntegerField by default.
-        :param extra: Additional keyword arguments.
-        """
-        if field_type is None:
-            field_type = IntegerField()
-        super().__init__(*expressions, output_field=ArrayField(field_type), **extra)
-
-    def as_sql(self, compiler, connection, **extra_context):
-        sql_parts = []
-        params = []
-        # Compile each expression and collect SQL parts with parameters
-        for expr in self.source_expressions:
-            expr_sql, expr_params = compiler.compile(expr)
-            sql_parts.append(expr_sql)
-            params.extend(expr_params)
-        # Join SQL parts using the array concatenation operator "||"
-        sql = ' || '.join(sql_parts)
-        return sql, params
-
-
-class UniqueArray(Func):
-    """
-    A function that takes an SQL expression returning an array
-    and returns an array with unique values.
-
-    Generates SQL of the form:
-      (SELECT array_agg(DISTINCT x) FROM unnest(<array_expression>) AS x)
-
-    Tags: RAG, EXPORT
-    """
-
-    template = '(SELECT array_agg(DISTINCT x) FROM unnest(%(expressions)s) AS x)'
-
-    def __init__(self, expression, **extra):
-        """
-        :param expression: An expression that returns an array (for example, the result of ArrayCat).
-        """
-        super().__init__(expression, **extra)
-
-    def get_output_field(self):
-        """Use the output_field of the first expression so that the data type matches."""
-        return self.source_expressions[0].output_field
-
-
-def dictfetchall(cursor):
-    """
-    Return all rows from a cursor as a dictionary.
-
-    Tags: RAG, EXPORT
-    """
-    columns = [col[0] for col in cursor.description]
-    return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
-
-
-def duplicate_clear(model, *args, **kwargs):
-    """
-    Remove duplicate records from the model based on the specified fields.
-
-    Tags: RAG, EXPORT
-    """
-    qs = (
-        model.objects.values(*args).annotate(all_count=Count('*')).filter(all_count__gt=1, **kwargs)
-    )
-    # iterate through them, deleting the excess
-    for it in qs:
-        model.objects.filter(
-            id__in=model.objects.filter(**{arg: it[arg] for arg in args}).values_list(
-                'id', flat=True
-            )[1:]
-        ).delete()
-
-
 def set_related_with_delete(rel, objs, *, bulk=True, clear=False):
     """
     Set related objects for a relationship field, deleting any unlinked related
@@ -306,26 +180,6 @@ def set_related_with_delete(rel, objs, *, bulk=True, clear=False):
             # This is a ForeignKey with null=False - delete objects that are no longer linked
             rel.using(db).exclude(pk__in=[obj.pk for obj in objs]).delete()
         # For ManyToMany we do not delete anything, objects are just unlinked
-
-
-def point_create(lon, lat):
-    """
-    Create a GEOSGeometry point object from the given longitude and latitude.
-
-    Tags: RAG, EXPORT
-    """
-    return GEOSGeometry(f'POINT({lon} {lat})', srid=4326)
-
-
-def get_model_field_by_name(model, field_name):
-    """
-    Retrieve a model field by its name.
-
-    Tags: RAG, EXPORT
-    """
-    for field in model._meta.get_fields():
-        if field.name == field_name:
-            return field
 
 
 def unique_constraint_error(model: type[Model], name: str) -> tuple[tuple[str, ...], str] | None:
@@ -388,35 +242,6 @@ def _unique_message(model: type[Model], fields: tuple[str, ...]) -> str:
     parameter of the message.
     """
     return Model.unique_error_message(None, model, fields).messages[0]
-
-
-def batch_qs(qs, batch_size=1000):
-    """
-    Returns a tuple (start, end, total, queryset) for each batch in the given queryset.
-
-    Each tuple contains the start and end position in the batch, the total number of records,
-    and the queryset for the current batch.
-
-    Example usage::
-
-        # Make sure your queryset is sorted
-        article_qs = Article.objects.order_by('id')
-        for start, end, total, qs_batch in batch_qs(article_qs):
-            print(f"Currently processing {start + 1} - {end} out of {total}")
-            for article in qs_batch:
-                print(article.body)
-
-    :param qs: QuerySet to be processed.
-    :param batch_size: Batch size (default is 1000).
-
-    :return: Generator of tuples (start, end, total, queryset) for each batch.
-
-    Tags: RAG, EXPORT
-    """
-    total = qs.count()
-    for start in range(0, total, batch_size):
-        end = min(start + batch_size, total)
-        yield start, end, total, qs[start:end]
 
 
 class JsonFieldEncoder(json.JSONEncoder):
@@ -671,18 +496,6 @@ class FieldIsExists(FieldSubquery):
 
 
 @dataclasses.dataclass
-class FieldValues(FieldSubquery):
-    """
-    Represents a field that uses a subquery to fetch values, with optional nested
-    subqueries.
-
-    Tags: RAG, EXPORT
-    """
-
-    nested: list['FieldSubquery'] = dataclasses.field(default_factory=list)
-
-
-@dataclasses.dataclass
 class FieldSubAggr(FieldSubquery):
     """
     Represents a field that uses a subquery with an aggregation function.
@@ -760,7 +573,7 @@ class FieldDynamic:
 
     def _detect_type(
         self,
-    ) -> FieldJson | FieldRelated | FieldAggr | FieldIsExists | FieldValues | FieldSubAggr:
+    ) -> FieldJson | FieldRelated | FieldAggr | FieldIsExists | FieldSubAggr:
         """Determines the field type and forwards `nested` into the appropriate `Field*` class."""
 
         # If `alias` starts with `has_` -> FieldIsExists
@@ -1102,45 +915,21 @@ def _apply_calc_queryset(  # noqa: C901
             field_calc = FieldJson(source=field_calc)
 
         if isinstance(field_calc, FieldSubquery) or isinstance(field_calc, FieldRelated):
-            f_model = None
-            f_name, f_related = None, None
-            f_info: RelationInfo | None = None
+            f_name, f_related = (field_calc.source.split('__', 1) + ['id'])[:2]
+            f_info: RelationInfo | None = fields_info.relations.get(f_name)
 
-            try:
-                f_model = apps.get_model(field_calc.source)
-            except Exception:
-                f_name, f_related = (field_calc.source.split('__', 1) + ['id'])[:2]
-                f_info = fields_info.relations.get(f_name)
-
-            if not (f_info or f_model):
+            if not f_info:
                 continue
 
             if isinstance(field_calc, FieldSubquery):
-                if isinstance(field_calc, FieldValues):
-                    qs_related = (f_model or f_info.related_model).objects.all()
-                elif not f_info:
-                    continue
-                else:
-                    qs_related = f_info.get_subqueryset()
+                qs_related = f_info.get_subqueryset()
 
                 if context:
                     qs_related = qs_related.alias(
                         **{k: Value(v) for k, v in context.items() if k.startswith('_')}
                     )
 
-                if isinstance(field_calc, FieldValues):
-                    if field_calc.nested:
-                        qs_related, __ = _apply_calc_queryset(
-                            qs_related, field_calc.nested, context=context
-                        )
-                    if field_calc.query:
-                        qs_related = qs_related.filter(field_calc.query)
-                    if field_calc.filter_fn:
-                        qs_related = field_calc.filter_fn(qs_related, context or {})
-
-                    annotates[alias] = ArraySubquery(qs_related.values('id'))
-
-                elif isinstance(field_calc, FieldIsExists):
+                if isinstance(field_calc, FieldIsExists):
                     if field_calc.nested:
                         qs_related, __ = _apply_calc_queryset(
                             qs_related, field_calc.nested, context=context
@@ -1227,9 +1016,6 @@ def _apply_calc_queryset(  # noqa: C901
                     annotates[alias] = ArraySubquery(qs_related)
 
             elif isinstance(field_calc, FieldRelated):
-                if not f_info:
-                    continue
-
                 if field_calc.nested:
                     qs_nested, select_related_nested = _apply_calc_queryset(
                         f_info.related_model.objects.all(), field_calc.nested, context=context

@@ -17,10 +17,7 @@ import hashlib
 import inspect
 import json
 import pickle
-import sys
-from collections import defaultdict
 from collections.abc import Callable, Iterable
-from decimal import Decimal
 from threading import Lock
 from time import time
 from types import TracebackType
@@ -96,76 +93,6 @@ def camel_2_snake(s):
     return camel_case_to_spaces(s).replace(' ', '_')
 
 
-def dict_reversing(source):
-    """
-    Reverses dictionary mapping: values become keys, original keys aggregated in lists.
-
-    Example:
-        {'a': 1, 'b': 1, 'c': 2} -> {1: ['a', 'b'], 2: ['c']}
-
-    Tags: RAG, EXPORT
-    """
-    dest = defaultdict(list)
-    {dest[v].append(k) for k, v in source.items()}
-    return dict(dest)
-
-
-def cast_types(value, target_type):
-    """
-    Safe type casting with fallback to original value on failure.
-
-    Args:
-        value: Value to cast
-        target_type: Target type class (int, str, Decimal, etc.)
-
-    Returns original value if casting raises TypeError or ValueError.
-
-    Tags: RAG, EXPORT
-    """
-    rs = value
-    try:
-        rs = target_type(value)
-    except (TypeError, ValueError):
-        pass
-    return rs
-
-
-def sys_uncache(exclude):
-    """
-    Removes modules from sys.modules cache for hot reload.
-    Excludes specified packages from removal.
-
-    Used for development auto-reload functionality.
-    Source: https://medium.com/@chipiga86/python-monkey-patching-like-a-boss-87d7ddb8098e
-
-    Args:
-        exclude: Iterable of module paths to preserve (e.g., ['django', 'bazis'])
-
-    Tags: RAG, EXPORT
-    """
-    pkgs = []
-    for mod in exclude:
-        pkg = mod.split('.', 1)[0]
-        pkgs.append(pkg)
-
-    to_uncache = []
-    for mod in sys.modules:
-        if mod in exclude:
-            continue
-
-        if mod in pkgs:
-            to_uncache.append(mod)
-            continue
-
-        for pkg in pkgs:
-            if mod.startswith(pkg + '.'):
-                to_uncache.append(mod)
-                break
-
-    for mod in to_uncache:
-        del sys.modules[mod]
-
-
 def get_class_name_from_method(meth):
     """
     Extracts class name from method's __qualname__.
@@ -188,33 +115,6 @@ def get_class_name(entity) -> str:
     if hasattr(entity, '__qualname__'):
         return f'{entity.__module__}.{entity.__qualname__}'
     return f'{entity.__class__.__module__}.{entity.__class__.__qualname__}'
-
-
-def get_class_from_method(meth):
-    """
-    Determines the class that defines a given method.
-    Handles bound methods, functions, and descriptors.
-
-    Source: https://stackoverflow.com/a/25959545
-
-    Args:
-        meth: Method or function to inspect
-
-    Returns:
-        Class that defined the method, or None
-
-    Tags: RAG, EXPORT
-    """
-    if inspect.ismethod(meth):
-        for cls in inspect.getmro(meth.__self__.__class__):
-            if cls.__dict__.get(meth.__name__) is meth:
-                return cls
-        meth = meth.__func__  # fallback to __qualname__ parsing
-    if inspect.isfunction(meth):
-        cls = getattr(inspect.getmodule(meth), get_class_name_from_method(meth))
-        if isinstance(cls, type):
-            return cls
-    return getattr(meth, '__objclass__', None)  # handle special descriptor objects
 
 
 def get_func_sig_param(func: Callable, param_name: str) -> inspect.Parameter:
@@ -478,59 +378,6 @@ def uniq_id(obj: Any) -> str:
 #
 #     if data:
 #         return md5(data.encode()).hexdigest()
-
-
-def price_4217_to_decimal(value: int, exp: int, rounding_type=None) -> Decimal:
-    """
-    Converts ISO 4217 price integer to Decimal with specified decimal places.
-
-    ISO 4217: Currency amounts stored as integers with exponent.
-    Example: $12.34 stored as 1234 with exp=2
-
-    Args:
-        value: Integer amount
-        exp: Decimal places (exponent)
-        rounding_type: Decimal rounding mode (defaults to BAZIS_DECIMAL_HALF)
-
-    Returns: Decimal with proper precision
-
-    Tags: RAG, EXPORT
-    """
-    from django.conf import settings
-
-    rounding_type = rounding_type or settings.BAZIS_DECIMAL_HALF
-    factor = Decimal(10**exp)
-    return Decimal(value).quantize(Decimal('1.' + '0' * exp), rounding=rounding_type) / factor
-
-
-def decimal_to_price_4217(value: Decimal, exp: int = 0) -> int:
-    """
-    Converts Decimal to ISO 4217 integer format.
-
-    Args:
-        value: Decimal amount
-        exp: Decimal places (exponent)
-
-    Returns: Integer representation
-
-    Example: Decimal('12.34') with exp=2 -> 1234
-
-    Tags: RAG, EXPORT
-    """
-    multiplier = 10**exp
-    return int(value * multiplier + Decimal('0.5'))
-
-
-def join_url_parts(*parts):
-    """
-    Joins URL segments with proper slash handling.
-    Strips leading/trailing slashes from each part before joining.
-
-    Example: join_url_parts('/api/', '/users/', 'profile/') -> 'api/users/profile'
-
-    Tags: RAG, EXPORT
-    """
-    return '/'.join(str(part).strip('/') for part in parts)
 
 
 class _SingletonWrapper:
