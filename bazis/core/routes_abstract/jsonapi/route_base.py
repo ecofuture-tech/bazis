@@ -1151,10 +1151,12 @@ class JsonapiRouteBase(InitialRouteBase):
             is_list = isinstance(rel_data, list)
             positions = self._relation_positions(rel_data, rel_model)
             if not restrict:
-                # the objects of the value exist (those already linked too); a removal links none
+                # the objects of the value exist (those already linked too; the base manager,
+                # as the foreign key: not a filtering default manager); a removal links none
                 ids = set() if action == 'remove' else set(positions)
                 if missing := ids - {
-                    str(pk) for pk in rel_model.objects.filter(pk__in=ids).values_list('pk', flat=True)
+                    str(pk)
+                    for pk in rel_model._base_manager.filter(pk__in=ids).values_list('pk', flat=True)
                 }:
                     raise relation_missing(
                         f_name, missing, positions, is_list, relationship_body=relationship_body

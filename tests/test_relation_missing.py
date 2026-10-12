@@ -22,6 +22,7 @@ not told.
 """
 
 import uuid
+from types import SimpleNamespace
 from urllib.parse import urlencode
 
 import pytest
@@ -195,3 +196,22 @@ def test_a_restricted_model_does_not_tell_the_existence(sample_app):
     assert response.json()['errors'][0]['code'] == 'ERR_RELATION_ACCESS'
     response = client.post(NOTES, json_data=note_payload(tags=rels('tag')))
     assert response.status_code == 201, response.text
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_lookup_ignores_a_filtering_default_manager(sample_app, monkeypatch):
+    """
+    The objects are looked up with the base manager of the model, as the foreign key
+    references them: a default manager that leaves some of them out (a soft delete) does
+    not make an existing object missing.
+    """
+    folder = Folder.objects.create(name='folder')
+    # a default manager that shows no folder
+    monkeypatch.setattr(
+        Folder, 'objects', SimpleNamespace(filter=lambda **kwargs: Folder._base_manager.none())
+    )
+    response = get_api_client(sample_app).post(
+        NOTES, json_data=note_payload(folder=rel('folder', folder))
+    )
+    assert response.status_code == 201, response.text
+    assert Note.objects.get().folder_id == folder.id
