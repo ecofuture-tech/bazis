@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import decimal
 from secrets import token_hex
-from zoneinfo import available_timezones
 
 from django.utils.translation import gettext_lazy as _
 
@@ -53,34 +51,6 @@ class Database(BaseModel):
     USER: str = ''
     PASSWORD: str = ''
 
-    @property
-    def PSYCOPG3_PARAMS(self):  # noqa: N802
-        """
-        Returns psycopg3 connection parameters dictionary.
-        Used for direct PostgreSQL connections outside Django ORM.
-        """
-        return {
-            'dbname': self.NAME,
-            'user': self.USER,
-            'password': self.PASSWORD,
-            'host': self.HOST,
-            'port': self.PORT,
-        }
-
-    def model_dump(self, *args, **kwargs):
-        """
-        Serializes model including @property fields.
-        Overrides default Pydantic serialization to export computed properties.
-        """
-        d = super().model_dump(*args, **kwargs)
-        for name in dir(self):
-            if name.startswith('_'):
-                continue
-            attr = getattr(type(self), name, None)
-            if isinstance(attr, property):
-                d[name] = getattr(self, name)
-        return d
-
 
 class DatabaseDefault(BaseModel):
     """
@@ -98,12 +68,10 @@ class CacheOptions(BaseModel):
     Fields:
     - CLIENT_CLASS: Redis client implementation
     - IGNORE_EXCEPTIONS: Continue on cache failures
-    - MAX_ENTRIES: Maximum cache entries (default: 64k)
     """
 
     CLIENT_CLASS: str = 'django_redis.client.DefaultClient'
     IGNORE_EXCEPTIONS: bool = True
-    MAX_ENTRIES: int = 65536
 
 
 class Cache(BaseModel):
@@ -155,8 +123,6 @@ class Settings(BazisSettings):
     BASE_DIR: str = ''
     APP_DOMAIN: str = ''
     ADMIN_DOMAIN: str = ''
-    APP_PORT: int = Field(11000, title=_('Application port'))
-    ADMIN_PORT: int = Field(11001, title=_('Admin port'))
     INSTALLED_APPS: list[str] = []
     BAZIS_APPS: list[str] = []
     MIDDLEWARE: list[str] = []
@@ -189,10 +155,6 @@ class Settings(BazisSettings):
     USE_I18N: bool = True
     USE_TZ: bool = True
     ALLOWED_HOSTS: list[str] = ['*']
-    SENTRY_DSN: str = ''
-    ENVIRONMENT_NAME: str = ''
-    SERVER_NAME: str = ''
-    RELEASE_VERSION: str = ''
     # the triggers are not in the migrations: the core installs the missing and outdated
     # ones after `migrate` once all the migrations are applied
     # (`bazis.core.triggers.install_after_migrate`); the receiver of pgtrigger would install
@@ -225,23 +187,14 @@ class Settings(BazisSettings):
         None, title=_('Default cache instance for storing CONSTANCE')
     )
     CONSTANCE_ADDITIONAL_FIELDS: dict = {
-        'timezone_select': [
-            'django.forms.fields.ChoiceField',
-            {
-                'widget': 'django.forms.Select',
-                'choices': [(tz, tz) for tz in sorted(available_timezones())],
-            },
-        ],
         # a rate of bazis.core.throttle or empty
         'throttle_rate': ['bazis.core.throttle.RateFormField', {}],
     }
     GDAL_LIBRARY_PATH: str | None = Field(None, title=_('Path to the GDAL library'))
     GEOS_LIBRARY_PATH: str | None = Field(None, title=_('Path to the GEOS library'))
-    BAZIS_DECIMAL_HALF: str = Field(
-        decimal.ROUND_HALF_UP, title=_('Decimal rounding'), json_schema_extra={'dynamic': True}
+    BAZIS_SCHEMA_WITHOUT_REF: bool = Field(
+        True, title=_('Replace $ref with the referenced schemas in the built schemas')
     )
-    BAZIS_APP_RELOAD_DIRS: list[str] = Field([], title=_('Directories to reload on change'))
-    BAZIS_SCHEMA_WITHOUT_REF: bool = Field(True, title=_('Use $ref in OpenAPI schema'))
     BAZIS_SCHEMA_CACHE_TTL: int = Field(
         3600,
         title=_('Lifetime of unused generated schemas in the cache, seconds (0 - unlimited)'),
@@ -297,7 +250,6 @@ class Settings(BazisSettings):
         title=_('Default outgoing email address'),
         json_schema_extra={'dynamic': True},
     )
-    BAZIS_EXPORT_SETTINGS: list[str] = Field([], title=_('Export settings'))
     BAZIS_LIST_ID_LIMIT: int = Field(10000, title=_('Maximum IDs in list route'))
     # transitional (2.9): false restores the unrestricted filter, sorting and search of the
     # versions before 2.9; to be removed in a next release

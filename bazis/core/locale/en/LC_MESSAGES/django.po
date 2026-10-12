@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-11 14:07+0200\n"
+"POT-Creation-Date: 2026-10-12 12:06+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,162 +16,142 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: app_factory.py:409 routes_abstract/jsonapi/route_base.py:819
-#: routes_abstract/jsonapi/route_base.py:833
-#: routes_abstract/jsonapi/route_base.py:861
+#: app_factory.py:415 routes_abstract/jsonapi/route_base.py:913
+#: routes_abstract/jsonapi/route_base.py:927
+#: routes_abstract/jsonapi/route_base.py:974
 msgid "Item not found"
 msgstr ""
 
-#: app_factory.py:484 app_factory.py:514
-msgid "Conflict"
-msgstr ""
-
-#: app_factory.py:485
+#: app_factory.py:500
 msgid "The change conflicts with the current data"
 msgstr ""
 
-#: app_factory.py:516
+#: app_factory.py:514 app_factory.py:576
+msgid "Conflict"
+msgstr ""
+
+#: app_factory.py:578
 msgid "The request conflicted with a parallel one: retry it"
 msgstr ""
 
-#: conf.py:158
-msgid "Application port"
-msgstr ""
-
-#: conf.py:159
-msgid "Admin port"
-msgstr ""
-
-#: conf.py:172
+#: conf.py:138
 msgid "User model"
 msgstr ""
 
-#: conf.py:174
+#: conf.py:140
 msgid "Authentication backends"
 msgstr ""
 
-#: conf.py:178
+#: conf.py:144
 msgid "Secret key"
 msgstr ""
 
-#: conf.py:181
+#: conf.py:147
 msgid "Media URL"
 msgstr ""
 
-#: conf.py:182
+#: conf.py:148
 msgid "Admin path"
 msgstr ""
 
-#: conf.py:202
+#: conf.py:168
+msgid "Lock timeout of the installation of a trigger, seconds"
+msgstr ""
+
+#: conf.py:174
 msgid "Maximum request body size in bytes"
 msgstr ""
 
-#: conf.py:205
+#: conf.py:177
 msgid "Trusted schemes"
 msgstr ""
 
-#: conf.py:209
+#: conf.py:181
 msgid "Default number of results in the list"
 msgstr ""
 
-#: conf.py:212
+#: conf.py:184
 msgid "Maximum number of results in the list"
 msgstr ""
 
-#: conf.py:215
+#: conf.py:187
 msgid "Default cache instance for storing CONSTANCE"
 msgstr ""
 
-#: conf.py:228
+#: conf.py:193
 msgid "Path to the GDAL library"
 msgstr ""
 
-#: conf.py:229
+#: conf.py:194
 msgid "Path to the GEOS library"
 msgstr ""
 
-#: conf.py:231
-msgid "Decimal rounding"
+#: conf.py:196
+msgid "Replace $ref with the referenced schemas in the built schemas"
 msgstr ""
 
-#: conf.py:233
-msgid "Directories to reload on change"
-msgstr ""
-
-#: conf.py:234
-msgid "Use $ref in OpenAPI schema"
-msgstr ""
-
-#: conf.py:237
+#: conf.py:200
 msgid ""
 "Lifetime of unused generated schemas in the cache, seconds (0 - unlimited)"
 msgstr ""
 
-#: conf.py:246
+#: conf.py:209
 msgid "Mail server backend"
 msgstr ""
 
-#: conf.py:250
+#: conf.py:213
 msgid "Mail server IP address"
 msgstr ""
 
-#: conf.py:255
+#: conf.py:218
 msgid "Mail server port number"
 msgstr ""
 
-#: conf.py:260
+#: conf.py:223
 msgid "Mail server user login"
 msgstr ""
 
-#: conf.py:265
+#: conf.py:228
 msgid "Mail server user password"
 msgstr ""
 
-#: conf.py:270
+#: conf.py:233
 msgid "Mail server use TLS"
 msgstr ""
 
-#: conf.py:275
+#: conf.py:238
 msgid "Mail server use SSL"
 msgstr ""
 
-#: conf.py:281
+#: conf.py:244
 msgid "Mail server timeout, seconds (0 - unlimited)"
 msgstr ""
 
-#: conf.py:286
+#: conf.py:250
 msgid "Default outgoing email address"
 msgstr ""
 
-#: conf.py:289
-msgid "Export settings"
-msgstr ""
-
-#: conf.py:290
+#: conf.py:253
 msgid "Maximum IDs in list route"
 msgstr ""
 
-#: conf.py:294
+#: conf.py:257
 msgid "Filter, sort and search only by the fields of the route"
 msgstr ""
 
-#: conf.py:299
+#: conf.py:262
 msgid "Limit the request rate of routes"
 msgstr ""
 
-#: conf.py:303
+#: conf.py:266
 msgid ""
 "Request rate of the public actions per user or IP address (empty - unlimited)"
 msgstr ""
 
-#: conf.py:308
+#: conf.py:271
 msgid ""
 "Import path of a function (request, ident) exempting a request from the "
 "limits"
-msgstr ""
-
-#: configure.py:330
-msgid "System time zone for generating agent report"
 msgstr ""
 
 #: errors.py:46
@@ -214,77 +194,73 @@ msgid ""
 "field should not be used directly, instead, you should use :py:attr:`~number`"
 msgstr ""
 
-#: models_abstract.py:700
-msgid "Proxy-type of document"
-msgstr ""
-
-#: routes_abstract/jsonapi/route_base.py:436
-#, python-brace-format
-msgid "The relationships cannot be included: {names}"
-msgstr ""
-
-#: routes_abstract/jsonapi/route_base.py:441
-msgid "Invalid include"
-msgstr ""
-
-#: routes_abstract/jsonapi/route_base.py:939
-#, python-brace-format
-msgid "The relationship {name} cannot be changed"
-msgstr ""
-
-#: routes_abstract/jsonapi/route_base.py:943
-msgid "Relationship is read-only"
-msgstr ""
-
-#: routes_abstract/jsonapi/route_base.py:1099
-#, python-brace-format
-msgid "The related object of {name} cannot be linked"
-msgstr ""
-
-#: routes_abstract/jsonapi/route_base.py:1101
-msgid "Link not allowed"
-msgstr ""
-
-#: routes_abstract/jsonapi/route_base.py:1106
-#, python-brace-format
-msgid "No access to the related object of {name}"
-msgstr ""
-
-#: routes_abstract/jsonapi/route_base.py:182
+#: routes_abstract/jsonapi/route_base.py:181
 #, python-brace-format
 msgid "The related object of {name} does not exist"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1108
+#: routes_abstract/jsonapi/route_base.py:533
+#, python-brace-format
+msgid "The relationships cannot be included: {names}"
+msgstr ""
+
+#: routes_abstract/jsonapi/route_base.py:538
+msgid "Invalid include"
+msgstr ""
+
+#: routes_abstract/jsonapi/route_base.py:1055
+#, python-brace-format
+msgid "The relationship {name} cannot be changed"
+msgstr ""
+
+#: routes_abstract/jsonapi/route_base.py:1059
+msgid "Relationship is read-only"
+msgstr ""
+
+#: routes_abstract/jsonapi/route_base.py:1242
+#, python-brace-format
+msgid "The related object of {name} cannot be linked"
+msgstr ""
+
+#: routes_abstract/jsonapi/route_base.py:1244
+msgid "Link not allowed"
+msgstr ""
+
+#: routes_abstract/jsonapi/route_base.py:1249
+#, python-brace-format
+msgid "No access to the related object of {name}"
+msgstr ""
+
+#: routes_abstract/jsonapi/route_base.py:1251
 msgid "Access denied"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1263
+#: routes_abstract/jsonapi/route_base.py:1406
 msgid "Data type is invalid"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1349
+#: routes_abstract/jsonapi/route_base.py:1492
 #, python-brace-format
 msgid "The object does not exist. Type: {type}. ID: {id}"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1424
+#: routes_abstract/jsonapi/route_base.py:1567
 #, python-brace-format
 msgid "{model} is not JSON:API compliant"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1428
+#: routes_abstract/jsonapi/route_base.py:1571
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has related objects in non-JSON:API models. "
 "(count: {count})"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1447
+#: routes_abstract/jsonapi/route_base.py:1590
 msgid "Error deleting protected model"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1450
+#: routes_abstract/jsonapi/route_base.py:1593
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has protected related objects of type "
@@ -327,7 +303,7 @@ msgstr ""
 msgid "Not blank"
 msgstr ""
 
-#: services/filtering.py:77 services/searching.py:68 services/sorting.py:83
+#: services/filtering.py:74 services/searching.py:65 services/sorting.py:83
 msgid "Invalid filter"
 msgstr ""
 

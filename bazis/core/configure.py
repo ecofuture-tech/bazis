@@ -34,7 +34,6 @@ from typing import Any, cast
 from django.apps import apps
 from django.conf import LazySettings, UserSettingsHolder
 from django.utils.functional import empty
-from django.utils.translation import gettext_lazy as _
 
 from pydantic import create_model
 
@@ -323,14 +322,7 @@ apply_legacy_email_env()
 _settings = Settings()
 
 # Constance configuration for dynamic settings editable via admin panel
-CONSTANCE_CONFIG = {
-    # TODO: Temporary setting, should be configurable per installation
-    'BAZIS_TIME_ZONE': (
-        'Europe/Moscow',
-        _('System time zone for generating agent report'),
-        'timezone_select',
-    )
-}
+CONSTANCE_CONFIG = {}
 
 if SETTINGS_MODULE:
     try:

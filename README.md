@@ -150,15 +150,15 @@ The backend consists of 2 services:
 Required environment variables:
 
 - `BS_DEBUG` - debug mode
-- `BS_DB_HOST` - database host
-- `BS_DB_PORT` - database port
-- `BS_DB_NAME` - database name
-- `BS_DB_USER` - database user
-- `BS_DB_PASSWORD` - database password
+- `BS_DATABASES__DEFAULT__HOST` - database host
+- `BS_DATABASES__DEFAULT__PORT` - database port
+- `BS_DATABASES__DEFAULT__NAME` - database name
+- `BS_DATABASES__DEFAULT__USER` - database user
+- `BS_DATABASES__DEFAULT__PASSWORD` - database password
 - `BS_MEDIA_ROOT` - full path to media files folder
 - `BS_STATIC_ROOT` - full path to static files folder
-- `BS_APP_PORT` - API service port
-- `BS_ADMIN_PORT` - admin service port
+- `BS_APP_PORT` - API service port (read by `deploy/config/app.py`)
+- `BS_ADMIN_PORT` - admin service port (read by `deploy/config/admin.py`)
 - `BS_MEDIA_URL` - absolute URL for media files folder
 - `BS_STATIC_URL` - absolute URL for static files folder
 - `BS_MEDIA_HOST_URL` - the host that serves `MEDIA_URL` in production (the application
