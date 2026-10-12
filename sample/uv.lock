@@ -173,7 +173,6 @@ dependencies = [
     { name = "django-admin-rangefilter" },
     { name = "django-clone" },
     { name = "django-constance" },
-    { name = "django-pghistory" },
     { name = "django-pgtrigger" },
     { name = "django-redis" },
     { name = "django-sequences" },
@@ -205,7 +204,6 @@ requires-dist = [
     { name = "django-admin-rangefilter", specifier = "~=0.15" },
     { name = "django-clone", specifier = "~=5.5" },
     { name = "django-constance", specifier = ">=4.3.5,<4.4" },
-    { name = "django-pghistory", specifier = "~=3.9" },
     { name = "django-pgtrigger", specifier = ">=4.17,<5" },
     { name = "django-redis", specifier = "~=7.0" },
     { name = "django-sequences", specifier = "~=3.0" },
@@ -458,19 +456,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9c/95/8eff746544ba8958f431f4cfb162fd632db5f914b05b6a355a98eaf45cfd/django_constance-4.3.5.tar.gz", hash = "sha256:081177483d272b664cf768deae76fc2fbb0a777076f45620b6fde4d9075ee2b3", size = 181943, upload-time = "2026-03-15T11:23:50.799Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/61/aa/3ff4198d02c0cb23c595fcfbed364bcf03b80f9109b7b971eaa34604c349/django_constance-4.3.5-py3-none-any.whl", hash = "sha256:c28f360c2822112772a3e4caf02db758c82cca8de7d0b9f648fef371bf4b8bc6", size = 66907, upload-time = "2026-03-15T11:23:49.166Z" },
-]
-
-[[package]]
-name = "django-pghistory"
-version = "3.9.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "django" },
-    { name = "django-pgtrigger" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/7e/594930ce9cc8ddd9a586ef126f745d9516e307ef48a35a8566da54ca53e8/django_pghistory-3.9.2.tar.gz", hash = "sha256:1d07b75b61501a209330e7fb43fad2b2482f7f0399a36fa91aa7600a03025921", size = 31401, upload-time = "2026-02-17T16:08:21.304Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e9/5f/58a0551e951e4b67063e35d3393aeaab2f77bca24b0706ffcd977474e34c/django_pghistory-3.9.2-py3-none-any.whl", hash = "sha256:1623633af429837567dd11469823b9bb3c3f908cc117d60f097d23f3f0622fa2", size = 39929, upload-time = "2026-02-17T16:08:19.894Z" },
 ]
 
 [[package]]

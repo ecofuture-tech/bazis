@@ -16,7 +16,6 @@ import hashlib
 
 from django.db import models
 
-import pghistory
 from pgtrigger.core import MAX_NAME_LENGTH
 
 
@@ -75,56 +74,6 @@ def register(*triggers, with_through=False):
             models.signals.class_prepared.connect(finalize, weak=False)
         else:
             triggers_set(model_class)
-
-        return model_class
-
-    return _model_wrapper
-
-
-def history_track(*args, **kwargs):
-    """
-    Decorator to track history events on a Django model using pghistory, with
-    support for many-to-many relationships.
-
-    Tags: RAG, EXPORT
-    """
-    kwargs = {**{'context_field': pghistory.ContextJSONField()}, **kwargs}
-
-    def _model_wrapper(model_class):
-        """
-        Inner wrapper function for the history_track decorator that applies the history
-        tracking logic to a given model class.
-        """
-
-        def history_set(model):
-            """
-            Set history tracking on the model, including through models for many-to-many
-            relationships if they are auto-created.
-            """
-            if not model._meta.abstract and not model._meta.proxy:
-                pghistory.track(*args, **kwargs)(model)
-
-                for m2m_field in model._meta.many_to_many:
-                    through = getattr(model, m2m_field.name).through
-                    if through._meta.auto_created:
-                        pghistory.track(
-                            pghistory.InsertEvent('add'),
-                            pghistory.DeleteEvent('remove'),
-                            **{**kwargs, **{'obj_field': None}},
-                        )(through)
-
-        def finalize(sender, **kwargs):
-            """
-            Signal handler to finalize history tracking when the model class is prepared.
-            """
-            if not issubclass(sender, model_class):
-                return
-            history_set(sender)
-
-        if model_class._meta.abstract:
-            models.signals.class_prepared.connect(finalize, weak=False)
-        else:
-            history_set(model_class)
 
         return model_class
 

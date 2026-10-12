@@ -38,7 +38,6 @@ dependencies = [
     "django-admin-autocomplete-filter~=0.7",
     "django-clone~=5.5",
     "django-pgtrigger>=4.17,<5",
-    "django-pghistory~=3.9",
     "django-sequences~=3.0",
     # 4.3.5: Config._get_sync_value (bazis.core.constance_conf.base.Config)
     "django-constance>=4.3.5,<4.4",
