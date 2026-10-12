@@ -710,8 +710,9 @@ leaves out the `None` entry of the same class only.
   package; the route of the request is `JsonApiMixin.CTX_ROUTE.get()`; accept
   `**kwargs`). A relationship of a created or changed item (create, update, the
   relationships endpoints) links only the objects it returns for `view`, a reverse
-  relationship only the objects it returns for `change` (their foreign key changes), both
-  for the objects whose link changes; otherwise 403 `ERR_RELATION_ACCESS` (pointers: see
+  relationship only the objects it returns for `change` (their foreign key changes; the
+  objects it unlinks for `delete` when the foreign key cannot be null: they are deleted),
+  both for the objects whose link changes; otherwise 403 `ERR_RELATION_ACCESS` (pointers: see
   Errors). The core asks for the objects that get linked (not the ones a reverse
   relationship unlinks) with `link=True`: an override may return
   fewer then, the objects the user may link (e.g. bazis-uploadable: only his own files,
@@ -947,6 +948,12 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   related_field_name, action)` (`action`: `add`, `set`, `remove`) → the change →
   `hook_after_relationships_change(...)` → `validate_item`. The create and update hooks do
   not run. Delete has no hooks.
+- A to-many relationship is written by one rule, whatever writes it (the create, the
+  update, the relationships endpoints: `PATCH` sets, `POST` adds, `DELETE` removes): an
+  object a reverse foreign key unlinks is deleted if the foreign key cannot be null, else
+  its foreign key is cleared; a many-to-many relationship only unlinks. Deleting the
+  object needs the `delete` access of the default route of its model (see
+  `restrict_queryset`), otherwise 403 `ERR_RELATION_ACCESS` and nothing is written.
 - The hooks see an item that is not validated yet: `validate_item` runs once per item at
   the end of the request, with the writes of the hooks. A hook that needs a valid item
   (before a transit of bazis-statusy, whose validators would answer first, or before a

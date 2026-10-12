@@ -1157,14 +1157,18 @@ class JsonapiRouteBase(InitialRouteBase):
 
             if field_info.reverse:
                 # the linked objects and the unlinked ones change: they must be changeable,
-                # only the linked ones linkable
-                access_action = CrudAccessAction.CHANGE
-                targets = ((ids, True), (unlinked, False))
+                # only the linked ones linkable; an unlinked object of a foreign key that
+                # cannot be null is deleted (relation_write): it must be deletable
+                deleted = field_info.to_many and not field_info.related_field.null
+                unlink_action = CrudAccessAction.DELETE if deleted else CrudAccessAction.CHANGE
+                targets = (
+                    (ids, True, CrudAccessAction.CHANGE),
+                    (unlinked, False, unlink_action),
+                )
             else:
-                access_action = CrudAccessAction.VIEW
-                targets = ((ids, True),)
+                targets = ((ids, True, CrudAccessAction.VIEW),)
 
-            for target_ids, link in targets:
+            for target_ids, link, access_action in targets:
                 refused, hidden = self._refused_targets(
                     restrict, rel_model, target_ids, access_action, user, link
                 )

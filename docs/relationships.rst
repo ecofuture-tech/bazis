@@ -53,7 +53,9 @@ route of the request is ``JsonApiMixin.CTX_ROUTE.get()``. An override should acc
 
 * A created or changed item (create, update, the relationships endpoints above) links only
   the objects ``restrict_queryset`` returns for ``view``; a reverse relationship changes the
-  foreign key of the objects it links and unlinks, so they must be returned for ``change``.
+  foreign key of the objects it links and unlinks, so they must be returned for ``change``
+  (the objects it unlinks for ``delete`` when the foreign key cannot be null: they are
+  deleted).
   Only the objects whose link changes are checked: an object linked before stays linked
   and can be unlinked. Otherwise the request fails with ``403``, code
   ``ERR_RELATION_ACCESS`` and the pointer ``/data/relationships/<field>``.
@@ -280,6 +282,7 @@ O2M / M2O (Foreign Key)
 ### Replacing relationships (PATCH)
 
 **Result:** Complete replacement of dependent entities. Previous dependent entities have their foreign key reset (becomes NULL), new ones have it set.
+A dependent entity whose foreign key cannot be null is deleted instead (as by an update of the parent).
 
 **From parent side:**
 
@@ -306,7 +309,7 @@ O2M / M2O (Foreign Key)
 
 ### Deleting relationships (DELETE)
 
-**Result:** Set foreign key to NULL for specific dependent entities.
+**Result:** Set foreign key to NULL for specific dependent entities; a dependent entity whose foreign key cannot be null is deleted.
 
 **From parent side:**
 

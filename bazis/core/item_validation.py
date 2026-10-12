@@ -520,8 +520,8 @@ def reverse_items_link(rel, action: str, objs: Iterable, *, clear: bool = False)
     item, as `add()`, `remove()` or `set()` (`action`) with `bulk=False`, but each linked
     or unlinked item is saved with `save(update_fields=[<foreign key>])`: only its foreign
     key is written, and the save is validated (`validate_item`) after the parents of the
-    item are locked (`lock_on_write`). An item to unlink whose
-    foreign key cannot be null is left as it is (as `set()` of Django does).
+    item are locked (`lock_on_write`). An item to unlink whose foreign key cannot be null is
+    left as it is (as `set()` of Django does): `relation_write` deletes it.
     """
     field = rel.field
     objs = list(objs)
@@ -542,9 +542,6 @@ def reverse_items_link(rel, action: str, objs: Iterable, *, clear: bool = False)
             if getattr(obj, field.attname) == target:
                 setattr(obj, field.name, None)
                 obj.save(update_fields=[field.name])
-    elif action == 'remove':
-        # Django has no remove() for a foreign key that cannot be null
-        rel.remove(*unlink)
     for obj in link:
         setattr(obj, field.name, rel.instance)
         obj.save(update_fields=[field.name])

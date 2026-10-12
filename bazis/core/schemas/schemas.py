@@ -29,11 +29,10 @@ from pydantic import (
 
 from pydantic_core import PydanticUndefined
 
-from bazis.core.item_validation import reverse_items_link, saves_items
 from bazis.core.models_abstract import InitialBase, JsonApiMixin
 from bazis.core.utils.functools import get_attr
 from bazis.core.utils.geo import geojson_geometry
-from bazis.core.utils.orm import relation_targets, set_related_with_delete
+from bazis.core.utils.orm import relation_targets, relation_write
 from bazis.core.utils.query_complex import QueryToOrm
 
 from .enums import CrudAccessAction
@@ -135,11 +134,7 @@ class JsonApiDataSchema(BaseModel):
                 if field_info.to_many:
                     rel_obj = getattr(item, f_name)
                     rel_instances = self.check_restrict_m2m(f_name, val, rel_obj.model, rel_obj)
-                    if field_info.reverse:
-                        # installation with possible deletion
-                        set_related_with_delete(rel_obj, rel_instances)
-                    else:
-                        rel_obj.set(rel_instances)
+                    relation_write(rel_obj, 'set', rel_instances)
                 else:
                     f_pk = (val.get('data') or {}).get('id')
                     f_model = field_info.related_model
@@ -190,14 +185,7 @@ class JsonApiDataSchema(BaseModel):
 
         # add m2m
         for f_name, objs in m2m.items():
-            rel_obj = getattr(item, f_name)
-            rel_info = factory.fields[f_name].field_db_rel
-            if rel_info.reverse and not rel_info.is_m2m and saves_items(rel_obj.model):
-                # the linked items are saved one by one (their foreign key), to validate them
-                # and to lock their parents first (lock_on_write)
-                reverse_items_link(rel_obj, 'set', objs)
-            else:
-                rel_obj.set(objs)
+            relation_write(getattr(item, f_name), 'set', objs)
         return item
 
 

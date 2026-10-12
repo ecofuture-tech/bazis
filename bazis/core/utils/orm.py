@@ -162,35 +162,46 @@ def relation_targets(model: type[Model], ids: Iterable) -> QuerySet:
     return model._base_manager.filter(pk__in=ids)
 
 
-def set_related_with_delete(rel, objs, *, bulk=True, clear=False):
+def relation_write(rel, action: str, objs: Iterable) -> None:
     """
-    Set related objects for a relationship field, deleting any unlinked related
-    objects if the relationship is non-nullable.
+    Writes a to-many relation by one rule, whatever writes it (a create or an update of an
+    item, the relationships endpoints): `rel` is the manager of a many-to-many or of a
+    reverse foreign key relation, `action` is `add`, `remove` or `set` with the related
+    objects `objs`. An object a reverse foreign key unlinks is deleted if the foreign key
+    cannot be null, else its foreign key is cleared. The linked items of a model that
+    validates its items or locks their parents (`saves_items`) are saved one by one
+    (`reverse_items_link`).
 
-    Tags: RAG, EXPORT
+    Tags: RAG, INTERNAL
     """
-
+    objs = list(objs)
     db = router.db_for_write(rel.model, instance=rel.instance)
     with transaction.atomic(using=db, savepoint=False):
         # a many-to-many manager has its through model, a reverse foreign key one has not
         if hasattr(rel, 'through'):
-            # For many-to-many relations bulk is not supported
-            rel.set(objs, clear=clear)
-        elif saves_items(rel.model):
-            # the linked items are saved one by one (their foreign key), to validate them
-            # and to lock their parents first (lock_on_write)
-            reverse_items_link(rel, 'set', objs, clear=clear)
+            if action == 'set':
+                rel.set(objs)
+            else:
+                getattr(rel, action)(*objs)
+        elif rel.field.null:
+            if saves_items(rel.model):
+                reverse_items_link(rel, action, objs)
+            elif action == 'set':
+                rel.set(objs)
+            else:
+                getattr(rel, action)(*objs)
         else:
-            # For one-to-many relations (ForeignKey) bulk is supported
-            rel.set(objs, bulk=bulk, clear=clear)
-
-        # Check the possibility of deleting unlinked objects
-        # For ForeignKey we use rel.field.null
-        # For ManyToMany the field is always nullable (relation via an intermediate table)
-        if hasattr(rel, 'field') and not rel.field.null:
-            # This is a ForeignKey with null=False - delete objects that are no longer linked
-            rel.using(db).exclude(pk__in=[obj.pk for obj in objs]).delete()
-        # For ManyToMany we do not delete anything, objects are just unlinked
+            # the foreign key cannot be null: an unlinked object is deleted
+            pks = [obj.pk for obj in objs]
+            if action == 'remove':
+                rel.filter(pk__in=pks).delete()
+                return
+            if saves_items(rel.model):
+                reverse_items_link(rel, 'add', objs)
+            else:
+                rel.add(*objs)
+            if action == 'set':
+                rel.exclude(pk__in=pks).delete()
 
 
 def unique_constraint_error(model: type[Model], name: str) -> tuple[tuple[str, ...], str] | None:

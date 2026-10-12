@@ -19,10 +19,9 @@ from django.db import models, transaction
 
 from fastapi import HTTPException
 
-from bazis.core.item_validation import reverse_items_link, saves_items
 from bazis.core.models_abstract import JsonApiMixin
 from bazis.core.routes_abstract.jsonapi.schemas import ResourceIdentifier
-from bazis.core.utils.orm import relation_targets
+from bazis.core.utils.orm import relation_targets, relation_write
 
 
 class RelationType(Enum):
@@ -184,16 +183,7 @@ class RelationshipsService:
             targets = RelationshipsService.parse_targets(
                 rel_field, relationships_data, to_many=True
             )
-            if relation_type is RelationType.O2M and saves_items(rel_field.related_model):
-                # the linked items are saved one by one (their foreign key), to validate them
-                # and to lock their parents first (lock_on_write)
-                reverse_items_link(manager, action, targets)
-            elif action == 'add':
-                manager.add(*targets)
-            elif action == 'remove':
-                manager.remove(*targets)
-            elif action == 'set':
-                manager.set(targets)
+            relation_write(manager, action, targets)
 
         elif relation_type in (RelationType.O2O, RelationType.M2O):
             target = (
