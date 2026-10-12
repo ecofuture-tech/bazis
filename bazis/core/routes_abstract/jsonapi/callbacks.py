@@ -28,6 +28,8 @@ from bazis.core.schemas.meta import get_meta_schemas
 from bazis.core.utils.django_types import TYPES_DJANGO_TO_SCHEMA_LOOKUP
 from bazis.core.utils.functools import func_sig_param_replace
 
+from .schemas_dict import include_actions
+
 
 if TYPE_CHECKING:
     from .route_base import JsonapiRouteBase
@@ -79,39 +81,29 @@ def build_schema_defaults(cls, api_action: ApiAction):
     Creates and stores default schemas for the specified API action.
         If a schema for the API action already exists, it is not recreated.
         For the UPDATE action, the schema is created by combining the inclusions
-        of the schemas for the UPDATE and CREATE actions.
+        of the schemas of its `include_actions` (UPDATE and CREATE).
     Schemas are created using the schema factory associated with the route class.
     Used similarly to meta_fields_addition.
 
     Tags: RAG
     """
+    for action in include_actions(api_action):
+        if action not in cls.schema_factories:
+            cls.schema_factories[action] = cls.build_schema_factory(action)
+    if api_action in cls.schema_defaults:
+        return
+    factory = cls.schema_factories[api_action]
     if api_action == CrudApiAction.UPDATE:
-        if CrudApiAction.UPDATE not in cls.schema_factories:
-            cls.schema_factories[CrudApiAction.UPDATE] = cls.build_schema_factory(
-                CrudApiAction.UPDATE
-            )
-        if CrudApiAction.CREATE not in cls.schema_factories:
-            cls.schema_factories[CrudApiAction.CREATE] = cls.build_schema_factory(
-                CrudApiAction.CREATE
-            )
-
-        if CrudApiAction.UPDATE not in cls.schema_defaults:
-            cls.schema_defaults[CrudApiAction.UPDATE] = cls.schema_factories[
-                CrudApiAction.UPDATE
-            ].build_schema(
-                inclusions=(
-                    cls.schema_factories[CrudApiAction.UPDATE].inclusions_list
-                    + cls.schema_factories[CrudApiAction.CREATE].inclusions_list
-                )
-            )
+        cls.schema_defaults[api_action] = factory.build_schema(
+            inclusions=[
+                it
+                for action in include_actions(api_action)
+                for it in cls.schema_factories[action].inclusions_list
+            ]
+        )
     else:
-        if api_action not in cls.schema_factories:
-            cls.schema_factories[api_action] = cls.build_schema_factory(api_action)
-        if api_action not in cls.schema_defaults:
-            cls.schema_defaults[api_action] = cls.schema_factories[api_action].build_schema()
-            cls.schema_responses_defaults[api_action] = cls.schema_factories[
-                api_action
-            ].build_schema(is_response_schema=True)
+        cls.schema_defaults[api_action] = factory.build_schema()
+        cls.schema_responses_defaults[api_action] = factory.build_schema(is_response_schema=True)
 
 
 def api_action_init(cls, route_ctx: RouteContext, api_action: ApiAction):

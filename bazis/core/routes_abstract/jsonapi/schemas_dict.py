@@ -25,6 +25,18 @@ if TYPE_CHECKING:
     from .route_base import JsonapiRouteBase
 
 
+def include_actions(api_action: ApiAction) -> list[ApiAction]:
+    """
+    The actions whose relations the schema of `api_action` can include: an update also
+    those of a create (an included item of an update is changed or created).
+
+    Tags: RAG, INTERNAL
+    """
+    if api_action == CrudApiAction.UPDATE:
+        return [CrudApiAction.UPDATE, CrudApiAction.CREATE]
+    return [api_action]
+
+
 class SchemasDict(UserDict, dict[ApiAction, type[BaseModel]]):
     """
     A dictionary-like class that manages schema generation for different CRUD API
@@ -69,76 +81,49 @@ class SchemasDict(UserDict, dict[ApiAction, type[BaseModel]]):
         """
         return self.schema_defaults[CrudApiAction.LIST]
 
+    def _build_with_includes(self, api_action: ApiAction):
+        """
+        Builds the schema of the action with the requested includes (`include_actions`),
+        or returns its default schema without includes.
+        """
+        if not self.includes:
+            return self.schema_defaults[api_action]
+
+        schema_factory = self.route_cls.schema_factories[api_action]
+        inclusions = [
+            self._resource_schema(factory)
+            for action in include_actions(api_action)
+            for name, factory in self.route_cls.schema_factories[
+                action
+            ].inclusions_factory_with_default.items()
+            if name in self.includes
+        ]
+        return schema_factory.build_schema(
+            schema_resource=self._resource_schema(schema_factory),
+            inclusions=inclusions,
+            is_response_schema=self.is_response_schema,
+        )
+
     def build_schema_retrieve(self):
         """
         Builds the schema for the RETRIEVE CRUD API action, including specified includes
         if any.
         """
-        if not self.includes:
-            return self.schema_defaults[CrudApiAction.RETRIEVE]
-
-        schema_factory = self.route_cls.schema_factories[CrudApiAction.RETRIEVE]
-        inclusions_factory = [
-            v
-            for k, v in schema_factory.inclusions_factory_with_default.items()
-            if k in self.includes
-        ]
-        return schema_factory.build_schema(
-            schema_resource=self._resource_schema(schema_factory),
-            inclusions=[self._resource_schema(f) for f in inclusions_factory],
-            is_response_schema=self.is_response_schema,
-        )
+        return self._build_with_includes(CrudApiAction.RETRIEVE)
 
     def build_schema_update(self):
         """
         Builds the schema for the UPDATE CRUD API action, including specified includes
-        if any.
+        if any (of the update and of the create).
         """
-        if not self.includes:
-            return self.schema_defaults[CrudApiAction.UPDATE]
-
-        schema_factory_update = self.route_cls.schema_factories[CrudApiAction.UPDATE]
-        schema_factory_create = self.route_cls.schema_factories[CrudApiAction.CREATE]
-
-        inclusions_factory_update = [
-            v
-            for k, v in schema_factory_update.inclusions_factory_with_default.items()
-            if k in self.includes
-        ]
-        inclusions_factory_create = [
-            v
-            for k, v in schema_factory_create.inclusions_factory_with_default.items()
-            if k in self.includes
-        ]
-
-        return schema_factory_update.build_schema(
-            schema_resource=self._resource_schema(schema_factory_update),
-            inclusions=(
-                [self._resource_schema(f) for f in inclusions_factory_update]
-                + [self._resource_schema(f) for f in inclusions_factory_create]
-            ),
-            is_response_schema=self.is_response_schema,
-        )
+        return self._build_with_includes(CrudApiAction.UPDATE)
 
     def build_schema_create(self):
         """
         Builds the schema for the CREATE CRUD API action, including specified includes
         if any.
         """
-        if not self.includes:
-            return self.schema_defaults[CrudApiAction.CREATE]
-
-        schema_factory = self.route_cls.schema_factories[CrudApiAction.CREATE]
-        inclusions_factory = [
-            v
-            for k, v in schema_factory.inclusions_factory_with_default.items()
-            if k in self.includes
-        ]
-        return schema_factory.build_schema(
-            schema_resource=self._resource_schema(schema_factory),
-            inclusions=[self._resource_schema(f) for f in inclusions_factory],
-            is_response_schema=self.is_response_schema,
-        )
+        return self._build_with_includes(CrudApiAction.CREATE)
 
     @classmethod
     def get_builders(cls) -> dict[ApiAction, Callable]:
@@ -168,7 +153,3 @@ class SchemasDict(UserDict, dict[ApiAction, type[BaseModel]]):
             return self[key]
         except KeyError:
             return default
-
-
-class SchemasResponseDict(SchemasDict):
-    pass

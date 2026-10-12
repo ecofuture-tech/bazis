@@ -79,7 +79,7 @@ from ...services.relationships import RelationshipsService
 from .cache import with_cache_openapi_schema
 from .callbacks import crud_jsonapi_callbacks
 from .schemas import FieldListModel, RelationshipData, openapi_relationship_examples
-from .schemas_dict import SchemasDict, SchemasResponseDict
+from .schemas_dict import SchemasDict, include_actions
 from .services import RouteFilterFieldsService
 
 
@@ -433,9 +433,7 @@ class JsonapiRouteBase(InitialRouteBase):
         self.set_route(self)
         self.set_api_action(self.route_ctx.store.get('api_action'))
         self.schemas = SchemasDict(type(self), getattr(self.inject, 'include', []))
-        self.schemas_responses = SchemasResponseDict(
-            type(self), getattr(self.inject, 'include', []), True
-        )
+        self.schemas_responses = SchemasDict(type(self), getattr(self.inject, 'include', []), True)
 
     def unique_conflict(self, table: str, constraint: str) -> tuple[tuple[str, ...], str] | None:
         """
@@ -514,11 +512,8 @@ class JsonapiRouteBase(InitialRouteBase):
         api_action = self.route_ctx.store.get('api_action')
         if not includes or api_action is None:
             return
-        actions = [api_action]
-        if api_action == CrudApiAction.UPDATE:
-            actions.append(CrudApiAction.CREATE)
         known = set()
-        for action in actions:
+        for action in include_actions(api_action):
             if factory := self.schema_factories.get(action):
                 known.update(factory.inclusions_factory_with_default)
         if unknown := [it for it in includes if it not in known]:
