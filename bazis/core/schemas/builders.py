@@ -117,7 +117,7 @@ class SchemaBuilder:
                 factory_2 = builder_2.factory
 
                 if (
-                    factory_1.model == factory_1.model
+                    factory_1.model == factory_2.model
                     and factory_1.api_action == factory_2.api_action
                     and builder_1.fields == builder_2.fields
                 ):
@@ -644,7 +644,7 @@ class SchemaResourceBuilder:
             __config__=self._fields_config(is_response_schema),
             __validators__={
                 **self._value_validators(is_response_schema),
-                # disabled because there are operations like transitions that require mandatory fields which may well be read-only
+                # a write drops the read-only fields of its input instead of rejecting them
                 'readonly_validator': model_validator(mode='before')(readonly_validator),
                 'data_validator': model_validator(mode='before')(data_validator),
             },

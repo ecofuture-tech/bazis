@@ -93,7 +93,7 @@ if os.environ.get('BS_LOG_LEVEL') is not None:
     if log_level_name in logging._nameToLevel:
         log_level = logging._nameToLevel[log_level_name]
     else:
-        logger.warning(f'Invalid log level: {log_level_name}. Using default level: WARNING.')
+        logger.warning(f'Invalid log level: {log_level_name}. Using default level: INFO.')
 
 force_global_logging_level(log_level)
 logging.basicConfig(

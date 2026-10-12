@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import traceback
 from contextlib import contextmanager
 from itertools import chain
 from typing import Any, List, TypeVar, get_args, get_type_hints  # noqa: UP035
@@ -552,8 +551,6 @@ class JsonapiRouteBase(InitialRouteBase):
         response_class = self.route_ctx.route_params.response_class
         if isinstance(response_class, DefaultPlaceholder):
             response_class = response_class.value
-        else:
-            response_class = response_class
 
         self.set_route(self)
         self.set_api_action(self.route_ctx.store.get('api_action'))
@@ -579,7 +576,6 @@ class JsonapiRouteBase(InitialRouteBase):
                             status_code=get_attr(self.route_ctx.route, 'status_code') or 200,
                         )
             except ValidationError as e:
-                traceback.print_exc()
                 # intercepts validation exception and generates its own exception
                 raise JsonApiRequestValidationError(e.errors()) from e
             except JsonApiHttpException:
