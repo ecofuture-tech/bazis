@@ -16,7 +16,6 @@ import os
 from datetime import date, timedelta
 from decimal import Decimal
 
-from django.core.management import call_command
 from django.utils.timezone import now
 
 import pytest
@@ -48,12 +47,6 @@ from route_injection.models import Vehicle as RouteInjectionVehicle
 from route_injection.models import VehicleAssembleInfo as RouteInjectionVehicleAssembleInfo
 from route_injection.models import VehicleBrand as RouteInjectionVehicleBrand
 from route_injection.models import VehicleModel as RouteInjectionVehicleModel
-
-
-@pytest.fixture(scope='session')
-def django_db_setup(django_db_setup, django_db_blocker) -> None:
-    with django_db_blocker.unblock():
-        call_command('pgtrigger', 'install')
 
 
 @pytest.fixture(scope='function')
