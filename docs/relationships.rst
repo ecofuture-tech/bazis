@@ -55,7 +55,10 @@ route of the request is ``JsonApiMixin.CTX_ROUTE.get()``. An override should acc
   the objects ``restrict_queryset`` returns for ``view``; a reverse relationship changes the
   foreign key of the objects it links and unlinks, so they must be returned for ``change``
   (the objects it unlinks for ``delete`` when the foreign key cannot be null: they are
-  deleted; such objects of a model without a route are not deleted, ``403``).
+  deleted; such objects of a model without a route are not deleted, ``403``). When other
+  objects refer to an object that would be deleted through ``PROTECT`` or ``RESTRICT``, the
+  request answers ``409`` (``ERR_CONFLICT``) and nothing is written. Removing an object that
+  is not linked is not an error (``204``).
   Only the objects whose link changes are checked: an object linked before stays linked
   and can be unlinked. Otherwise the request fails with ``403``, code
   ``ERR_RELATION_ACCESS`` and the pointer ``/data/relationships/<field>``.
