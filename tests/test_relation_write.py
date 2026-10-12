@@ -340,3 +340,22 @@ def test_an_unlinked_object_other_objects_refer_to_is_a_conflict(sample_app, way
     ]
     assert set(parent.dependent_entities.all()) == {kept, unlinked}
     assert list(other.dependent_entities.all()) == [moved]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('field', ['dependent_entities', 'dependent_entities_null'])
+def test_removing_an_object_that_is_not_linked_changes_nothing(sample_app, field):
+    """
+    As JSON:API requires (an object already missing from the relationship is removed
+    successfully), as a many-to-many relationship: 204, the object stays as it is.
+    """
+    create = dependent if field == 'dependent_entities' else dependent_null
+    parent, other = ParentEntity.objects.create(name='A'), ParentEntity.objects.create(name='B')
+    linked, foreign = create(parent), create(other)
+    type_ = 'entity.dependent_entity' + ('' if field == 'dependent_entities' else '_null')
+
+    response = relationships(get_api_client(sample_app), 'DELETE', parent, field, type_, foreign)
+
+    assert response.status_code == 204, response.text
+    assert list(getattr(parent, field).all()) == [linked]
+    assert list(getattr(other, field).all()) == [foreign]

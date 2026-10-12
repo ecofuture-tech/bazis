@@ -189,6 +189,10 @@ def relation_write(rel, action: str, objs: Iterable) -> None:
         else:
             # set() links only the new objects; for a foreign key that cannot be null it
             # leaves the unlinked ones, deleted below
+            if action == 'remove':
+                # an object that is not linked stays as it is (remove() of Django fails)
+                target = getattr(rel.instance, rel.field.target_field.attname)
+                objs = [obj for obj in objs if getattr(obj, rel.field.attname) == target]
             if saves_items(rel.model):
                 reverse_items_link(rel, action, objs)
             elif action == 'set':

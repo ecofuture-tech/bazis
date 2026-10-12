@@ -980,8 +980,9 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   route that does not override `restrict_queryset` allows it, a model without a route
   refuses it (403: no route tells the access). An object that other objects refer to
   with `PROTECT` or `RESTRICT` is not deleted: 409 `ERR_CONFLICT` (`meta.types` the types
-  of those objects) and nothing of the request is written. A create unlinks nothing, so
-  it deletes nothing.
+  of those objects) and nothing of the request is written. `DELETE` of an object that is
+  not linked changes nothing (204, as JSON:API requires). A create unlinks nothing, so it
+  deletes nothing.
 - The hooks see an item that is not validated yet: `validate_item` runs once per item at
   the end of the request, with the writes of the hooks. A hook that needs a valid item
   (before a transit of bazis-statusy, whose validators would answer first, or before a
