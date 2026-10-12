@@ -332,10 +332,10 @@ class SchemaFactory:
         requiredness in the model, except a required field in the schema of a create (an
         item cannot be created without it; bazis-permit warns, permit.W009) and a field
         whose own restrictions say `required` against a `disable` of `__all__`: the schema
-        keeps it required (the transit of bazis-statusy validates it). The field's own
-        `disable` always wins over its own `required`, and `required` of `__all__` keeps no
-        field. An update, the relationships endpoints and the other schemas never keep a
-        field disabled otherwise.
+        keeps it required (the transit of bazis-statusy validates it). Outside the schema of
+        a create, the field's own `disable` always wins over its own `required`, and
+        `required` of `__all__` keeps no field. An update, the relationships endpoints and
+        the other schemas never keep a field disabled otherwise.
         """
         is_view_op = self.api_action.access_action == CrudAccessAction.VIEW
         is_add_op = self.api_action.access_action == CrudAccessAction.ADD
