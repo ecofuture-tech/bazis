@@ -79,11 +79,20 @@ def test_unique_violation(sample_app):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_other_integrity_errors_stay_500(sample_app):
+def test_other_integrity_errors_stay_500(sample_app, monkeypatch):
     """
-    A foreign key to a missing object (checked at the commit) is not a conflict: 500, as any
-    integrity error but a unique or an exclusion one (keep such rules in validate_item).
+    A foreign key to a missing object that a hook writes (checked at the commit) is not a
+    conflict: 500, as any integrity error but a unique or an exclusion one (keep such rules
+    in validate_item). One the document links is 422 (`test_relation_missing.py`).
     """
+    from entity.models import ParentEntity
+    from entity.routes import ExtendedEntityRouteSet
+
+    def hook_before_create(self, item):
+        item.parent_entity_id = '9b657232-4178-4d7f-8b0c-e8ab16f2b309'
+
+    monkeypatch.setattr(ExtendedEntityRouteSet, 'hook_before_create', hook_before_create)
+    parent = ParentEntity.objects.create(name='Parent')
     client = TestClient(sample_app, raise_server_exceptions=False)
     response = client.post(
         '/api/v1/entity/extended_entity/',
@@ -101,10 +110,7 @@ def test_other_integrity_errors_stay_500(sample_app):
                 },
                 'relationships': {
                     'parent_entity': {
-                        'data': {
-                            'id': '9b657232-4178-4d7f-8b0c-e8ab16f2b309',
-                            'type': 'entity.parent_entity',
-                        },
+                        'data': {'id': str(parent.id), 'type': 'entity.parent_entity'},
                     },
                 },
             },

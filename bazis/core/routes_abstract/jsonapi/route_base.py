@@ -152,6 +152,42 @@ def relationship_body_loc(refused: set, positions: dict, is_list: bool) -> tuple
     return ('body', 'data')
 
 
+def relation_by_pk(field_info) -> bool:
+    """
+    Whether the identifiers of a relationship are primary keys of the related model: not
+    those of a forward foreign key with `to_field`, which are values of that field.
+    """
+    if field_info.reverse or field_info.to_many:
+        return True
+    target = getattr(field_info.model_field, 'target_field', None)
+    return target is None or target.primary_key
+
+
+def relation_missing(
+    f_name: str, missing: set, positions: dict, is_list: bool, *, relationship_body: bool
+) -> JsonApiBazisException:
+    """
+    The error of a relationship that links an object that does not exist: 422
+    `ERR_VALIDATE` at the first missing identifier of the value (`positions`: its index by
+    key), in the document of a create or an update or in the body of the relationships
+    endpoints (`relationship_body`, the `data` of the relationship).
+    """
+    prefix = ('body', 'data') if relationship_body else ('body', 'data', 'relationships', f_name, 'data')
+    if is_list:
+        loc = (*prefix, min(positions[pk] for pk in missing), 'id')
+    else:
+        loc = (*prefix, 'id')
+    return JsonApiBazisException(
+        JsonApiBazisError(
+            detail=format_lazy(_('The related object of {name} does not exist'), name=f_name),
+            loc=loc,
+            code='ERR_VALIDATE',
+            status=422,
+        ),
+        status=422,
+    )
+
+
 class JsonapiRouteBase(InitialRouteBase):
     """
     Base class for JSON:API routes, implementing main CRUD operations and adhering
@@ -1077,7 +1113,13 @@ class JsonapiRouteBase(InitialRouteBase):
         the foreign key of the objects it links and unlinks, so they must be changeable.
         For a changed item only the objects whose link changes are checked; `action` is the
         action of the relationships endpoints (`add`, `remove`, `set`; an update sets the
-        value). The models whose route does not restrict them are not queried. The objects
+        value). The objects of the value of a model whose route does not restrict them (or
+        that has no route; not for `remove`) are only looked up, in one query: one that
+        does not exist is 422
+        `ERR_VALIDATE` at its identifier (`/data/relationships/<field>/data/id`, or
+        `/data/relationships/<field>/data/<index>/id`; with `relationship_body` `/data/id`,
+        `/data/<index>/id`), not an `IntegrityError` at the commit; a forward relation by
+        another field than the primary key (`to_field`) is not looked up. The objects
         that get linked are asked for with `link=True` (not the ones a reverse relationship
         unlinks): an override may leave out objects the user sees but may not link (e.g.
         the files of other users). Fails with 403 `ERR_RELATION_ACCESS`
@@ -1101,32 +1143,25 @@ class JsonapiRouteBase(InitialRouteBase):
             if not (field_info := relations.get(f_name)):
                 continue
             rel_model = field_info.related_model
-            if not (restrict := route_restrict_queryset(rel_model)):
+            restrict = route_restrict_queryset(rel_model)
+            if not restrict and not relation_by_pk(field_info):
                 continue
 
             rel_data = (value or {}).get('data')
             is_list = isinstance(rel_data, list)
             positions = self._relation_positions(rel_data, rel_model)
-            ids = set(positions)
-            unlinked = set()
-            if item is not None:
-                if field_info.to_many:
-                    current = {str(pk) for pk in getattr(item, f_name).values_list('pk', flat=True)}
-                elif not field_info.reverse:
-                    pk = getattr(item, field_info.model_field.attname, None)
-                    current = {str(pk)} if pk is not None else set()
-                elif current_obj := getattr(item, f_name, None):
-                    current = {str(current_obj.pk)}
-                else:
-                    current = set()
+            if not restrict:
+                # the objects of the value exist (those already linked too); a removal links none
+                ids = set() if action == 'remove' else set(positions)
+                if missing := ids - {
+                    str(pk) for pk in rel_model.objects.filter(pk__in=ids).values_list('pk', flat=True)
+                }:
+                    raise relation_missing(
+                        f_name, missing, positions, is_list, relationship_body=relationship_body
+                    )
+                continue
 
-                if action == 'remove':
-                    # removing a to-one relation clears it whatever the request refers to
-                    ids, unlinked = set(), (ids & current if field_info.to_many else current)
-                elif action == 'add':
-                    ids -= current
-                else:
-                    ids, unlinked = ids - current, current - ids
+            ids, unlinked = self._relation_change(item, field_info, f_name, set(positions), action)
 
             if field_info.reverse:
                 # the linked objects and the unlinked ones change: they must be changeable,
@@ -1147,6 +1182,32 @@ class JsonapiRouteBase(InitialRouteBase):
                     else:
                         loc = ('body', 'data', 'relationships', f_name)
                     raise self._relation_refused(f_name, loc, linkable_only=not hidden)
+
+    @staticmethod
+    def _relation_change(item, field_info, f_name: str, ids: set, action: str) -> tuple[set, set]:
+        """
+        The keys of the objects a relationship value (`ids`) links and unlinks: for a new item
+        all of them are linked; for a changed one only those whose link changes by `action`
+        (`add`, `remove`, `set`).
+        """
+        if item is None:
+            return ids, set()
+        if field_info.to_many:
+            current = {str(pk) for pk in getattr(item, f_name).values_list('pk', flat=True)}
+        elif not field_info.reverse:
+            pk = getattr(item, field_info.model_field.attname, None)
+            current = {str(pk)} if pk is not None else set()
+        elif current_obj := getattr(item, f_name, None):
+            current = {str(current_obj.pk)}
+        else:
+            current = set()
+
+        if action == 'remove':
+            # removing a to-one relation clears it whatever the request refers to
+            return set(), (ids & current if field_info.to_many else current)
+        if action == 'add':
+            return ids - current, set()
+        return ids - current, current - ids
 
     @staticmethod
     def _refused_targets(

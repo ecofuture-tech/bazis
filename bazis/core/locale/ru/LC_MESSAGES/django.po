@@ -257,6 +257,11 @@ msgstr "Привязка запрещена"
 msgid "No access to the related object of {name}"
 msgstr "Нет доступа к связанному объекту {name}"
 
+#: routes_abstract/jsonapi/route_base.py:182
+#, python-brace-format
+msgid "The related object of {name} does not exist"
+msgstr "Связанный объект {name} не существует"
+
 #: routes_abstract/jsonapi/route_base.py:1108
 msgid "Access denied"
 msgstr "Доступ запрещён"

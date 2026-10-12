@@ -15,8 +15,6 @@
 import uuid
 from urllib.parse import urlencode
 
-from django.db import IntegrityError
-
 import pytest
 from bazis_test_utils.utils import get_api_client
 
@@ -463,28 +461,32 @@ def test_routes_add_error(sample_app):
         ]
     }
 
-    with pytest.raises(IntegrityError):
-        get_api_client(sample_app).post(
-            '/api/v1/entity/extended_entity/',
-            json_data={
-                'data': {
-                    'type': 'entity.extended_entity',
-                    'bs:action': 'add',
-                    'attributes': {
-                        'extended_name': 'Extended test name',
-                        'extended_description': 'Extended test description',
-                        'extended_is_active': False,
-                        'extended_price': '25.19',
-                        'extended_dt_approved': '2024-01-13T16:54:12Z',
-                    },
-                    'relationships': {
-                        'parent_entity': {
-                            'data': {
-                                'id': '9b657232-4178-4d7f-8b0c-e8ab16f2b309',
-                                'type': 'entity.parent_entity',
-                            },
+    # a parent that does not exist (bazis 2.16: an IntegrityError at the commit before)
+    response = get_api_client(sample_app).post(
+        '/api/v1/entity/extended_entity/',
+        json_data={
+            'data': {
+                'type': 'entity.extended_entity',
+                'bs:action': 'add',
+                'attributes': {
+                    'extended_name': 'Extended test name',
+                    'extended_description': 'Extended test description',
+                    'extended_is_active': False,
+                    'extended_price': '25.19',
+                    'extended_dt_approved': '2024-01-13T16:54:12Z',
+                },
+                'relationships': {
+                    'parent_entity': {
+                        'data': {
+                            'id': '9b657232-4178-4d7f-8b0c-e8ab16f2b309',
+                            'type': 'entity.parent_entity',
                         },
                     },
                 },
             },
-        )
+        },
+    )
+    assert response.status_code == 422, response.content
+    assert response.json()['errors'][0]['source'] == {
+        'pointer': '/data/relationships/parent_entity/data/id'
+    }

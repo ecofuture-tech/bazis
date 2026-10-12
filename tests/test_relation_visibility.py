@@ -252,10 +252,11 @@ def test_reverse_relation_requires_change(sample_app, tags):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_unrestricted_targets_are_not_queried(sample_app, tags):
+def test_unrestricted_targets_are_only_looked_up(sample_app, tags):
     """
     The targets of a model whose route does not restrict its objects (or that has no route)
-    are not checked: no extra query.
+    are only looked up, to refuse one that does not exist (`test_relation_missing.py`): one
+    query per relationship, as for the restricted ones.
     """
     folder = Folder.objects.create(name='folder')
     label = Label.objects.create(name='label')
@@ -269,8 +270,8 @@ def test_unrestricted_targets_are_not_queried(sample_app, tags):
     assert response.status_code == 200, response.text
     note.refresh_from_db()
     assert (note.folder, note.label) == (folder, label)
-    assert pk_in_queries('visibility_folder') == []
-    assert pk_in_queries('visibility_label') == []
+    assert len(pk_in_queries('visibility_folder')) == 1
+    assert len(pk_in_queries('visibility_label')) == 1
 
     # the restricted targets are checked with one query per relationship
     response = client.patch(

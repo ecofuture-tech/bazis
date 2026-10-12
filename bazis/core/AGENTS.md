@@ -718,10 +718,14 @@ leaves out the `None` entry of the same class only.
   though he sees more), and a visible object it leaves out is 422 `ERR_RELATION_LINK`
   (same pointers). `included` shows only the visible objects (the
   relationship keeps the identifiers), and the filter, sorting and search of the other
-  routes reach only the visible objects through a relation. The objects of a model whose
-  default route does not
-  override `restrict_queryset` (or that has no route) are not checked and not queried.
-  `relation_targets_check = False` turns the check off for the relationships of a route.
+  routes reach only the visible objects through a relation. The objects a relationship
+  links of a model whose default route does not override `restrict_queryset` (or that has
+  no route) are only looked up (one query per relationship): one that does not exist is
+  422 `ERR_VALIDATE` at its identifier (bazis 2.16; a 500 at the commit before), not
+  looked up for a foreign key with `to_field`. A missing object of a model whose route
+  restricts its objects is 403 `ERR_RELATION_ACCESS`, as a hidden one (its existence is not
+  told). `relation_targets_check = False` turns the check off for the relationships of a
+  route, the lookup too.
   The route's own list and item do not use `restrict_queryset` by themselves: apply it in
   `get_queryset` too. Who calls it: the core (`route_restrict_queryset(model)` of
   `bazis.core.routes_abstract.jsonapi.mixins`) for the relationship targets of the writes,
@@ -997,8 +1001,9 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   request (bazis 2.16; a create answered 409 `ERR_REQUEST` "Data conflict" for any
   integrity error before); a throttled request 429 `ERR_THROTTLED` with `Retry-After`; any
   other exception 500 (the traceback in `detail` only with DEBUG), also another
-  `IntegrityError` (a foreign key to a missing object, checked at the commit; a not-null
-  or check constraint: keep such rules in `validate_item`, 422).
+  `IntegrityError` (a not-null or check constraint: keep such rules in `validate_item`,
+  422; a foreign key to a missing object that a route links is 422 `ERR_VALIDATE`, see
+  `relations_access_check`, but one a hook or an action writes fails at the commit).
 - A request PostgreSQL aborts for a parallel one, a deadlock (SQLSTATE 40P01) or a
   serialization failure (40001), answers 409 `ERR_CONFLICT` "The request conflicted with a
   parallel one: retry it" with `meta.retry: true` (`meta.sqlstate` with DEBUG; bazis 2.16,
@@ -1013,7 +1018,9 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   body, the `data` of the relationship.
   - `ERR_VALIDATE`: `/data/attributes/<f>`, `/data/relationships/<f>/...`, `/data/id`, `/data`
     (`missing` for a document without `data`); a related id that cannot be a key of the
-    related model at its identifier, `/data/relationships/<f>/data/<j>/id`; `source.id` and
+    related model, or the id of an object that does not exist of a model whose route does
+    not restrict its objects (bazis 2.16), at its identifier,
+    `/data/relationships/<f>/data/id`, `/data/relationships/<f>/data/<j>/id`; `source.id` and
     `source.type` name the item when the document gives its id. On the relationships
     endpoints `/data`, `/data/<j>/id` (`/data/id`).
   - `ERR_ITEM_INVALID`: `/data/attributes/<f>`, `/data/relationships/<f>`, `/data`. On the
