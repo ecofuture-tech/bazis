@@ -665,3 +665,17 @@ class WithProtectedEntitySystem(DtMixin, UuidMixin):
     class Meta:
         verbose_name = 'Entity with Protected System'
         verbose_name_plural = 'Entities with Protected System'
+
+
+class DependentEntityReference(models.Model):
+    """
+    Refers to a dependent entity, which its deletion must not leave dangling: the
+    deletion of an unlinked dependent entity fails.
+    """
+
+    protected = models.ForeignKey(
+        DependentEntity, null=True, on_delete=models.PROTECT, related_name='+'
+    )
+    restricted = models.ForeignKey(
+        DependentEntity, null=True, on_delete=models.RESTRICT, related_name='+'
+    )

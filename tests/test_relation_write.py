@@ -27,7 +27,13 @@ from django.test.utils import CaptureQueriesContext
 
 import pytest
 from bazis_test_utils.utils import get_api_client
-from entity.models import ChildEntity, DependentEntity, DependentEntityNull, ParentEntity
+from entity.models import (
+    ChildEntity,
+    DependentEntity,
+    DependentEntityNull,
+    DependentEntityReference,
+    ParentEntity,
+)
 from entity.routes import (
     DependentEntityNullRouteSet,
     DependentEntityRouteSet,
@@ -303,3 +309,34 @@ def test_an_unlinked_object_of_a_model_without_a_route_is_not_deleted(sample_app
         *([kept, unlinked] if way == 'update' else [kept]),
     )
     assert response.status_code < 300, response.text
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('field', ['protected', 'restricted'])
+@pytest.mark.parametrize('way', ['update', 'PATCH', 'DELETE'])
+def test_an_unlinked_object_other_objects_refer_to_is_a_conflict(sample_app, way, field):
+    """
+    The deletion of an unlinked object fails for an object that refers to it with PROTECT
+    or RESTRICT: 409 `ERR_CONFLICT`, and nothing of the write is kept.
+    """
+    parent, other = ParentEntity.objects.create(name='A'), ParentEntity.objects.create(name='B')
+    kept, unlinked, moved = dependent(parent), dependent(parent), dependent(other)
+    DependentEntityReference.objects.create(**{field: unlinked})
+    objs = [unlinked] if way == 'DELETE' else [kept, moved]
+
+    response = write(
+        get_api_client(sample_app),
+        way,
+        parent,
+        'dependent_entities',
+        'entity.dependent_entity',
+        *objs,
+    )
+
+    assert response.status_code == 409, response.text
+    errors = response.json()['errors']
+    assert [(it['code'], it['meta']) for it in errors] == [
+        ('ERR_CONFLICT', {'types': ['entity.dependententityreference']})
+    ]
+    assert set(parent.dependent_entities.all()) == {kept, unlinked}
+    assert list(other.dependent_entities.all()) == [moved]

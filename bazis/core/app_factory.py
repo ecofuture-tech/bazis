@@ -103,6 +103,7 @@ def _initialize_app(app): # noqa: C901
     from django.conf import settings
     from django.core.exceptions import ValidationError as DjangoValidationError
     from django.db import IntegrityError, OperationalError
+    from django.db.models.deletion import ProtectedError, RestrictedError
     from django.utils.translation import get_language, gettext_lazy, to_locale
 
     from fastapi import Request
@@ -482,10 +483,37 @@ def _initialize_app(app): # noqa: C901
         `/data/attributes/<name>`, with the message of Django ("... with this ... already
         exists."); any other (another table, an action, the relationships endpoints, a
         field hidden from the user or filled by the server, an exclusion constraint) a
-        single error without a pointer and without a name of a field. Any other
-        IntegrityError (not-null, check, foreign key) stays a 500: such rules belong in
-        `validate_item` (422).
+        single error without a pointer and without a name of a field. A deletion that
+        the objects referring to the deleted ones with PROTECT or RESTRICT refuse (an
+        object a relationship unlinks and deletes) is 409 `ERR_CONFLICT` too, `meta.types`
+        the resource types of the referring objects. Any other IntegrityError (not-null,
+        check, foreign key) stays a 500: such rules belong in `validate_item` (422).
         """
+        if isinstance(exc, ProtectedError | RestrictedError):
+            if isinstance(exc, ProtectedError):
+                referring = exc.protected_objects
+            else:
+                referring = exc.restricted_objects
+            types = {
+                it.get_resource_label()
+                if hasattr(it, 'get_resource_label')
+                else it._meta.label_lower
+                for it in referring
+            }
+            return exc_encoder(
+                [
+                    SchemaError(
+                        status=HTTP_409_CONFLICT,
+                        code='ERR_CONFLICT',
+                        title=str(gettext_lazy('Conflict')),
+                        detail=str(
+                            gettext_lazy('The objects to delete are referred to by other objects')
+                        ),
+                        meta={'types': sorted(types)},
+                    )
+                ],
+                HTTP_409_CONFLICT,
+            )
         cause = exc.__cause__
         if not isinstance(cause, UniqueViolation | ExclusionViolation):
             raise exc

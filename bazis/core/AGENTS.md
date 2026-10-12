@@ -978,8 +978,10 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   object needs the `delete` access of the default route of its model (see
   `restrict_queryset`), otherwise 403 `ERR_RELATION_ACCESS` and nothing is written; a
   route that does not override `restrict_queryset` allows it, a model without a route
-  refuses it (403: no route tells the access). A create unlinks nothing, so it deletes
-  nothing.
+  refuses it (403: no route tells the access). An object that other objects refer to
+  with `PROTECT` or `RESTRICT` is not deleted: 409 `ERR_CONFLICT` (`meta.types` the types
+  of those objects) and nothing of the request is written. A create unlinks nothing, so
+  it deletes nothing.
 - The hooks see an item that is not validated yet: `validate_item` runs once per item at
   the end of the request, with the writes of the hooks. A hook that needs a valid item
   (before a transit of bazis-statusy, whose validators would answer first, or before a
@@ -1045,6 +1047,11 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   rollback does not undo: a mail, a task, a count of a throttle). Avoid the deadlock
   itself with one order of the locks (`lock_on_write`, see Invariants under concurrent
   requests). Any other `OperationalError` is a 500.
+- A deletion refused by the objects that refer to the deleted ones with `PROTECT` or
+  `RESTRICT` (an object a relationship unlinks and deletes, a deletion in a hook) answers
+  409 `ERR_CONFLICT` "The objects to delete are referred to by other objects" with
+  `meta.types` (their resource types) and rolls the request back (bazis 2.16, a 500
+  before). `DELETE` of an item keeps its own errors of `PROTECT` (`MODEL_PROTECTED_RELATION`).
 - The pointers (`source`) of the errors of the core, by code. Create and update point into
   the request document; an included item is `/included/<i>` instead of `/data`, `<i>` its
   index in the `included` of the document. The relationships endpoints point into their

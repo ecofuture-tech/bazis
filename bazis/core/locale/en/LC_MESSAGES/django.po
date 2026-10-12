@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-12 12:10+0000\n"
+"POT-Creation-Date: 2026-10-12 20:07+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,21 +16,25 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: app_factory.py:415 routes_abstract/jsonapi/route_base.py:908
-#: routes_abstract/jsonapi/route_base.py:922
-#: routes_abstract/jsonapi/route_base.py:969
+#: app_factory.py:416 routes_abstract/jsonapi/route_base.py:916
+#: routes_abstract/jsonapi/route_base.py:930
+#: routes_abstract/jsonapi/route_base.py:977
 msgid "Item not found"
 msgstr ""
 
-#: app_factory.py:500
-msgid "The change conflicts with the current data"
-msgstr ""
-
-#: app_factory.py:514 app_factory.py:576
+#: app_factory.py:508 app_factory.py:542 app_factory.py:604
 msgid "Conflict"
 msgstr ""
 
-#: app_factory.py:578
+#: app_factory.py:510
+msgid "The objects to delete are referred to by other objects"
+msgstr ""
+
+#: app_factory.py:528
+msgid "The change conflicts with the current data"
+msgstr ""
+
+#: app_factory.py:606
 msgid "The request conflicted with a parallel one: retry it"
 msgstr ""
 
@@ -190,73 +194,73 @@ msgid ""
 "field should not be used directly, instead, you should use :py:attr:`~number`"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:181
+#: routes_abstract/jsonapi/route_base.py:194
 #, python-brace-format
 msgid "The related object of {name} does not exist"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:528
+#: routes_abstract/jsonapi/route_base.py:536
 #, python-brace-format
 msgid "The relationships cannot be included: {names}"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:533
+#: routes_abstract/jsonapi/route_base.py:541
 msgid "Invalid include"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1050
+#: routes_abstract/jsonapi/route_base.py:1058
 #, python-brace-format
 msgid "The relationship {name} cannot be changed"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1054
+#: routes_abstract/jsonapi/route_base.py:1062
 msgid "Relationship is read-only"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1237
+#: routes_abstract/jsonapi/route_base.py:1267
 #, python-brace-format
 msgid "The related object of {name} cannot be linked"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1239
+#: routes_abstract/jsonapi/route_base.py:1269
 msgid "Link not allowed"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1244
+#: routes_abstract/jsonapi/route_base.py:1274
 #, python-brace-format
 msgid "No access to the related object of {name}"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1246
+#: routes_abstract/jsonapi/route_base.py:1276
 msgid "Access denied"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1401
+#: routes_abstract/jsonapi/route_base.py:1428
 msgid "Data type is invalid"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1487
+#: routes_abstract/jsonapi/route_base.py:1514
 #, python-brace-format
 msgid "The object does not exist. Type: {type}. ID: {id}"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1562
+#: routes_abstract/jsonapi/route_base.py:1589
 #, python-brace-format
 msgid "{model} is not JSON:API compliant"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1566
+#: routes_abstract/jsonapi/route_base.py:1593
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has related objects in non-JSON:API models. "
 "(count: {count})"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1585
+#: routes_abstract/jsonapi/route_base.py:1612
 msgid "Error deleting protected model"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1588
+#: routes_abstract/jsonapi/route_base.py:1615
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has protected related objects of type "
