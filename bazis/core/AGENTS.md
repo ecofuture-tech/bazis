@@ -37,7 +37,7 @@ cover.
 | Invariants of the items | a rule that every write of an item must keep: `validate_item` and `ItemChanges`, `defer_validate_item`, limits and unique values under concurrent requests (`lock_on_write`, `set_item(with_lock=True)`, tests with `parallel`), no overlapping intervals of a participant |
 | Calculated fields | a field the query of a route computes (`calc_property`, `FieldAnnotate`, `FieldDynamic`, a subquery, the user of the request), or one computed from the item itself |
 | Routes | you write a route set: its schemas (`fields`, `SchemaFields`), `restrict_queryset`, the default route, the routers, a second route set of a model, read-only routes and reports |
-| Custom routes and actions | an endpoint that is no CRUD: `@http_get`/`@http_post`, the models of its body and response, `public` and `access_action`, `route_declare`, the errors in the OpenAPI, the rate limits (`throttle`) |
+| Custom routes and actions | an endpoint that is no CRUD: `@http_get`/`@http_post`, the models of its body and response, `public` and `access_action`, `route_declare`, the errors in the OpenAPI, the rate limits (`throttle`), the code around every route (`BAZIS_MIDDLEWARES`, `<action>__before`/`__after`) |
 | Writes and errors | the hooks of the create, the update and the relationships endpoints and their order, the errors the API answers (`ValidationError`, `JsonApiBazisException`, 409 `ERR_CONFLICT`) and their pointers |
 | API conventions | a client builds a request: `filter` and its lookups, `sort`, `search`, `include`, the pages, sparse fieldsets, the points and the distances (`near`, `distance`) |
 | E-mail | the product sends mail: the dynamic SMTP settings, the sender, the console backend in development, mail from a task |
@@ -926,6 +926,27 @@ class CertificateRouteSet(PermitRouteBase):
 - A limit on a business count (attempts per assignment, messages per day of a user) is an
   invariant of the data, not a rate: keep it in `validate_item` (see Invariants of the
   items).
+
+### Code around every route: `BAZIS_MIDDLEWARES`, `<action>__before`/`__after`
+
+- `BS_BAZIS_MIDDLEWARES` (import paths, for every route set) and the attribute
+  `bazis_middlewares` of a route set (for its routes, after those of the setting) name
+  generator functions `(route, *args, **kwargs)` run around a route: the code before the first `yield` runs before the route, the `yield`
+  receives the result of the route (a `Response`; None when the route raised), and a second
+  value yielded replaces it:
+
+  ```python
+  def timing(route, *args, **kwargs):
+      start = time.monotonic()
+      response = yield
+      if response is not None:
+          response.headers['x-elapsed'] = f'{time.monotonic() - start:.3f}'
+  ```
+
+- A method `<action>__before(self, *args, **kwargs)` / `<action>__after(...)` of a route set
+  (`action_retrieve__before`) runs before / after that action, with its arguments, inside
+  its transaction and after `route_check`; an exception refuses the request. A check of
+  every action of a package belongs in `route_check`, a write in the hooks of the writes.
 
 ## Writes and errors
 
