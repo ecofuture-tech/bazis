@@ -252,6 +252,16 @@ def contrib_conf_modules():
     }
 
 
+def test_conf_modules_are_imported_once():
+    # the discovery takes the modules named conf (not constance_conf) from sys.modules
+    # instead of executing them again: one Settings class, one LazyConfig of Constance
+    modules = list(configure.conf_modules())
+    assert modules[0] is sys.modules['bazis.core.conf']
+    assert all(module is sys.modules[module.__name__] for module in modules)
+    assert 'bazis.core.constance_conf' not in {module.__name__ for module in modules}
+    assert sys.modules['bazis.core.constance_conf'] is configure.constance_conf
+
+
 def test_conf_of_all_installed_contrib_packages(fake_contrib):
     # a package declares only settings of its own namespace, so the settings of all
     # installed packages are loaded, also of the ones the project does not use

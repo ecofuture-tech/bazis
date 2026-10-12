@@ -13,11 +13,9 @@
 # limitations under the License.
 
 import os
-import pkgutil
 import sys
 from collections.abc import Callable, Generator
 from importlib import import_module
-from importlib.util import module_from_spec
 from pkgutil import iter_modules
 
 
@@ -130,22 +128,22 @@ def walk_packages_excluding(
 
 def get_modules_from_pkg(pkg, module_name: str, first_level_only: bool = False):
     """
-    Discovers and yields modules matching name suffix pattern.
-    Used for convention-based module discovery (e.g., all '*_views.py' files).
+    Discovers and yields the modules of a package named `module_name`, imported once
+    (a module imported before is the one of sys.modules).
 
     Args:
         pkg: Package or module to search
-        module_name: Module name suffix to match (e.g., 'views', 'models')
+        module_name: Module name to match (e.g., 'conf', 'models')
         first_level_only: If True, only search immediate children (no recursion)
 
     Yields:
-        Loaded module objects matching pattern
+        Loaded module objects matching the name
 
     Exclusions: Automatically excludes 'schemas' and 'jsonapi' packages
 
     Examples:
-        # Find all views modules
-        for mod in get_modules_from_pkg(myapp, 'views'):
+        # Find all conf modules
+        for mod in get_modules_from_pkg(myapp, 'conf'):
             print(mod)
 
         # Find only top-level models
@@ -156,43 +154,17 @@ def get_modules_from_pkg(pkg, module_name: str, first_level_only: bool = False):
     """
     # Handle single module (not package)
     if not hasattr(pkg, '__path__'):
-        if pkg.__name__.endswith(module_name):
+        if pkg.__name__.rsplit('.', 1)[-1] == module_name:
             yield pkg
         return
 
     # Walk package tree
-    for finder, name, _is_pkg in walk_packages_excluding(
+    for _finder, name, _is_pkg in walk_packages_excluding(
         pkg.__path__, prefix=pkg.__name__ + '.', exclude={'schemas', 'jsonapi'}
     ):
         # Skip nested modules if first_level_only
         if first_level_only and '.' in name[len(pkg.__name__) + 1 :]:
             continue
 
-        if name.endswith(module_name):
-            # Dynamically load module
-            spec = finder.find_spec(name)
-            module = module_from_spec(spec)
-            sys.modules[name] = module
-            spec.loader.exec_module(module)
-            yield module
-
-
-def pkg_modules(pkg):
-    """
-    Yields all immediate child modules from package with package status.
-    Non-recursive version of module discovery.
-
-    Args:
-        pkg: Package object to enumerate
-
-    Yields:
-        Tuple of (module, is_pkg) for each child
-
-    Tags: RAG, EXPORT
-    """
-    for finder, name, is_pkg in pkgutil.iter_modules(pkg.__path__, prefix=pkg.__name__ + '.'):
-        spec = finder.find_spec(name)
-        module = module_from_spec(spec)
-        sys.modules[name] = module
-        spec.loader.exec_module(module)
-        yield module, is_pkg
+        if name.rsplit('.', 1)[-1] == module_name:
+            yield import_module(name)

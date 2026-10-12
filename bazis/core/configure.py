@@ -230,8 +230,7 @@ def conf_modules():
                   configuration discovery, settings assembly
     """
     # Core Bazis configuration
-    for conf in get_modules_from_pkg(import_module('bazis.core'), 'conf', first_level_only=True):
-        yield conf
+    yield import_module('bazis.core.conf')
 
     # Bazis contrib apps configuration
     BAZIS_CONFIG_APPS = listed_bazis_apps()
