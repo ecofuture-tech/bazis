@@ -514,7 +514,7 @@ def connect_m2m(models: Iterable):
                 _validated_set_manager(getattr(m2m_field.related_model, accessor))
 
 
-def reverse_items_link(rel, action: str, objs: Iterable, *, clear: bool = False):
+def reverse_items_link(rel, action: str, objs: Iterable):
     """
     Changes a reverse foreign key (`rel`, the manager of the reverse relation) item by
     item, as `add()`, `remove()` or `set()` (`action`) with `bulk=False`, but each linked
@@ -532,11 +532,8 @@ def reverse_items_link(rel, action: str, objs: Iterable, *, clear: bool = False)
         unlink, link = objs, []
     else:
         current = list(rel.all())
-        if clear:
-            unlink, link = current, objs
-        else:
-            unlink = [obj for obj in current if obj not in objs]
-            link = [obj for obj in objs if obj not in current]
+        unlink = [obj for obj in current if obj not in objs]
+        link = [obj for obj in objs if obj not in current]
     if field.null:
         for obj in unlink:
             if getattr(obj, field.attname) == target:
