@@ -931,16 +931,18 @@ class CertificateRouteSet(PermitRouteBase):
 
 - `BS_BAZIS_MIDDLEWARES` (import paths, for every route set) and the attribute
   `bazis_middlewares` of a route set (for its routes, after those of the setting) name
-  generator functions `(route, *args, **kwargs)` run around a route: the code before the first `yield` runs before the route, the `yield`
-  receives the result of the route (a `Response`; None when the route raised), and a second
-  value yielded replaces it:
+  generator functions `(route, *args, **kwargs)` run around a route: the code before the
+  first `yield` runs before the route, the `yield` receives what the route returns (the
+  `Response` of an action of `JsonapiRouteBase` with a JSON:API response, else the value
+  of the method of the action, e.g. its response model, which FastAPI serializes after the
+  middlewares; None when the route raised), and a second value yielded replaces it:
 
   ```python
   def timing(route, *args, **kwargs):
       start = time.monotonic()
-      response = yield
-      if response is not None:
-          response.headers['x-elapsed'] = f'{time.monotonic() - start:.3f}'
+      result = yield
+      if isinstance(result, Response):  # starlette.responses
+          result.headers['x-elapsed'] = f'{time.monotonic() - start:.3f}'
   ```
 
 - A method `<action>__before(self, *args, **kwargs)` / `<action>__after(...)` of a route set

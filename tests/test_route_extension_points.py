@@ -41,6 +41,12 @@ def recording(route, *args, **kwargs):
     result.headers['x-recorded'] = 'yes'
 
 
+def result_type(route, *args, **kwargs):
+    """A middleware that records the type of the result of the route."""
+    result = yield
+    CALLS.append(type(result).__name__)
+
+
 def replacing(route, *args, **kwargs):
     """A middleware whose second value replaces the result."""
     yield
@@ -109,3 +115,20 @@ def test_before_hook_refuses_the_request(sample_app, monkeypatch):
     response = get_api_client(sample_app).get(f'{MEMOS}{memo.pk}/')
 
     assert response.status_code == 409, response.text
+
+
+@pytest.mark.django_db(transaction=True)
+def test_middleware_gets_the_value_of_a_custom_action(sample_app, monkeypatch):
+    """A JSON:API action gives a Response, a custom action the value of its method."""
+    CALLS.clear()
+    monkeypatch.setattr(
+        settings, 'BAZIS_MIDDLEWARES', ['tests.test_route_extension_points.result_type']
+    )
+    memo = Memo.objects.create(title='Memo')
+    client = get_api_client(sample_app)
+
+    assert client.get(f'{MEMOS}{memo.pk}/').status_code == 200
+    response = client.post(f'{MEMOS}{memo.pk}/subscribe/', json_data={'email': 'a@b.c'})
+    assert response.status_code == 200, response.text
+
+    assert CALLS == ['JsonApiResponse', 'SubscribeResponse']
