@@ -162,6 +162,19 @@ def relation_by_pk(field_info) -> bool:
     return target is None or target.primary_key
 
 
+def unlinked_deleted(field_info) -> bool:
+    """
+    Whether the objects a relationship unlinks are deleted (`relation_write`): those of a
+    reverse foreign key that cannot be null; a many-to-many relation only unlinks.
+    """
+    return (
+        field_info.reverse
+        and field_info.to_many
+        and not field_info.is_m2m
+        and not field_info.related_field.null
+    )
+
+
 def relation_missing(
     f_name: str, missing: set, positions: dict, is_list: bool, *, relationship_body: bool
 ) -> JsonApiBazisException:
@@ -1152,10 +1165,13 @@ class JsonapiRouteBase(InitialRouteBase):
 
             if field_info.reverse:
                 # the linked objects and the unlinked ones change: they must be changeable,
-                # only the linked ones linkable; an unlinked object of a foreign key that
-                # cannot be null is deleted (relation_write): it must be deletable
-                deleted = field_info.to_many and not field_info.related_field.null
-                unlink_action = CrudAccessAction.DELETE if deleted else CrudAccessAction.CHANGE
+                # only the linked ones linkable; an unlinked object of a reverse foreign key
+                # that cannot be null is deleted (relation_write): it must be deletable
+                unlink_action = (
+                    CrudAccessAction.DELETE
+                    if unlinked_deleted(field_info)
+                    else CrudAccessAction.CHANGE
+                )
                 targets = (
                     (ids, True, CrudAccessAction.CHANGE),
                     (unlinked, False, unlink_action),

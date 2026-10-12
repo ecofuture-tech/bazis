@@ -24,13 +24,18 @@ an update deleted it, `PATCH` of the relationships endpoints left it, `DELETE` f
 
 import pytest
 from bazis_test_utils.utils import get_api_client
-from entity.models import DependentEntity, DependentEntityNull, ParentEntity
-from entity.routes import DependentEntityNullRouteSet, DependentEntityRouteSet
+from entity.models import ChildEntity, DependentEntity, DependentEntityNull, ParentEntity
+from entity.routes import (
+    DependentEntityNullRouteSet,
+    DependentEntityRouteSet,
+    ParentEntityRouteSet,
+)
 
 from bazis.core.schemas.enums import CrudAccessAction
 
 
 PARENTS = '/api/v1/entity/parent_entity/'
+CHILDREN = '/api/v1/entity/child_entity/'
 
 
 def identifiers(type_, *objs) -> dict:
@@ -187,3 +192,52 @@ def test_unlinking_a_nullable_foreign_key_needs_no_delete_access(sample_app, no_
     assert response.status_code == 204, response.text
     unlinked.refresh_from_db()
     assert unlinked.parent_entity is None
+
+
+@pytest.fixture
+def no_parent_delete_access(monkeypatch):
+    """The parents can be changed, not deleted."""
+
+    def restrict_queryset(cls, qs, access_action, user=None, **kwargs):
+        return qs.none() if access_action == CrudAccessAction.DELETE else qs
+
+    monkeypatch.setattr(
+        ParentEntityRouteSet, 'restrict_queryset', classmethod(restrict_queryset), raising=False
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('way', ['update', 'PATCH', 'DELETE'])
+def test_unlinking_a_reverse_many_to_many_needs_no_delete_access(
+    sample_app, no_parent_delete_access, way
+):
+    """A many-to-many relation only unlinks: the change access is enough."""
+    child = ChildEntity.objects.create(child_name='Child')
+    kept, unlinked = ParentEntity.objects.create(name='A'), ParentEntity.objects.create(name='B')
+    child.parent_entities.set([kept, unlinked])
+    client = get_api_client(sample_app)
+    value = identifiers('entity.parent_entity', unlinked if way == 'DELETE' else kept)
+
+    if way == 'update':
+        response = client.patch(
+            f'{CHILDREN}{child.id}/',
+            json_data={
+                'data': {
+                    'id': str(child.id),
+                    'type': 'entity.child_entity',
+                    'bs:action': 'change',
+                    'relationships': {'parent_entities': value},
+                }
+            },
+        )
+    else:
+        response = client.client.request(
+            way,
+            f'{CHILDREN}{child.id}/relationships/parent_entities',
+            headers=client.headers,
+            json=value,
+        )
+
+    assert response.status_code < 300, response.text
+    assert list(child.parent_entities.all()) == [kept]
+    assert ParentEntity.objects.filter(pk=unlinked.pk).exists()
