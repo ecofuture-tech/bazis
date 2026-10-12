@@ -14,7 +14,6 @@
 
 from enum import Enum
 from typing import Literal
-from uuid import UUID
 
 from django.db import models, transaction
 
@@ -23,6 +22,7 @@ from fastapi import HTTPException
 from bazis.core.item_validation import reverse_items_link, saves_items
 from bazis.core.models_abstract import JsonApiMixin
 from bazis.core.routes_abstract.jsonapi.schemas import ResourceIdentifier
+from bazis.core.utils.orm import relation_targets
 
 
 class RelationType(Enum):
@@ -61,43 +61,23 @@ class RelationshipsService:
         return item, rel_field, manager
 
     @staticmethod
-    def _parse_id(raw_id: str, model: type[models.Model]) -> UUID | int | str:
-        pk_field = model._meta.pk
-        try:
-            if isinstance(pk_field, models.UUIDField):
-                return UUID(str(raw_id))
-            elif isinstance(pk_field, models.IntegerField):
-                return int(raw_id)
-            return str(raw_id)
-        except (ValueError, TypeError):
-            raise HTTPException(
-                400, f"Invalid id format '{raw_id}' for model '{model.__name__}'"
-            ) from None
-
-    @staticmethod
     def parse_ids(rel_field, relationships_data, to_many: bool) -> list:
+        """
+        The primary keys of the identifiers of the relationship value (validated by the
+        update schema of the route: a list for a to-many relationship); an object that
+        does not exist is 400.
+        """
         data = relationships_data.data
-        if to_many:
-            if not isinstance(data, list):
-                raise HTTPException(400, f"To-Many field '{rel_field.name}' expects an array of objects")
-        else:
-            if not isinstance(data, (ResourceIdentifier, dict)):
-                raise HTTPException(409, f"To-One field '{rel_field.name}' accepts a single object")
-
+        rows = data if to_many else [data]
         related_model = rel_field.related_model
-        ids = []
-
-        if to_many:
-            for row in data:
-                obj_id = row.id if isinstance(row, ResourceIdentifier) else row['id']
-                ids.append(RelationshipsService._parse_id(obj_id, related_model))
-        else:
-            obj_id = data.id if isinstance(data, ResourceIdentifier) else data['id']
-            ids.append(RelationshipsService._parse_id(obj_id, related_model))
-
-        existing_ids = set(related_model.objects.filter(id__in=ids).values_list('id', flat=True))
-        missing_ids = set(ids) - existing_ids
-        if missing_ids:
+        ids = {
+            related_model._meta.pk.to_python(
+                row.id if isinstance(row, ResourceIdentifier) else row['id']
+            )
+            for row in rows
+        }
+        existing_ids = set(relation_targets(related_model, ids).values_list('pk', flat=True))
+        if missing_ids := ids - existing_ids:
             raise HTTPException(
                 400,
                 f"Objects of model '{related_model.__name__}' with id {list(missing_ids)} not found",
@@ -107,8 +87,8 @@ class RelationshipsService:
     @staticmethod
     def parse_targets(rel_field, relationships_data, to_many: bool):
         ids = RelationshipsService.parse_ids(rel_field, relationships_data, to_many)
-        model = rel_field.related_model
-        return model.objects.filter(pk__in=ids) if to_many else model.objects.get(pk=ids[0])
+        targets = relation_targets(rel_field.related_model, ids)
+        return targets if to_many else targets.get()
 
     @staticmethod
     @transaction.atomic

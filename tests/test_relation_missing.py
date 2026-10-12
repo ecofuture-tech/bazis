@@ -25,8 +25,11 @@ import uuid
 from types import SimpleNamespace
 from urllib.parse import urlencode
 
+from django.db import models
+
 import pytest
 from bazis_test_utils.utils import get_api_client
+from catalog.models import Attachment, Memo
 from entity.models import ChildEntity, DependentEntity, ParentEntity
 from visibility.models import Folder, Label, Note
 
@@ -34,6 +37,7 @@ from tests.test_relation_visibility import NOTES, note_payload, rel, relationshi
 
 
 PARENTS = '/api/v1/entity/parent_entity/'
+MEMOS = '/api/v1/catalog/memo/'
 MISSING = str(uuid.uuid4())
 
 
@@ -215,3 +219,46 @@ def test_the_lookup_ignores_a_filtering_default_manager(sample_app, monkeypatch)
     )
     assert response.status_code == 201, response.text
     assert Note.objects.get().folder_id == folder.id
+
+
+class HiddenManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().none()
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('way', ['update', 'PATCH', 'POST'])
+def test_every_write_looks_up_with_the_base_manager(sample_app, way, monkeypatch):
+    """
+    The update and the relationships endpoints look the objects up as the check does: an
+    object a filtering default manager hides was left out of the value of an update and
+    refused (403) by the relationships endpoints.
+    """
+    memo = Memo.objects.create(title='Memo')
+    attachment = Attachment.objects.create(name='Attachment')
+    # a default manager that shows no attachment (a soft delete)
+    hidden = HiddenManager()
+    hidden.model = Attachment
+    monkeypatch.setattr(Attachment, 'objects', hidden)
+    client = get_api_client(sample_app)
+    value = {'data': [{'id': str(attachment.id), 'type': 'catalog.attachment'}]}
+
+    if way == 'update':
+        response = client.patch(
+            f'{MEMOS}{memo.id}/',
+            json_data={
+                'data': {
+                    'id': str(memo.id),
+                    'type': 'catalog.memo',
+                    'bs:action': 'change',
+                    'relationships': {'extras': value},
+                }
+            },
+        )
+    else:
+        response = client.client.request(
+            way, f'{MEMOS}{memo.id}/relationships/extras', headers=client.headers, json=value
+        )
+
+    assert response.status_code < 300, response.text
+    assert list(memo.extras.all()) == [attachment]

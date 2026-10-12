@@ -21,7 +21,7 @@ import json
 import logging
 import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from copy import deepcopy
 from functools import wraps
 from hashlib import md5
@@ -149,6 +149,17 @@ def translated_column(name: str, field: TranslatedField) -> str:
         if code in field.languages:
             return to_attribute(name, code)
     return to_attribute(name, field.languages[0])
+
+
+def relation_targets(model: type[Model], ids: Iterable) -> QuerySet:
+    """
+    The objects of `model` with the primary keys `ids`, the targets of a relationship value:
+    looked up with the base manager, as a foreign key references them (a default manager
+    that filters its objects, a soft delete, does not hide them).
+
+    Tags: RAG, INTERNAL
+    """
+    return model._base_manager.filter(pk__in=ids)
 
 
 def set_related_with_delete(rel, objs, *, bulk=True, clear=False):

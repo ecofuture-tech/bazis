@@ -72,7 +72,7 @@ from bazis.core.services.searching import ServiceSearching
 from bazis.core.services.sorting import SortingSearching
 from bazis.core.services.sparse_fieldsets import ServiceSparseFieldsets
 from bazis.core.utils.functools import get_attr
-from bazis.core.utils.orm import calc_cached_property, unique_constraint_error
+from bazis.core.utils.orm import calc_cached_property, relation_targets, unique_constraint_error
 from bazis.core.utils.query_complex import QueryScope
 
 from ...services.relationships import RelationshipsService
@@ -1146,8 +1146,7 @@ class JsonapiRouteBase(InitialRouteBase):
                 # as the foreign key: not a filtering default manager); a removal links none
                 ids = set() if action == 'remove' else set(positions)
                 if missing := ids - {
-                    str(pk)
-                    for pk in rel_model._base_manager.filter(pk__in=ids).values_list('pk', flat=True)
+                    str(pk) for pk in relation_targets(rel_model, ids).values_list('pk', flat=True)
                 }:
                     raise relation_missing(
                         f_name, missing, positions, is_list, relationship_body=relationship_body
@@ -1268,7 +1267,7 @@ class JsonapiRouteBase(InitialRouteBase):
         positions = {}
         for index, it in enumerate(rel_data):
             if it and it.get('id') is not None:
-                pk = str(self.relationships_service._parse_id(it['id'], rel_model))
+                pk = str(rel_model._meta.pk.to_python(it['id']))
                 positions.setdefault(pk, index)
         return positions
 
@@ -1285,10 +1284,7 @@ class JsonapiRouteBase(InitialRouteBase):
 
         if field_info.to_many:
             # normalized as the primary keys of the database (e.g. a UUID in upper case)
-            ids = {
-                str(self.relationships_service._parse_id(it['id'], rel_model))
-                for it in (value.get('data') or [])
-            }
+            ids = {str(rel_model._meta.pk.to_python(it['id'])) for it in (value.get('data') or [])}
             if action == 'set':
                 current = getattr(item, related_field_name).values_list('pk', flat=True)
                 ids ^= {str(pk) for pk in current}

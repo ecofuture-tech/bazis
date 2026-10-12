@@ -33,7 +33,7 @@ from bazis.core.item_validation import reverse_items_link, saves_items
 from bazis.core.models_abstract import InitialBase, JsonApiMixin
 from bazis.core.utils.functools import get_attr
 from bazis.core.utils.geo import geojson_geometry
-from bazis.core.utils.orm import set_related_with_delete
+from bazis.core.utils.orm import relation_targets, set_related_with_delete
 from bazis.core.utils.query_complex import QueryToOrm
 
 from .enums import CrudAccessAction
@@ -93,18 +93,16 @@ class JsonApiDataSchema(BaseModel):
 
     def check_restrict_m2m(self, f_name: str, f_values, f_model, rel_obj=None) -> QuerySet:
         if info := type(self.relationships).model_fields.get(f_name):
-            rel_instances = f_model.objects.all()
+            ids = [it['id'] for it in f_values['data']]
             if restricts := info.json_schema_extra.get('restricts'):
-                restricts = '|'.join(restricts)
-                restrict_q = QueryToOrm(restricts, f_model).q
-
-                query = Q(pk__in=[it['id'] for it in f_values['data']]) & restrict_q
+                restrict_q = QueryToOrm('|'.join(restricts), f_model).q
+                query = Q(pk__in=ids) & restrict_q
                 if rel_obj:
+                    # the linked objects that do not match the restrictions stay linked
                     query |= Q(pk__in=rel_obj.values_list('pk', flat=True)) & ~restrict_q
-
-                return rel_instances.filter(query)
-            else:
-                return rel_instances.filter(id__in=[it['id'] for it in f_values['data']]).all()
+                # the base manager, as relation_targets
+                return f_model._base_manager.filter(query)
+            return relation_targets(f_model, ids)
 
     def check_restrict_rel(self, f_name: str, f_pk, f_model, instance=None) -> bool:
         if info := type(self.relationships).model_fields.get(f_name):
@@ -114,11 +112,11 @@ class JsonApiDataSchema(BaseModel):
                 # if a value was previously set in the relation and the user has no access to it,
                 # then the action is not allowed
                 if instance and (rel_val := getattr(instance, f_name, None)):
-                    if not f_model.objects.filter(restrict_q & Q(pk=rel_val.pk)).exists():
+                    if not relation_targets(f_model, [rel_val.pk]).filter(restrict_q).exists():
                         return False
 
                 if f_pk:
-                    return f_model.objects.filter(restrict_q & Q(pk=f_pk)).exists()
+                    return relation_targets(f_model, [f_pk]).filter(restrict_q).exists()
         return True
 
     def update_for(self, item: InitialBase) -> Any:
