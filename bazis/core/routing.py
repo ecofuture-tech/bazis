@@ -19,11 +19,10 @@ from typing import Any
 
 from fastapi import APIRouter, params
 from fastapi.datastructures import Default, DefaultPlaceholder
-from fastapi.routing import APIRoute, APIWebSocketRoute
-from fastapi.types import DecoratedCallable, IncEx
-from fastapi.utils import generate_unique_id, get_value_or_default
+from fastapi.routing import APIRoute
+from fastapi.types import IncEx
+from fastapi.utils import generate_unique_id
 
-from starlette import routing as starlette_routing
 from starlette.responses import JSONResponse, Response
 from starlette.routing import BaseRoute
 
@@ -184,8 +183,9 @@ class BazisRouter(APIRouter):
 
     def register(self, prefix, arg=None, **kwargs):
         """
-        Registers a new route or router with the given prefix and additional keyword
-        arguments. Supports importing modules, including routers, and resetting routes.
+        Includes a router with the given prefix and keyword arguments: the module of an app
+        router by its dotted path, or a router (the router of a route set takes its own
+        URL prefix).
         """
         if arg is None:
             arg = prefix
@@ -203,8 +203,6 @@ class BazisRouter(APIRouter):
             if hasattr(arg, 'get_url_prefix'):
                 prefix = arg.get_url_prefix()
             self.include_router(arg, prefix=prefix, **kwargs)
-        elif hasattr(arg, 'route'):
-            self.reset_route(prefix, arg.route)
 
     def add_api_route(self, path: str, endpoint: Callable[..., Any], **kwargs):
         """
@@ -214,121 +212,3 @@ class BazisRouter(APIRouter):
         super().add_api_route(path, endpoint, **kwargs)
         # save info about the installed route for this endpoint
         endpoint.route = self.routes[-1]
-
-    def reset_route(self, path: str, route):
-        """
-        Resets an existing route with the specified path and route configurations,
-        supporting various route types including APIRoute, starlette.routing.Route,
-        APIWebSocketRoute, and starlette.routing.WebSocketRoute.
-        """
-        if isinstance(route, APIRoute):
-            combined_responses = {**route.responses}
-            use_response_class = get_value_or_default(
-                route.response_class,
-                self.default_response_class,
-            )
-            current_generate_unique_id = get_value_or_default(
-                route.generate_unique_id_function,
-                self.generate_unique_id_function,
-            )
-            self.add_api_route(
-                path or route.path,
-                route.endpoint,
-                response_model=route.response_model,
-                status_code=route.status_code,
-                tags=route.tags.copy(),
-                dependencies=route.dependencies.copy(),
-                summary=route.summary,
-                description=route.description,
-                response_description=route.response_description,
-                responses=combined_responses,
-                deprecated=route.deprecated or self.deprecated,
-                methods=route.methods,
-                operation_id=route.operation_id,
-                response_model_include=route.response_model_include,
-                response_model_exclude=route.response_model_exclude,
-                response_model_by_alias=route.response_model_by_alias,
-                response_model_exclude_unset=route.response_model_exclude_unset,
-                response_model_exclude_defaults=route.response_model_exclude_defaults,
-                response_model_exclude_none=route.response_model_exclude_none,
-                include_in_schema=route.include_in_schema and self.include_in_schema,
-                response_class=use_response_class,
-                name=route.name,
-                route_class_override=type(route),
-                callbacks=route.callbacks.copy(),
-                openapi_extra=route.openapi_extra,
-                generate_unique_id_function=current_generate_unique_id,
-                strict_content_type=route.strict_content_type,
-            )
-        elif isinstance(route, starlette_routing.Route):
-            methods = list(route.methods or [])  # type: ignore # in Starlette
-            self.add_route(
-                path or route.path,
-                route.endpoint,
-                methods=methods,
-                include_in_schema=route.include_in_schema,
-                name=route.name,
-            )
-        elif isinstance(route, APIWebSocketRoute):
-            self.add_api_websocket_route(path or route.path, route.endpoint, name=route.name)
-        elif isinstance(route, starlette_routing.WebSocketRoute):
-            self.add_websocket_route(path or route.path, route.endpoint, name=route.name)
-
-    def internal(
-        self,
-        path: str,
-        *,
-        response_model: type[Any] | None = None,
-        status_code: int | None = None,
-        tags: list[str | Enum] | None = None,
-        dependencies: Sequence[params.Depends] | None = None,
-        summary: str | None = None,
-        description: str | None = None,
-        response_description: str = 'Successful Response',
-        responses: dict[int | str, dict[str, Any]] | None = None,
-        deprecated: bool | None = None,
-        operation_id: str | None = None,
-        response_model_include: IncEx | None = None,
-        response_model_exclude: IncEx | None = None,
-        response_model_by_alias: bool = True,
-        response_model_exclude_unset: bool = False,
-        response_model_exclude_defaults: bool = False,
-        response_model_exclude_none: bool = False,
-        include_in_schema: bool = True,
-        response_class: type[Response] = Default(JSONResponse),
-        name: str | None = None,
-        callbacks: list[BaseRoute] | None = None,
-        openapi_extra: dict[str, Any] | None = None,
-        generate_unique_id_function: Callable[[APIRoute], str] = Default(generate_unique_id),
-    ) -> Callable[[DecoratedCallable], DecoratedCallable]:
-        """
-        Decorator method for defining internal routes with the specified path and
-        additional configurations, including response model, status code, tags,
-        dependencies, and more.
-        """
-        return self.api_route(
-            path=path,
-            response_model=response_model,
-            status_code=status_code,
-            tags=tags,
-            dependencies=dependencies,
-            summary=summary,
-            description=description,
-            response_description=response_description,
-            responses=responses,
-            deprecated=deprecated,
-            methods=['INTERNAL'],
-            operation_id=operation_id,
-            response_model_include=response_model_include,
-            response_model_exclude=response_model_exclude,
-            response_model_by_alias=response_model_by_alias,
-            response_model_exclude_unset=response_model_exclude_unset,
-            response_model_exclude_defaults=response_model_exclude_defaults,
-            response_model_exclude_none=response_model_exclude_none,
-            include_in_schema=include_in_schema,
-            response_class=response_class,
-            name=name,
-            callbacks=callbacks,
-            openapi_extra=openapi_extra,
-            generate_unique_id_function=generate_unique_id_function,
-        )
