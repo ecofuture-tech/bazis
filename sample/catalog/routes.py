@@ -131,3 +131,11 @@ class BusyMemoRouteSet(JsonapiRouteBase):
 
     def get_queryset(self):
         return super().get_queryset().filter(cards__isnull=False).distinct()
+
+
+class UploadRouteSet(JsonapiRouteBase):
+    model = apps.get_model('catalog.Upload')
+
+
+class FormRouteSet(JsonapiRouteBase):
+    model = apps.get_model('catalog.Form')

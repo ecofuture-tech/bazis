@@ -190,3 +190,18 @@ class BusyMemo(Memo):
 
     class Meta:
         proxy = True
+
+
+class Upload(JsonApiMixin):
+    """A file of a form: its route set uploads and shows a file, it has no list."""
+
+    name = models.CharField('Name', max_length=255)
+
+
+class Form(JsonApiMixin):
+    """A form with an uploaded file: a relation to a model whose route set has no list."""
+
+    title = models.CharField('Title', max_length=255)
+    upload = models.ForeignKey(
+        Upload, null=True, blank=True, on_delete=models.SET_NULL, related_name='+'
+    )
