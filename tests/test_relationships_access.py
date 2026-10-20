@@ -134,3 +134,52 @@ def test_read_only_relationship_is_rejected(sample_app, to_many):
     assert response.status_code == 204
     note.refresh_from_db()
     assert (list(note.tags.all()) == [other_tag]) if to_many else (note.folder == other_folder)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('method', ['POST', 'DELETE'])
+def test_empty_relationships_of_missing_item(sample_app, method):
+    client = get_api_client(sample_app)
+    response = client.client.request(
+        method,
+        '/api/v1/entity/child_entity/9b657232-4178-4d7f-8b0c-e8ab16f2b309/relationships/parent_entities',
+        headers=client.headers,
+        json={'data': []},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('method', ['POST', 'DELETE'])
+def test_empty_relationships_check_the_access(sample_app, method):
+    from visibility.models import Folder, Note
+
+    note = Note.objects.create(name='note', folder=Folder.objects.create(name='a'))
+    client = get_api_client(sample_app)
+    response = client.client.request(
+        method,
+        f'/api/v1/visibility/note_frozen/{note.id}/relationships/tags',
+        headers=client.headers,
+        json={'data': []},
+    )
+    assert response.status_code == 403
+    assert response.json()['errors'][0]['code'] == 'ERR_RELATIONSHIP_READONLY'
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('method', ['POST', 'DELETE'])
+def test_empty_relationships_change_nothing(sample_app, method):
+    from visibility.models import Folder, Note, Tag
+
+    tag = Tag.objects.create(name='a')
+    note = Note.objects.create(name='note', folder=Folder.objects.create(name='a'))
+    note.tags.add(tag)
+    client = get_api_client(sample_app)
+    response = client.client.request(
+        method,
+        f'/api/v1/visibility/note/{note.id}/relationships/tags',
+        headers=client.headers,
+        json={'data': []},
+    )
+    assert response.status_code == 204
+    assert list(note.tags.all()) == [tag]

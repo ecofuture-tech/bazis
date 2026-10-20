@@ -755,7 +755,7 @@ class JsonapiRouteBase(InitialRouteBase):
         """
         Handles the HTTP POST request to add relationships.
         """
-        if relationships_data.data:
+        if relationships_data.data is not None:
             self.relationships_change('add', item_id, related_field_name, relationships_data)
         return Response(status_code=204)
 
@@ -796,7 +796,7 @@ class JsonapiRouteBase(InitialRouteBase):
         """
         Handles the HTTP DELETE request to remove relationships.
         """
-        if relationships_data.data:
+        if relationships_data.data is not None:
             self.relationships_change('remove', item_id, related_field_name, relationships_data)
         return Response(status_code=204)
 
