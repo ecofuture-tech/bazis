@@ -16,6 +16,7 @@ import re
 from datetime import date, datetime
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 from django.db.models import Avg, Count, F, Max, Min, QuerySet, Sum
@@ -119,10 +120,10 @@ class ServiceAggregating:
             field = model._meta.get_field(name)
         except FieldDoesNotExist:
             field = None
+        # a to-many relation is not concrete
         if (
             field is None
             or not field.concrete
-            or field.many_to_many
             or (scope is not None and not scope.allows(name, model))
         ):
             raise aggregate_error(
@@ -178,7 +179,14 @@ class ServiceAggregating:
         if isinstance(field, models.DateField):
             if bucket in BUCKETS:
                 return Trunc(name, bucket, output_field=models.DateField())
-        elif not bucket and (
+            raise aggregate_error(
+                'group',
+                format_lazy(
+                    _("The date field '{field}' groups by day, week or month: {field}:month"),
+                    field=name,
+                ),
+            )
+        if not bucket and (
             field.choices
             or isinstance(field, models.BooleanField)
             or field.many_to_one
@@ -190,10 +198,9 @@ class ServiceAggregating:
             format_lazy(
                 _(
                     "Cannot group by '{group}': group by a choice field, a boolean, a to-one "
-                    'relation, or a date field by day, week or month (such as {field}:month)'
+                    'relation, or a date field by day, week or month'
                 ),
                 group=self.group,
-                field=name,
             ),
         )
 
@@ -211,8 +218,9 @@ class ServiceAggregating:
     def apply(self, queryset: QuerySet, scope: QueryScope | None = REQUEST_SCOPE) -> AggregatesMeta:
         """
         The aggregates of the objects of the queryset (one query): by the term without
-        `group`, else a list of the groups. The objects are taken by their keys, so the
-        annotations of the queryset (the calculated fields, a permission) change nothing.
+        `group`, else a list of the groups, at most `BAZIS_API_AGGREGATE_GROUPS_MAX` (400
+        over it). The objects are taken by their keys, so the annotations of the queryset
+        (the calculated fields, a permission) and the rows a join repeats change nothing.
 
         :param scope: what the fields may reach; by default the scope of the route of the
             request (`query_scope`), None: not restricted.
@@ -227,12 +235,25 @@ class ServiceAggregating:
         if group is None:
             row = qs.aggregate(**exprs)
             return {term: row[alias] for alias, term in aliases.items()}
-        rows = (
+        limit = settings.BAZIS_API_AGGREGATE_GROUPS_MAX
+        rows = list(
             qs.annotate(_aggregate_group=group)
             .values('_aggregate_group')
             .annotate(**exprs)
-            .order_by(F('_aggregate_group').asc(nulls_last=True))
+            .order_by(F('_aggregate_group').asc(nulls_last=True))[: limit + 1]
         )
+        if len(rows) > limit:
+            raise aggregate_error(
+                'group',
+                format_lazy(
+                    _(
+                        "More than {limit} groups of '{group}': narrow the list with a filter, "
+                        'or group by a date field by week or month'
+                    ),
+                    limit=limit,
+                    group=self.group,
+                ),
+            )
         return [
             AggregatesGroup(
                 group=self._group_key(row['_aggregate_group']),

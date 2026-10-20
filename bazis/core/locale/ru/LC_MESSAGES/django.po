@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-20 09:49+0000\n"
+"POT-Creation-Date: 2026-10-20 10:37+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -78,79 +78,83 @@ msgstr "Кол-во результатов в списке по умолчани
 msgid "Maximum number of results in the list"
 msgstr "Максимальное кол-во результатов в списке"
 
-#: conf.py:187
+#: conf.py:189
+msgid "Maximum number of groups of the aggregates of a list"
+msgstr "Максимальное кол-во групп агрегатов списка"
+
+#: conf.py:192
 msgid "Default cache instance for storing CONSTANCE"
 msgstr "Дефолтный инстанс кэша для хранения CONSTANCE"
 
-#: conf.py:193
+#: conf.py:198
 msgid "Path to the GDAL library"
 msgstr "Путь к библиотеке GDAL"
 
-#: conf.py:194
+#: conf.py:199
 msgid "Path to the GEOS library"
 msgstr "Путь к библиотеке GEOS"
 
-#: conf.py:196
+#: conf.py:201
 msgid "Replace $ref with the referenced schemas in the built schemas"
 msgstr "Заменять $ref схемами, на которые они ссылаются, в собранных схемах"
 
-#: conf.py:200
+#: conf.py:205
 msgid ""
 "Lifetime of unused generated schemas in the cache, seconds (0 - unlimited)"
 msgstr ""
 
-#: conf.py:209
+#: conf.py:214
 msgid "Mail server backend"
 msgstr ""
 
-#: conf.py:213
+#: conf.py:218
 msgid "Mail server IP address"
 msgstr ""
 
-#: conf.py:218
+#: conf.py:223
 msgid "Mail server port number"
 msgstr ""
 
-#: conf.py:223
+#: conf.py:228
 msgid "Mail server user login"
 msgstr ""
 
-#: conf.py:228
+#: conf.py:233
 msgid "Mail server user password"
 msgstr ""
 
-#: conf.py:233
+#: conf.py:238
 msgid "Mail server use TLS"
 msgstr ""
 
-#: conf.py:238
+#: conf.py:243
 msgid "Mail server use SSL"
 msgstr ""
 
-#: conf.py:244
+#: conf.py:249
 msgid "Mail server timeout, seconds (0 - unlimited)"
 msgstr "Тайм-аут почтового сервера, секунды (0 - без ограничения)"
 
-#: conf.py:250
+#: conf.py:255
 msgid "Default outgoing email address"
 msgstr ""
 
-#: conf.py:253
+#: conf.py:258
 msgid "Maximum IDs in list route"
 msgstr ""
 
-#: conf.py:257
+#: conf.py:262
 msgid "Limit the request rate of routes"
 msgstr "Ограничивать частоту запросов к маршрутам"
 
-#: conf.py:261
+#: conf.py:266
 msgid ""
 "Request rate of the public actions per user or IP address (empty - unlimited)"
 msgstr ""
 "Частота запросов к публичным действиям одного пользователя или IP-адреса "
 "(пусто — без ограничения)"
 
-#: conf.py:266
+#: conf.py:271
 msgid ""
 "Import path of a function (request, ident) exempting a request from the "
 "limits"
@@ -318,11 +322,11 @@ msgstr "Пустое"
 msgid "Not blank"
 msgstr "Не пустое"
 
-#: services/aggregating.py:78
+#: services/aggregating.py:79
 msgid "Invalid aggregate"
 msgstr "Недопустимый агрегат"
 
-#: services/aggregating.py:100
+#: services/aggregating.py:101
 msgid ""
 "The aggregates of meta=aggregates: count, sum(f), avg(f), min(f), max(f), "
 "count(f), separated by commas"
@@ -330,7 +334,7 @@ msgstr ""
 "Агрегаты meta=aggregates через запятую: count, sum(f), avg(f), min(f), "
 "max(f), count(f)"
 
-#: services/aggregating.py:107
+#: services/aggregating.py:108
 msgid ""
 "The field that groups meta=aggregates: a choice, a boolean, a to-one "
 "relation, or a date with :day, :week or :month"
@@ -338,12 +342,12 @@ msgstr ""
 "Поле группировки meta=aggregates: поле выбора, логическое поле, связь с "
 "одним объектом или дата с :day, :week или :month"
 
-#: services/aggregating.py:131
+#: services/aggregating.py:132
 #, python-brace-format
 msgid "Unknown aggregate field '{field}' of {model}"
 msgstr "Неизвестное поле агрегата '{field}' у {model}"
 
-#: services/aggregating.py:151
+#: services/aggregating.py:152
 #, python-brace-format
 msgid ""
 "Invalid aggregate '{term}': count, or sum, avg, min, max or count of a "
@@ -352,20 +356,34 @@ msgstr ""
 "Недопустимый агрегат '{term}': count либо sum, avg, min, max или count поля, "
 "например sum(amount)"
 
-#: services/aggregating.py:164
+#: services/aggregating.py:165
 #, python-brace-format
 msgid "The aggregate '{term}' does not apply to the field '{field}'"
 msgstr "Агрегат '{term}' неприменим к полю '{field}'"
 
-#: services/aggregating.py:192
+#: services/aggregating.py:185
+#, python-brace-format
+msgid "The date field '{field}' groups by day, week or month: {field}:month"
+msgstr ""
+"Поле даты '{field}' группируется по дням, неделям или месяцам: {field}:month"
+
+#: services/aggregating.py:200
 #, python-brace-format
 msgid ""
 "Cannot group by '{group}': group by a choice field, a boolean, a to-one "
-"relation, or a date field by day, week or month (such as {field}:month)"
+"relation, or a date field by day, week or month"
 msgstr ""
 "Нельзя группировать по '{group}': группируйте по полю выбора, логическому "
-"полю, связи с одним объектом или по дате по дням, неделям или месяцам "
-"(например, {field}:month)"
+"полю, связи с одним объектом или по дате по дням, неделям или месяцам"
+
+#: services/aggregating.py:250
+#, python-brace-format
+msgid ""
+"More than {limit} groups of '{group}': narrow the list with a filter, or "
+"group by a date field by week or month"
+msgstr ""
+"Больше {limit} групп по '{group}': сузьте список фильтром или группируйте по "
+"дате по неделям или месяцам"
 
 #: services/filtering.py:74 services/searching.py:65 services/sorting.py:83
 msgid "Invalid filter"

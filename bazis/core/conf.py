@@ -183,6 +183,11 @@ class Settings(BazisSettings):
     BAZIS_API_PAGINATION_PAGE_SIZE_MAX: int = Field(
         1000, title=_('Maximum number of results in the list'), json_schema_extra={'dynamic': True}
     )
+    # not dynamic: a dynamic setting is read from the database, and the aggregates of a
+    # list are one query
+    BAZIS_API_AGGREGATE_GROUPS_MAX: int = Field(
+        1000, ge=1, title=_('Maximum number of groups of the aggregates of a list')
+    )
     CONSTANCE_DATABASE_CACHE_BACKEND: str | None = Field(
         None, title=_('Default cache instance for storing CONSTANCE')
     )

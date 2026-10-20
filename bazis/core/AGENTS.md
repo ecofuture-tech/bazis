@@ -1150,14 +1150,17 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   `aggregate` only `count`) and optionally `group=<field>` or `group=<date field>:day`,
   `:week` (from Monday), `:month`. They count every object of the list with its `filter`
   and `search` (the objects of `get_queryset_for_list`, so the ones bazis-permit lets the
-  user view), not its page, sorting or sparse fieldsets, in one query; without
+  user view; each once, by its key, also when a join of the list repeats it), not its
+  page, sorting or sparse fieldsets, in one query; without
   `meta=aggregates` the parameters are not read. `meta.aggregates` is
   `{"count": 4, "sum(amount)": "60.50"}` (the key is the term as written), with `group` a
   list ordered by the value, the objects without one last:
   `[{"group": "2026-01-01", "values": {"count": 2, "sum(amount)": "30.50"}}, {"group": null, ...}]`.
   A group is a string: the choice, `true`/`false`, the id of a to-one relation (as its
   `relationships` data shows it), the ISO date of the start of the bucket (in the time zone
-  of the project); a decimal is a string, a date or a time ISO 8601, an average of an
+  of the project, `TIME_ZONE`); at most `BAZIS_API_AGGREGATE_GROUPS_MAX` groups (1000,
+  `BS_BAZIS_API_AGGREGATE_GROUPS_MAX`; more is 400 `ERR_AGGREGATE` at `/query/group`:
+  narrow the list with a filter, or group a date by week or month); a decimal is a string, a date or a time ISO 8601, an average of an
   integer field a float; over no object `count` is 0, the others `null`, the groups `[]`.
   A field is a column of the model the `filter` of the route reaches for the user (the
   LIST schema, `query_fields`; not a calculated field, a to-many relation or a path

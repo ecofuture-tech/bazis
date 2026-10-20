@@ -21,9 +21,11 @@ the filter of the route reaches for the user, an error is 400 `ERR_AGGREGATE`.
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from django.test import override_settings
+
 import pytest
 from bazis_test_utils.utils import get_api_client
-from entity.models import CarrierTask, ParentEntity
+from entity.models import CarrierTask, ChildEntity, ParentEntity
 from entity.routes import ParentEntityRouteSet
 from visibility.models import Folder, Label, Note
 
@@ -150,6 +152,19 @@ def test_group_by_a_relation(sample_app, sample_vehicle_data):
 
 
 @pytest.mark.django_db(transaction=True)
+def test_a_date_bucket_in_the_time_zone_of_the_project(sample_app, db):
+    """22:30 UTC of January 15 is January 16 in Moscow."""
+    ParentEntity.objects.create(name='late', dt_approved=datetime(2026, 1, 15, 22, 30, tzinfo=UTC))
+    assert aggregates(sample_app, group='dt_approved:day') == [
+        {'group': '2026-01-15', 'values': {'count': 1}}
+    ]
+    with override_settings(TIME_ZONE='Europe/Moscow'):
+        assert aggregates(sample_app, group='dt_approved:day') == [
+            {'group': '2026-01-16', 'values': {'count': 1}}
+        ]
+
+
+@pytest.mark.django_db(transaction=True)
 def test_the_filter_and_the_search_apply_the_page_does_not(sample_app, parents, monkeypatch):
     params = {'aggregate': 'count,sum(price)'}
     assert aggregates(sample_app, filter='is_active=true', **params) == {
@@ -193,6 +208,63 @@ def test_only_the_objects_of_the_list(sample_app, parents, monkeypatch):
     assert meta['aggregates'] == {'count': 2, 'sum(price)': '30.50'}
     assert meta['pagination']['count'] == 2
     assert aggregates(sample_app, group='is_active') == [{'group': 'true', 'values': {'count': 2}}]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_object_the_list_repeats_counts_once(sample_app, parents, monkeypatch):
+    """
+    The objects are taken by their keys: a join of `get_queryset_for_list` that repeats an
+    object (two of its children match) does not count it twice.
+    """
+    alpha = parents[0]
+    alpha.child_entities.add(
+        ChildEntity.objects.create(child_name='c1'), ChildEntity.objects.create(child_name='c2')
+    )
+
+    def get_queryset_for_list(self):
+        return JsonapiRouteBase.get_queryset_for_list(self).filter(
+            child_entities__child_name__startswith='c'
+        )
+
+    monkeypatch.setattr(ParentEntityRouteSet, 'get_queryset_for_list', get_queryset_for_list)
+    assert aggregates(sample_app, aggregate='count,sum(price)') == {
+        'count': 1,
+        'sum(price)': '10.00',
+    }
+    assert aggregates(sample_app, aggregate='count,sum(price)', group='state') == [
+        {'group': 'state_one', 'values': {'count': 1, 'sum(price)': '10.00'}}
+    ]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_number_of_the_groups_is_limited(sample_app, parents):
+    """`BAZIS_API_AGGREGATE_GROUPS_MAX` groups at most; a total is not limited."""
+    two = [
+        {'group': 'state_one', 'values': {'count': 2}},
+        {'group': 'state_two', 'values': {'count': 2}},
+    ]
+    with override_settings(BAZIS_API_AGGREGATE_GROUPS_MAX=2):
+        assert aggregates(sample_app, group='state') == two
+    with override_settings(BAZIS_API_AGGREGATE_GROUPS_MAX=1):
+        error = assert_bad_request(
+            get(sample_app, PARENTS, meta='aggregates', group='state'), 'group'
+        )
+        assert error['detail'].startswith("More than 1 groups of 'state'")
+        assert aggregates(sample_app, aggregate='count,sum(price)') == {
+            'count': 4,
+            'sum(price)': '60.50',
+        }
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_hint_of_a_group(sample_app, parents):
+    """A date field is told its buckets; another field is not offered one."""
+    date = assert_bad_request(
+        get(sample_app, PARENTS, meta='aggregates', group='dt_approved'), 'group'
+    )
+    assert 'dt_approved:month' in date['detail']
+    other = assert_bad_request(get(sample_app, PARENTS, meta='aggregates', group='id'), 'group')
+    assert ':month' not in other['detail']
 
 
 @pytest.mark.django_db(transaction=True)
@@ -289,9 +361,20 @@ def test_one_query(sample_app, parents):
 
 
 def test_the_parameters_and_the_meta_in_the_openapi(sample_app):
-    operation = sample_app.openapi()['paths'][PARENTS]['get']
+    openapi = sample_app.openapi()
+    operation = openapi['paths'][PARENTS]['get']
     names = {it['name'] for it in operation['parameters']}
     assert {'aggregate', 'group'} <= names
+
+    def schema(ref):
+        return openapi['components']['schemas'][ref.rsplit('/', 1)[-1]]
+
+    response = operation['responses']['200']['content']['application/vnd.api+json']
+    meta = schema(response['schema']['$ref'])['properties']['meta']['anyOf'][0]
+    aggregates = schema(meta['$ref'])['properties']['aggregates']['anyOf']
+    assert aggregates[0]['type'] == 'object'
+    assert aggregates[1]['items'] == {'$ref': '#/components/schemas/AggregatesGroup'}
+    assert set(schema(aggregates[1]['items']['$ref'])['properties']) == {'group', 'values'}
 
 
 @pytest.mark.django_db(transaction=True)
