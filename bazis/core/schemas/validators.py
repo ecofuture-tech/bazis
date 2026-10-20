@@ -60,6 +60,26 @@ def not_blank_validator(cls: type[BaseModel], v: Any, field: ValidationInfo):
     return v
 
 
+def choices_validator(cls: type[BaseModel], v: Any, field: ValidationInfo):
+    """
+    Validator to ensure that a value of a field with choices is one of them: the `enum` of
+    the field in the schema, which is the one of the OpenAPI (the choices of the model field,
+    also the callable and the grouped ones; the choices of the elements of an array field).
+    Null and empty values of the field are left to the null and the blank validators, as in
+    the validation of a Django model field; the elements of an array are all choices. Only the request schemas check it.
+
+    Tags: RAG, INTERNAL
+    """
+    enum = cls.model_fields[field.field_name].json_schema_extra.get('enum')
+    if enum:
+        # an empty value of a field is left to the null and blank validators; an element of
+        # an array is a choice whatever it is
+        for value in v if isinstance(v, list) else [] if v in (None, '') else [v]:
+            if value not in enum:
+                raise ValueError(f'Value {value!r} is not a valid choice')
+    return v
+
+
 def geometry_validator(cls: type[BaseModel], v: Any, field: ValidationInfo):
     """
     Validator of the GeoJSON value of a geometry field of the model in a request (before

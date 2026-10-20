@@ -24,10 +24,20 @@ from django.db import models
 from django.db.models import Max, OuterRef, Subquery
 from django.utils.translation import gettext_lazy as _
 
-from translated_fields import TranslatedFieldWithFallback
+from translated_fields import TranslatedField, TranslatedFieldWithFallback
 
 from bazis.core.models_abstract import JsonApiMixin, UniqNumberMixin
 from bazis.core.utils.orm import FieldAnnotate, FieldDynamic, calc_property
+
+
+class MemoStatus(models.TextChoices):
+    DRAFT = 'draft', 'Draft'
+    SENT = 'sent', 'Sent'
+
+
+def memo_kinds():
+    """Callable choices of a field, in groups."""
+    return [('Work', [('task', 'Task'), ('meeting', 'Meeting')]), ('idea', 'Idea')]
 
 
 class Attachment(JsonApiMixin):
@@ -44,6 +54,10 @@ class Category(JsonApiMixin):
         models.CharField(_('Name'), max_length=100),
         languages=['en', 'ru'],
     )
+    scope = TranslatedField(
+        models.CharField(max_length=10, choices=MemoStatus, blank=True, default=''),
+        languages=['en', 'ru'],
+    )
 
     def __str__(self):
         return self.name
@@ -55,6 +69,11 @@ class Memo(UniqNumberMixin, JsonApiMixin):
     title = models.CharField('Title', max_length=255)
     body = models.TextField('Body', blank=True, default='')
     code = models.CharField('Code', max_length=20, blank=True, default='')
+    status = models.CharField('Status', max_length=10, choices=MemoStatus, default=MemoStatus.DRAFT)
+    # callable and grouped choices, the value is optional
+    kind = models.CharField('Kind', max_length=10, choices=memo_kinds, null=True, blank=True)
+    # integer choices, null but not blank
+    mood = models.IntegerField('Mood', choices=[(1, 'Bad'), (2, 'Good')], null=True)
     category = models.ForeignKey(
         Category, null=True, blank=True, on_delete=models.SET_NULL, related_name='memos'
     )
