@@ -1028,7 +1028,7 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   starting with `path`, the parameter `/<rest>`; otherwise the pointer, joined with `/`,
   without a leading `body` (`('attributes', f)` is `/attributes/f`, not a pointer into
   the document). `cookies=[JsonApiCookie(key, value, max_age, httponly=..., secure=...,
-  samesite=..., path=...)]` sets cookies on the error response (bazis 2.18; a plain
+  samesite=..., path=...)]` sets cookies on the error response (bazis 2.19; a plain
   `(key, value, max_age)` tuple is a cookie with the defaults of Starlette: path `/`,
   SameSite `lax`).
 - What the application answers: `JsonApiBazisException` with its status and errors; the
