@@ -88,6 +88,10 @@ PostgreSQL with PostGIS and Redis (`BS_CACHES__DEFAULT__LOCATION`): the default 
 be Redis (django-redis), other backends lack `delete_pattern` (`bazis.E001`). `DEBUG` is
 true by default: set `BS_DEBUG=false` and `BS_SECRET_KEY` (required without DEBUG) in
 production, and `BS_ALLOWED_HOSTS`, which is `['*']` by default (`bazis.W001`).
+The settings are built before Django starts, so the `conf.py` modules are found by their
+paths: only `conf.py` and the packages it sits in are imported, never the other subpackages
+of a Bazis package. Still keep the `__init__.py` of a package light (no models, no
+`bazis.core` imports) if it holds a `conf.py`.
 
 A dynamic setting (editable in the admin: the page Constance; the throttle rates, the mail,
 `DEFAULT_FROM_EMAIL`, the page sizes) is read from the database on every use, and its

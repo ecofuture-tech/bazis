@@ -273,6 +273,32 @@ def test_conf_of_all_installed_contrib_packages(fake_contrib):
     }
 
 
+def test_conf_discovery_does_not_import_unrelated_subpackages(fake_contrib):
+    # a package whose subpackage imports models or bazis.core while the settings are built
+    # breaks them (GDAL errors): the discovery imports only the conf modules and the
+    # packages they sit in
+    library = Path(sys.modules['bazis.contrib'].__path__[0]) / 'cfgtest_library'
+    for path in (library / 'heavy', library / 'services' / 'heavy', library / 'schemas'):
+        path.mkdir()
+        (path / '__init__.py').write_text('raise RuntimeError("imported by the discovery")')
+        (path / 'models.py').write_text('')
+    # the order of the modules is the priority of their settings: it is kept
+    assert [
+        module.__name__
+        for module in configure.conf_modules()
+        if module.__name__.startswith('bazis.contrib.')
+    ] == [
+        'bazis.contrib.cfgtest_library.conf',
+        'bazis.contrib.cfgtest_library.services.conf',
+        'bazis.contrib.cfgtest_unused.conf',
+        'bazis.contrib.cfgtest_used.conf',
+    ]
+    assert not any(
+        name.startswith('bazis.contrib.cfgtest_') and name.endswith(('.heavy', '.schemas'))
+        for name in sys.modules
+    )
+
+
 @pytest.mark.parametrize(
     'variable, value, expected',
     [
