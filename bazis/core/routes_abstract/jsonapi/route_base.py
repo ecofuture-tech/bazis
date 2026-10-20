@@ -42,6 +42,7 @@ from bazis.core.errors import (
     JsonApiItemInvalidException,
     JsonApiRequestValidationError,
     SchemaErrors,
+    relation_missing,
 )
 from bazis.core.item_validation import defer_validate_item, lock_on_write, lock_parents
 from bazis.core.models_abstract import JsonApiMixin
@@ -163,31 +164,6 @@ def unlinked_deleted(field_info) -> bool:
         and field_info.to_many
         and not field_info.is_m2m
         and not field_info.related_field.null
-    )
-
-
-def relation_missing(
-    f_name: str, missing: set, positions: dict, is_list: bool, *, relationship_body: bool
-) -> JsonApiBazisException:
-    """
-    The error of a relationship that links an object that does not exist: 422
-    `ERR_VALIDATE` at the first missing identifier of the value (`positions`: its index by
-    key), in the document of a create or an update or in the body of the relationships
-    endpoints (`relationship_body`, the `data` of the relationship).
-    """
-    prefix = ('body', 'data') if relationship_body else ('body', 'data', 'relationships', f_name, 'data')
-    if is_list:
-        loc = (*prefix, min(positions[pk] for pk in missing), 'id')
-    else:
-        loc = (*prefix, 'id')
-    return JsonApiBazisException(
-        JsonApiBazisError(
-            detail=format_lazy(_('The related object of {name} does not exist'), name=f_name),
-            loc=loc,
-            code='ERR_VALIDATE',
-            status=422,
-        ),
-        status=422,
     )
 
 
@@ -1126,7 +1102,8 @@ class JsonapiRouteBase(InitialRouteBase):
         an object he sees but may not link, pointing to `/data/relationships/<field>`; with
         `relationship_body` (the relationships endpoints, whose body is the `data` of the
         relationship) to the refused identifier of a to-many relationship, `/data/<index>`,
-        else to `/data`. `relation_targets_check = False` turns the check off.
+        else to `/data`. `relation_targets_check = False` turns the check off (a foreign key
+        with `to_field` still needs the object: `RelationInfo.fk_value`).
         """
         if self.relation_targets_check is False or not getattr(data, 'relationships', None):
             return

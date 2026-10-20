@@ -224,6 +224,44 @@ def test_the_value_of_the_field_is_not_an_identifier(sample_app):
 
 
 @pytest.mark.django_db(transaction=True)
+def test_a_missing_object_is_not_linked_without_the_check(sample_app, tags, monkeypatch):
+    """
+    `relation_targets_check = False` turns off the checks of the targets, not their lookup:
+    the primary key of no object is 422, though a hidden tag has it as its `ref` (the foreign
+    key would store it); an existing object is linked by its primary key, not the tag whose
+    `ref` it is.
+    """
+    from visibility.routes import BookmarkRouteSet
+
+    monkeypatch.setattr(BookmarkRouteSet, 'relation_targets_check', False)
+    ref = uuid.uuid4()
+    Tag.objects.create(name='other', ref=ref, is_hidden=True)
+    bookmark = Bookmark.objects.create(name='bookmark', tag=tags['locked'])
+    client = get_api_client(sample_app)
+    missing = [('ERR_VALIDATE', {'pointer': '/data/relationships/tag/data/id'})]
+
+    response = client.post(BOOKMARKS, json_data=bookmark_payload(tag=ident('tag', ref)))
+    assert response.status_code == 422, response.text
+    assert [(it['code'], it['source']) for it in response.json()['errors']] == missing
+    response = client.patch(
+        f'{BOOKMARKS}{bookmark.id}/', json_data=bookmark_payload(bookmark, tag=ident('tag', ref))
+    )
+    assert response.status_code == 422, response.text
+    assert [(it['code'], it['source']) for it in response.json()['errors']] == missing
+    assert list(Bookmark.objects.all()) == [bookmark]
+    bookmark.refresh_from_db()
+    assert bookmark.tag == tags['locked']
+
+    # the hidden tag (not checked), by its primary key: the `ref` of the visible one
+    response = client.post(
+        BOOKMARKS, json_data=bookmark_payload(tag=ident('tag', tags['hidden'].id))
+    )
+    assert response.status_code == 201, response.text
+    created = Bookmark.objects.get(pk=response.json()['data']['id'])
+    assert (created.tag, created.tag_id) == (tags['hidden'], tags['hidden'].ref)
+
+
+@pytest.mark.django_db(transaction=True)
 def test_included_shows_only_the_visible_objects(sample_app, tags):
     bookmark = Bookmark.objects.create(name='bookmark', tag=tags['hidden'])
     client = get_api_client(sample_app)
