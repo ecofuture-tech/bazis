@@ -21,6 +21,7 @@ the filter of the route reaches for the user, an error is 400 `ERR_AGGREGATE`.
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from django.db import models
 from django.test import override_settings
 
 import pytest
@@ -244,7 +245,13 @@ def test_the_number_of_the_groups_is_limited(sample_app, parents):
         {'group': 'state_two', 'values': {'count': 2}},
     ]
     with override_settings(BAZIS_API_AGGREGATE_GROUPS_MAX=2):
+        open('sql.log', 'w').close()
         assert aggregates(sample_app, group='state') == two
+        # the limit is in the query: one group more than the limit is fetched, not all
+        with open('sql.log') as f:
+            grouped = [line for line in f if '_aggregate_group' in line]
+        assert len(grouped) == 1
+        assert grouped[0].split(';')[0].endswith('LIMIT 3')
     with override_settings(BAZIS_API_AGGREGATE_GROUPS_MAX=1):
         error = assert_bad_request(
             get(sample_app, PARENTS, meta='aggregates', group='state'), 'group'
@@ -265,6 +272,30 @@ def test_the_hint_of_a_group(sample_app, parents):
     assert 'dt_approved:month' in date['detail']
     other = assert_bad_request(get(sample_app, PARENTS, meta='aggregates', group='id'), 'group')
     assert ':month' not in other['detail']
+
+
+class HiddenManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().none()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_filtering_default_manager(sample_app, parents, monkeypatch):
+    """
+    The objects are taken by the base manager: a default manager that hides them (a soft
+    delete) leaves out none of a list built on another manager.
+    """
+    hidden = HiddenManager()
+    hidden.model = ParentEntity
+    monkeypatch.setattr(ParentEntity._meta, 'default_manager', hidden)
+    monkeypatch.setattr(
+        ParentEntityRouteSet, 'get_queryset', lambda self: ParentEntity._base_manager.all()
+    )
+    response = get(sample_app, PARENTS, meta='aggregates,pagination', group='state')
+    meta = response.json()['meta']
+    assert meta['pagination']['count'] == 4
+    assert sum(it['values']['count'] for it in meta['aggregates']) == 4
+    assert aggregates(sample_app) == {'count': 4}
 
 
 @pytest.mark.django_db(transaction=True)

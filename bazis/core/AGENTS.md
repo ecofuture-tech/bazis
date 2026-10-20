@@ -1150,7 +1150,8 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   `aggregate` only `count`) and optionally `group=<field>` or `group=<date field>:day`,
   `:week` (from Monday), `:month`. They count every object of the list with its `filter`
   and `search` (the objects of `get_queryset_for_list`, so the ones bazis-permit lets the
-  user view; each once, by its key, also when a join of the list repeats it), not its
+  user view; each once, by its key through the base manager of the model, also when a
+  join of the list repeats it or the default manager hides it), not its
   page, sorting or sparse fieldsets, in one query; without
   `meta=aggregates` the parameters are not read. `meta.aggregates` is
   `{"count": 4, "sum(amount)": "60.50"}` (the key is the term as written), with `group` a

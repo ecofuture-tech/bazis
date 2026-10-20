@@ -231,7 +231,9 @@ class ServiceAggregating:
         group = self._group(model, scope)
         aliases = {f'_aggregate_{i}': term for i, term in enumerate(terms)}
         exprs = {alias: terms[term] for alias, term in aliases.items()}
-        qs = model._default_manager.filter(pk__in=queryset.order_by().values('pk'))
+        # the base manager: a filtering default manager (a soft delete) would leave out
+        # objects of a list built on another manager
+        qs = model._base_manager.filter(pk__in=queryset.order_by().values('pk'))
         if group is None:
             row = qs.aggregate(**exprs)
             return {term: row[alias] for alias, term in aliases.items()}
