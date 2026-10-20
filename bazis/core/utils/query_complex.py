@@ -299,7 +299,8 @@ class QueryScope:
                 return F(model._meta.pk.attname)
             return F(translated_name(model, name))
         if not rest:
-            if relation.reverse:
+            # the primary key of the related object, also for a foreign key with `to_field`
+            if relation.reverse or not relation.key_field.primary_key:
                 pk_column = relation.related_model._meta.pk.attname
                 return F(f'{name}{LOOKUP_SEP}{pk_column}')
             return F(relation.model_field.attname)
@@ -1067,12 +1068,25 @@ class QueryToOrm:
             )
 
         ids = ids.split(',')
-        if scope is not None:
-            ids = scope.restrict(source_model.objects.filter(pk__in=ids)).values('pk')
-
         q = Q()
         for rel in relations:
-            q |= Q(**{f'{rel.related_field.name}__in': ids})
+            # the foreign key of the reverse relation holds the value of its `to_field`
+            key = (
+                rel.related_field.target_field
+                if rel.reverse and not rel.is_m2m
+                else source_model._meta.pk
+            )
+            if scope is None and key.primary_key:
+                values = ids
+            else:
+                # without a scope the base manager, as the foreign key references the objects
+                source = (
+                    source_model._base_manager.filter(pk__in=ids)
+                    if scope is None
+                    else scope.restrict(source_model.objects.filter(pk__in=ids))
+                )
+                values = source.values('pk' if key.primary_key else key.name)
+            q |= Q(**{f'{rel.related_field.name}__in': values})
 
         return q
 
@@ -1180,17 +1194,22 @@ class QueryToOrm:
         :param field: The model field to apply the filter to.
         :return: A Q object representing the filter condition.
         """
+        # the value of a relation is the primary key of the related object, also for a foreign
+        # key with `to_field`, which stores another field
+        name = field.name
+        if isinstance(field, RelationInfo) and not field.key_field.primary_key:
+            name = f'{name}{LOOKUP_SEP}pk'
         if action := get_attr(params, 0):
             if action in RANGE_SUFFIX:
-                return Q(**{f'{field.name}__{action}': value})
+                return Q(**{f'{name}__{action}': value})
             if action in LOOKUP_PREFIXES.values():
                 field_name = f'{field.name}__{action}'
                 return self._filters_apply_search(field.model, value, field_name)
             if action == SEARCH_TERM:
                 return self._filters_apply_search(field.model, value, field.name)
         if isinstance(value, list | set | tuple):
-            return Q(**{f'{field.name}__in': value})
-        return Q(**{field.name: value})
+            return Q(**{f'{name}__in': value})
+        return Q(**{name: value})
 
     def _func_geo(self, value, params, field):
         """

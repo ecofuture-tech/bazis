@@ -153,17 +153,6 @@ def relationship_body_loc(refused: set, positions: dict, is_list: bool) -> tuple
     return ('body', 'data')
 
 
-def relation_by_pk(field_info) -> bool:
-    """
-    Whether the identifiers of a relationship are primary keys of the related model: not
-    those of a forward foreign key with `to_field`, which are values of that field.
-    """
-    if field_info.reverse or field_info.to_many:
-        return True
-    target = getattr(field_info.model_field, 'target_field', None)
-    return target is None or target.primary_key
-
-
 def unlinked_deleted(field_info) -> bool:
     """
     Whether the objects a relationship unlinks are deleted (`relation_write`): those of a
@@ -1129,9 +1118,8 @@ class JsonapiRouteBase(InitialRouteBase):
         does not exist is 422
         `ERR_VALIDATE` at its identifier (`/data/relationships/<field>/data/id`, or
         `/data/relationships/<field>/data/<index>/id`; with `relationship_body` `/data/id`,
-        `/data/<index>/id`), not an `IntegrityError` at the commit; a forward relation by
-        another field than the primary key (`to_field`) is not looked up. The objects
-        that get linked are asked for with `link=True` (not the ones a reverse relationship
+        `/data/<index>/id`), not an `IntegrityError` at the commit; the identifiers are primary keys
+        also for a foreign key with `to_field`. The objects that get linked are asked for with `link=True` (not the ones a reverse relationship
         unlinks): an override may leave out objects the user sees but may not link (e.g.
         the files of other users). Fails with 403 `ERR_RELATION_ACCESS`
         for an object the user cannot see (change), else with 422 `ERR_RELATION_LINK` for
@@ -1155,8 +1143,6 @@ class JsonapiRouteBase(InitialRouteBase):
                 continue
             rel_model = field_info.related_model
             restrict = route_restrict_queryset(rel_model)
-            if not restrict and not relation_by_pk(field_info):
-                continue
 
             rel_data = (value or {}).get('data')
             is_list = isinstance(rel_data, list)
@@ -1230,7 +1216,7 @@ class JsonapiRouteBase(InitialRouteBase):
         if field_info.to_many:
             current = {str(pk) for pk in getattr(item, f_name).values_list('pk', flat=True)}
         elif not field_info.reverse:
-            pk = getattr(item, field_info.model_field.attname, None)
+            pk = field_info.related_pk(item)
             current = {str(pk)} if pk is not None else set()
         elif current_obj := getattr(item, f_name, None):
             current = {str(current_obj.pk)}

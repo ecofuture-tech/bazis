@@ -144,10 +144,10 @@ def test_relationships_endpoint_errors_point_into_its_body(sample_app, field, da
         assert all(set(it) == {'pointer'} for it in sources(response)), method
 
 
-def test_identifier_of_a_relation_to_another_field():
+def test_identifier_of_a_relation_is_a_primary_key():
     """
-    The id of an identifier is a value of the field the relation references: the primary
-    key, or the `to_field` of a foreign key (its value is what the identifiers show).
+    The id of an identifier is a primary key of the related model, whatever field a foreign
+    key references (`to_field`): the identifiers match the `id` of the resources.
     """
     from pydantic import ValidationError
 
@@ -159,14 +159,10 @@ def test_identifier_of_a_relation_to_another_field():
 
     builder = SchemaResourceBuilder(ChildEntityRouteSet.schema_factories[CrudApiAction.UPDATE])
     by_pk = builder._build_resource_identifier_schema(ParentEntity, None)
-    by_price = builder._build_resource_identifier_schema(
-        ParentEntity, None, ParentEntity._meta.get_field('price')
-    )
     identifier = {'type': 'entity.parent_entity'}
 
-    assert by_price.model_validate(identifier | {'id': '10.50'}).id == '10.50'
-    with pytest.raises(ValidationError):
-        by_price.model_validate(identifier | {'id': 'not-a-price'})
+    pk = '9b657232-4178-4d7f-8b0c-e8ab16f2b309'
+    assert by_pk.model_validate(identifier | {'id': pk}).id == pk
     with pytest.raises(ValidationError):
         by_pk.model_validate(identifier | {'id': '10.50'})
 

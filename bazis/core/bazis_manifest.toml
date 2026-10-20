@@ -232,9 +232,6 @@ text = "a second route set of a model needs its own get_url_prefix(); a read-onl
 text = "QuerySet.update(), bulk_create(), bulk_update(), raw saves, raw SQL and deletion do not call validate_item"
 
 [[pitfalls]]
-text = "a relation by a foreign key with to_field is not supported by the relation checks"
-
-[[pitfalls]]
 text = "reverse relations are not in the schemas by default; include of a relation outside the schema of the action is 400 ERR_INCLUDE"
 
 [[pitfalls]]

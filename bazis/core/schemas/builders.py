@@ -349,19 +349,18 @@ class SchemaResourceBuilder:
         return schema
 
     def _build_resource_identifier_schema(
-        self, model: type[InitialBase], default_id: Any, key_field=None
+        self, model: type[InitialBase], default_id: Any
     ) -> type[BaseModel]:
         """
         Method to build a schema for resource identifiers, including id and type fields.
-        The id must be a value of `key_field`, the field of the related model the relation
-        references (its primary key by default).
+        The id must be a primary key of the related model, whatever field the relation
+        references (`to_field`).
         """
-        key_field = key_field or model._meta.pk
+        key_field = model._meta.pk
         schema_name = (
             f'_{self.factory.schema_name}'
             f'__ResourceIdentifierSchema'
             f'__{model.get_resource_label().replace(".", "__")}'
-            f'{"" if key_field.primary_key else "__" + key_field.name}'
         )
         if schema := get_schema_from_cache(schema_name):
             return schema
@@ -543,16 +542,9 @@ class SchemaResourceBuilder:
 
             # resource identifier schema
             rel = field.field_db_rel
-            # a foreign key references its `to_field` (the value of the identifier)
-            key_field = (
-                getattr(rel.model_field, 'target_field', None)
-                if not (rel.reverse or rel.to_many)
-                else None
-            )
             schema_resource_identifier = self._build_resource_identifier_schema(
                 rel.related_model,
                 field.default,
-                key_field,
             )
 
             schema_data = schema_create(
@@ -627,7 +619,7 @@ class SchemaResourceBuilder:
                         if field.field_db_rel.reverse:
                             id_val = get_attr(data, f'{field.source}.id')
                         else:
-                            id_val = getattr(data, f'{field.source}_id')
+                            id_val = field.field_db_rel.related_pk(data)
 
                         if id_val is not None:
                             resource_data = {
