@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-12 20:07+0000\n"
+"POT-Creation-Date: 2026-10-20 09:49+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,9 +16,9 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: app_factory.py:416 routes_abstract/jsonapi/route_base.py:916
-#: routes_abstract/jsonapi/route_base.py:930
-#: routes_abstract/jsonapi/route_base.py:977
+#: app_factory.py:416 routes_abstract/jsonapi/route_base.py:928
+#: routes_abstract/jsonapi/route_base.py:942
+#: routes_abstract/jsonapi/route_base.py:989
 msgid "Item not found"
 msgstr "Объект не найден"
 
@@ -201,62 +201,66 @@ msgstr ""
 "для случая уникализации только для заданного типа. Поле не должно "
 "использоваться напрямую, вместо него следует использовать :py:attr:`~number`"
 
-#: routes_abstract/jsonapi/route_base.py:194
+#: routes_abstract/jsonapi/route_base.py:196
 #, python-brace-format
 msgid "The related object of {name} does not exist"
 msgstr "Связанный объект {name} не существует"
 
-#: routes_abstract/jsonapi/route_base.py:536
+#: routes_abstract/jsonapi/route_base.py:539
 #, python-brace-format
 msgid "The relationships cannot be included: {names}"
 msgstr "Нельзя включить связи: {names}"
 
-#: routes_abstract/jsonapi/route_base.py:541
+#: routes_abstract/jsonapi/route_base.py:544
 msgid "Invalid include"
 msgstr "Недопустимый параметр include"
 
-#: routes_abstract/jsonapi/route_base.py:1058
+#: routes_abstract/jsonapi/route_base.py:851
+msgid "Aggregates"
+msgstr "Агрегаты"
+
+#: routes_abstract/jsonapi/route_base.py:1070
 #, python-brace-format
 msgid "The relationship {name} cannot be changed"
 msgstr "Связь {name} нельзя изменить"
 
-#: routes_abstract/jsonapi/route_base.py:1062
+#: routes_abstract/jsonapi/route_base.py:1074
 msgid "Relationship is read-only"
 msgstr "Связь только для чтения"
 
-#: routes_abstract/jsonapi/route_base.py:1267
+#: routes_abstract/jsonapi/route_base.py:1279
 #, python-brace-format
 msgid "The related object of {name} cannot be linked"
 msgstr "Связанный объект {name} нельзя привязать"
 
-#: routes_abstract/jsonapi/route_base.py:1269
+#: routes_abstract/jsonapi/route_base.py:1281
 msgid "Link not allowed"
 msgstr "Привязка запрещена"
 
-#: routes_abstract/jsonapi/route_base.py:1274
+#: routes_abstract/jsonapi/route_base.py:1286
 #, python-brace-format
 msgid "No access to the related object of {name}"
 msgstr "Нет доступа к связанному объекту {name}"
 
-#: routes_abstract/jsonapi/route_base.py:1276
+#: routes_abstract/jsonapi/route_base.py:1288
 msgid "Access denied"
 msgstr "Доступ запрещён"
 
-#: routes_abstract/jsonapi/route_base.py:1428
+#: routes_abstract/jsonapi/route_base.py:1440
 msgid "Data type is invalid"
 msgstr "Недопустимый тип данных"
 
-#: routes_abstract/jsonapi/route_base.py:1514
+#: routes_abstract/jsonapi/route_base.py:1526
 #, python-brace-format
 msgid "The object does not exist. Type: {type}. ID: {id}"
 msgstr "Объект не существует. Тип: {type}. ID: {id}"
 
-#: routes_abstract/jsonapi/route_base.py:1589
+#: routes_abstract/jsonapi/route_base.py:1601
 #, python-brace-format
 msgid "{model} is not JSON:API compliant"
 msgstr "{model} не является ресурсом JSON:API"
 
-#: routes_abstract/jsonapi/route_base.py:1593
+#: routes_abstract/jsonapi/route_base.py:1605
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has related objects in non-JSON:API models. "
@@ -265,11 +269,11 @@ msgstr ""
 "Нельзя удалить объект: на него ссылаются объекты моделей вне JSON:API "
 "(количество: {count})"
 
-#: routes_abstract/jsonapi/route_base.py:1612
+#: routes_abstract/jsonapi/route_base.py:1624
 msgid "Error deleting protected model"
 msgstr "Ошибка удаления защищённого объекта"
 
-#: routes_abstract/jsonapi/route_base.py:1615
+#: routes_abstract/jsonapi/route_base.py:1627
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has protected related objects of type "
@@ -313,6 +317,55 @@ msgstr "Пустое"
 #: schemas/enums.py:69
 msgid "Not blank"
 msgstr "Не пустое"
+
+#: services/aggregating.py:78
+msgid "Invalid aggregate"
+msgstr "Недопустимый агрегат"
+
+#: services/aggregating.py:100
+msgid ""
+"The aggregates of meta=aggregates: count, sum(f), avg(f), min(f), max(f), "
+"count(f), separated by commas"
+msgstr ""
+"Агрегаты meta=aggregates через запятую: count, sum(f), avg(f), min(f), "
+"max(f), count(f)"
+
+#: services/aggregating.py:107
+msgid ""
+"The field that groups meta=aggregates: a choice, a boolean, a to-one "
+"relation, or a date with :day, :week or :month"
+msgstr ""
+"Поле группировки meta=aggregates: поле выбора, логическое поле, связь с "
+"одним объектом или дата с :day, :week или :month"
+
+#: services/aggregating.py:131
+#, python-brace-format
+msgid "Unknown aggregate field '{field}' of {model}"
+msgstr "Неизвестное поле агрегата '{field}' у {model}"
+
+#: services/aggregating.py:151
+#, python-brace-format
+msgid ""
+"Invalid aggregate '{term}': count, or sum, avg, min, max or count of a "
+"field, such as sum(amount)"
+msgstr ""
+"Недопустимый агрегат '{term}': count либо sum, avg, min, max или count поля, "
+"например sum(amount)"
+
+#: services/aggregating.py:164
+#, python-brace-format
+msgid "The aggregate '{term}' does not apply to the field '{field}'"
+msgstr "Агрегат '{term}' неприменим к полю '{field}'"
+
+#: services/aggregating.py:192
+#, python-brace-format
+msgid ""
+"Cannot group by '{group}': group by a choice field, a boolean, a to-one "
+"relation, or a date field by day, week or month (such as {field}:month)"
+msgstr ""
+"Нельзя группировать по '{group}': группируйте по полю выбора, логическому "
+"полю, связи с одним объектом или по дате по дням, неделям или месяцам "
+"(например, {field}:month)"
 
 #: services/filtering.py:74 services/searching.py:65 services/sorting.py:83
 msgid "Invalid filter"

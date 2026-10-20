@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-12 20:07+0000\n"
+"POT-Creation-Date: 2026-10-20 09:49+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,9 +16,9 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: app_factory.py:416 routes_abstract/jsonapi/route_base.py:916
-#: routes_abstract/jsonapi/route_base.py:930
-#: routes_abstract/jsonapi/route_base.py:977
+#: app_factory.py:416 routes_abstract/jsonapi/route_base.py:928
+#: routes_abstract/jsonapi/route_base.py:942
+#: routes_abstract/jsonapi/route_base.py:989
 msgid "Item not found"
 msgstr ""
 
@@ -194,73 +194,77 @@ msgid ""
 "field should not be used directly, instead, you should use :py:attr:`~number`"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:194
+#: routes_abstract/jsonapi/route_base.py:196
 #, python-brace-format
 msgid "The related object of {name} does not exist"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:536
+#: routes_abstract/jsonapi/route_base.py:539
 #, python-brace-format
 msgid "The relationships cannot be included: {names}"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:541
+#: routes_abstract/jsonapi/route_base.py:544
 msgid "Invalid include"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1058
+#: routes_abstract/jsonapi/route_base.py:851
+msgid "Aggregates"
+msgstr ""
+
+#: routes_abstract/jsonapi/route_base.py:1070
 #, python-brace-format
 msgid "The relationship {name} cannot be changed"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1062
+#: routes_abstract/jsonapi/route_base.py:1074
 msgid "Relationship is read-only"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1267
+#: routes_abstract/jsonapi/route_base.py:1279
 #, python-brace-format
 msgid "The related object of {name} cannot be linked"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1269
+#: routes_abstract/jsonapi/route_base.py:1281
 msgid "Link not allowed"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1274
+#: routes_abstract/jsonapi/route_base.py:1286
 #, python-brace-format
 msgid "No access to the related object of {name}"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1276
+#: routes_abstract/jsonapi/route_base.py:1288
 msgid "Access denied"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1428
+#: routes_abstract/jsonapi/route_base.py:1440
 msgid "Data type is invalid"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1514
+#: routes_abstract/jsonapi/route_base.py:1526
 #, python-brace-format
 msgid "The object does not exist. Type: {type}. ID: {id}"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1589
+#: routes_abstract/jsonapi/route_base.py:1601
 #, python-brace-format
 msgid "{model} is not JSON:API compliant"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1593
+#: routes_abstract/jsonapi/route_base.py:1605
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has related objects in non-JSON:API models. "
 "(count: {count})"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1612
+#: routes_abstract/jsonapi/route_base.py:1624
 msgid "Error deleting protected model"
 msgstr ""
 
-#: routes_abstract/jsonapi/route_base.py:1615
+#: routes_abstract/jsonapi/route_base.py:1627
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has protected related objects of type "
@@ -301,6 +305,46 @@ msgstr ""
 
 #: schemas/enums.py:69
 msgid "Not blank"
+msgstr ""
+
+#: services/aggregating.py:78
+msgid "Invalid aggregate"
+msgstr ""
+
+#: services/aggregating.py:100
+msgid ""
+"The aggregates of meta=aggregates: count, sum(f), avg(f), min(f), max(f), "
+"count(f), separated by commas"
+msgstr ""
+
+#: services/aggregating.py:107
+msgid ""
+"The field that groups meta=aggregates: a choice, a boolean, a to-one "
+"relation, or a date with :day, :week or :month"
+msgstr ""
+
+#: services/aggregating.py:131
+#, python-brace-format
+msgid "Unknown aggregate field '{field}' of {model}"
+msgstr ""
+
+#: services/aggregating.py:151
+#, python-brace-format
+msgid ""
+"Invalid aggregate '{term}': count, or sum, avg, min, max or count of a "
+"field, such as sum(amount)"
+msgstr ""
+
+#: services/aggregating.py:164
+#, python-brace-format
+msgid "The aggregate '{term}' does not apply to the field '{field}'"
+msgstr ""
+
+#: services/aggregating.py:192
+#, python-brace-format
+msgid ""
+"Cannot group by '{group}': group by a choice field, a boolean, a to-one "
+"relation, or a date field by day, week or month (such as {field}:month)"
 msgstr ""
 
 #: services/filtering.py:74 services/searching.py:65 services/sorting.py:83

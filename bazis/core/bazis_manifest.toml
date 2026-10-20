@@ -7,6 +7,7 @@ summary = "JSON:API services on Django + FastAPI with schemas generated from the
 solves = [
     "REST/JSON:API CRUD for Django models",
     "filtering, sorting, pagination, sparse fieldsets, included resources",
+    "totals of a list for dashboards: sum, avg, min, max, count, grouped by a field or a date bucket (meta=aggregates)",
     "OpenAPI documentation, with the resource, action and kind of each operation (x-bazis) for client generators",
     "settings from environment variables and dynamic settings in the admin",
 ]

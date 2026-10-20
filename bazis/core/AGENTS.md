@@ -760,6 +760,8 @@ leaves out the `None` entry of the same class only.
   `default_route = True` (`bazis.W003`). Its own list and items are its `get_queryset`;
   the relationships, `included` and filters of the other routes use the `restrict_queryset`
   of the default route.
+- A total or a grouped count of a list (a dashboard tile, a chart by month) needs no
+  route: `meta=aggregates` of the list (API conventions).
 - A report (a narrowed list, an aggregate per object) is a route of a proxy model of the
   project (`class OpenTicket(Ticket): class Meta: proxy = True`): its type is
   `<app>.open_ticket`, its URL the resource path of the proxy, it has no create and update,
@@ -1021,7 +1023,7 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   `JsonApiHttpException` (`JsonApi403Exception` is `ERR_FORBIDDEN`) its status, `code`
   and `detail`; another `HTTPException` (an unknown path 404, a wrong method 405) its
   status and `detail`, with `ERR_REQUEST` when a route raised it; a query error 400
-  `ERR_FILTER`; an `IntegrityError` of a unique or an exclusion constraint (also at the
+  `ERR_FILTER` (of the aggregates `ERR_AGGREGATE`); an `IntegrityError` of a unique or an exclusion constraint (also at the
   commit) 409 `ERR_CONFLICT` ("The change conflicts with the current data";
   `meta.constraint` names the constraint with DEBUG; the transaction of the request is
   rolled back); on the create and the update of a route, a unique constraint of its model
@@ -1071,7 +1073,8 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
     whose fields the user writes: `/data/attributes/<f>`, `/data/relationships/<f>`, an
     error for each field; none otherwise (also on the relationships endpoints).
   - `ERR_INCLUDE` (400): `/query/include`. `ERR_FILTER` (400): `/query/filter`,
-    `/query/sort`, `/query/search`.
+    `/query/sort`, `/query/search`. `ERR_AGGREGATE` (400): `/query/aggregate`,
+    `/query/group`.
   - `ERR_RELATION_ACCESS` (403), `ERR_RELATION_LINK` (422): `/data/relationships/<f>`. On
     the relationships endpoints `/data/<j>`, the refused identifier of a to-many
     relationship, else `/data` (a to-one relationship, or an object the change unlinks).
@@ -1141,6 +1144,29 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   Points and distances), `page[limit]` / `page[offset]`
   (`BAZIS_API_PAGINATION_PAGE_SIZE_MAX` caps the limit), `include=customer,items`,
   `fields[crm.order]=number,customer` (sparse fieldsets).
+- Aggregates of a list (bazis 2.17; a total, a chart): `meta=aggregates` with
+  `aggregate=count,sum(amount),avg(amount),min(due),max(due),count(customer)` (comma
+  separated; `count` the objects, `count(f)` those with a value of `f`; without
+  `aggregate` only `count`) and optionally `group=<field>` or `group=<date field>:day`,
+  `:week` (from Monday), `:month`. They count every object of the list with its `filter`
+  and `search` (the objects of `get_queryset_for_list`, so the ones bazis-permit lets the
+  user view), not its page, sorting or sparse fieldsets, in one query; without
+  `meta=aggregates` the parameters are not read. `meta.aggregates` is
+  `{"count": 4, "sum(amount)": "60.50"}` (the key is the term as written), with `group` a
+  list ordered by the value, the objects without one last:
+  `[{"group": "2026-01-01", "values": {"count": 2, "sum(amount)": "30.50"}}, {"group": null, ...}]`.
+  A group is a string: the choice, `true`/`false`, the id of a to-one relation (as its
+  `relationships` data shows it), the ISO date of the start of the bucket (in the time zone
+  of the project); a decimal is a string, a date or a time ISO 8601, an average of an
+  integer field a float; over no object `count` is 0, the others `null`, the groups `[]`.
+  A field is a column of the model the `filter` of the route reaches for the user (the
+  LIST schema, `query_fields`; not a calculated field, a to-many relation or a path
+  `a__b`): `sum`/`avg` take a number, `min`/`max` a number or a date, `count` any; `group`
+  takes a field with `choices`, a boolean, a foreign key or one-to-one, or a date with a
+  bucket. Anything else is 400 `ERR_AGGREGATE` (pointer `/query/aggregate` or
+  `/query/group`), a hidden field answered as one that does not exist. Every
+  `JsonapiRouteBase` has it; an aggregate over other objects or of a calculated field is a
+  route of its own (Routes: a report).
 - `include` (retrieve, create, update) names relations of the schema of the action (an
   update also those of the create schema); a relation that is not in it (a reverse
   relation not added to `fields`, an attribute, a path `a.b`) is 400 `ERR_INCLUDE` with the

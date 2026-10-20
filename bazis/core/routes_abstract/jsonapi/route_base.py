@@ -63,7 +63,9 @@ from bazis.core.schemas.fields import (
     SchemaInclusions,
     SchemaMetaFields,
 )
+from bazis.core.schemas.meta import meta_field
 from bazis.core.schemas.schemas import JsonApiDataSchema, included_document_index
+from bazis.core.services.aggregating import AggregatesMeta, ServiceAggregating
 from bazis.core.services.filtering import ServiceFiltering
 from bazis.core.services.includes import include_to_list
 from bazis.core.services.meta_fields import meta_to_list
@@ -250,14 +252,15 @@ class JsonapiRouteBase(InitialRouteBase):
     @inject_make(CrudApiAction.LIST)
     class InjectForList:
         """
-        Dependency injection class for injecting filtering, searching, pagination, and
-        sorting services into LIST CRUD API actions.
+        Dependency injection class for injecting filtering, searching, pagination,
+        sorting and aggregating services into LIST CRUD API actions.
         """
 
         filtering: ServiceFiltering = Depends()
         searching: ServiceSearching = Depends()
         pagination: ServicePagination = Depends()
         sorting: SortingSearching = Depends()
+        aggregating: ServiceAggregating = Depends()
 
     @inject_make(CrudApiAction.RETRIEVE, CrudApiAction.LIST)
     class InjectOnlyFields:
@@ -844,6 +847,15 @@ class JsonapiRouteBase(InitialRouteBase):
             meta_fields[f_name] = meta_value
 
         return meta_fields
+
+    @meta_field([CrudApiAction.LIST], title=_('Aggregates'))
+    def aggregates(self) -> AggregatesMeta:
+        """
+        The aggregates of `aggregate` (`count` without it) over all the objects of the list
+        with its filter and search, not its page: by the term (`sum(amount)`), or a list of
+        `{group, values}` ordered by the value of `group` (None last).
+        """
+        return self.inject.aggregating.apply(self.get_queryset_for_list())
 
     def get_queryset(self) -> QuerySet:
         """
