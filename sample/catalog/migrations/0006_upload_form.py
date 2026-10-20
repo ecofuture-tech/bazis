@@ -22,7 +22,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('catalog', '0004_attachment_url'),
+        ('catalog', '0005_choices'),
     ]
 
     operations = [
