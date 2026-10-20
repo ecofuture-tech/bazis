@@ -45,6 +45,7 @@ from .schemas import (
     JsonApiTopObjectSchema,
 )
 from .validators import (
+    choices_validator,
     field_validate,
     geometry_validator,
     not_blank_validator,
@@ -386,12 +387,13 @@ class SchemaResourceBuilder:
     @staticmethod
     def _value_validators(is_response_schema: bool) -> dict:
         """
-        The validators of the null and the blank values of the fields. A response is not
-        checked for blank values: they are the values of the database.
+        The validators of the null, the blank and the choices values of the fields. A response
+        is not checked for blank values and choices: they are the values of the database.
         """
         validators = {'not_null_validator': field_validator('*')(not_null_validator)}
         if not is_response_schema:
             validators['not_blank_validator'] = field_validator('*')(not_blank_validator)
+            validators['choices_validator'] = field_validator('*')(choices_validator)
         return validators
 
     def _fields_config(self, is_response_schema: bool) -> ConfigDict | None:

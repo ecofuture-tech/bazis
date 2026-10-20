@@ -519,7 +519,8 @@ def get_attributes_kwargs(field_name, model_field):  # noqa: C901
             kwargs['allow_folders'] = model_field.allow_folders
 
     if model_field.choices:
-        kwargs['choices'] = model_field.choices
+        # the values of the groups too, and of the callable choices as of now
+        kwargs['choices'] = model_field.flatchoices
     else:
         # Extract max_value from validators
         max_value = next(

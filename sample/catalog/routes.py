@@ -33,7 +33,9 @@ class CategoryRouteSet(JsonapiRouteBase):
     search_fields = ['name']
 
     fields = {
-        CrudApiAction.UPDATE: SchemaFields(include={'name_en': None, 'name_ru': None}),
+        CrudApiAction.UPDATE: SchemaFields(
+            include={'name_en': None, 'name_ru': None, 'scope_en': None, 'scope_ru': None}
+        ),
     }
 
 
