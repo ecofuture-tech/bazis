@@ -133,6 +133,7 @@ def _initialize_app(app): # noqa: C901
 
     from .errors import (
         JsonApiBazisException,
+        JsonApiCookie,
         JsonApiItemInvalidException,
         SchemaError,
         SchemaErrors,
@@ -333,12 +334,12 @@ def _initialize_app(app): # noqa: C901
     def exc_encoder(
         errs: list[SchemaError],
         status: int,
-        cookies: list[tuple[str, str, int]] = None,
+        cookies: list[JsonApiCookie | tuple[str, str, int]] = None,
         headers: dict[str, str] | None = None,
     ):
         """
         Encodes a list of SchemaError objects into a JSON response with the specified
-        status and optional cookies.
+        status and optional cookies (`JsonApiCookie` or `(key, value, max_age)`).
         """
         response = JSONResponse(
             jsonable_encoder(SchemaErrors(errors=errs), exclude_unset=True, exclude_none=True),
@@ -347,8 +348,8 @@ def _initialize_app(app): # noqa: C901
         )
 
         if cookies:
-            for cookie_name, cookie_value, cookie_age in cookies:
-                response.set_cookie(key=cookie_name, value=cookie_value, max_age=cookie_age)
+            for cookie in cookies:
+                response.set_cookie(**JsonApiCookie(*cookie)._asdict())
 
         return response
 
