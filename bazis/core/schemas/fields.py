@@ -47,10 +47,9 @@ class CallableContext:
 
     def __hash__(self):
         """
-        Generates a unique hash for the CallableContext instance based on its class path
-        and attribute.
+        Hashes the class path and the attribute, as the dataclass `__eq__` compares them.
         """
-        return uniq_id((self.class_path, self.attr))
+        return hash((self.class_path, self.attr))
 
 
 @dataclasses.dataclass
@@ -149,10 +148,9 @@ class SchemaField:
 
     def __hash__(self):
         """
-        Generates a unique hash for the SchemaField instance based on its unique
-        identifier.
+        Hashes the name: equal fields have equal names, and a field equals its name.
         """
-        return self.idx
+        return hash(self.name)
 
     def __or__(self, other):  # noqa: C901
         """

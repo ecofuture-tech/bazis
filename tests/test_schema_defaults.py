@@ -173,3 +173,14 @@ def test_uuid_id_example_is_stable():
 
     assert model.get_id_example() == model.get_id_example()
     assert model.get_id_example() != apps.get_model('entity.ChildEntity').get_id_example()
+
+
+def test_schema_field_is_hashable():
+    from bazis.core.schemas.fields import CallableContext, SchemaField
+
+    context = CallableContext(class_path='a.B', attr='c')
+    assert hash(context) == hash(CallableContext(class_path='a.B', attr='c'))
+    field = SchemaField(name='title', required=True)
+    assert hash(field) == hash(SchemaField(name='title', required=True))
+    assert hash(field) == hash('title')
+    assert len({field, SchemaField(name='title', required=True), 'title'}) == 1
