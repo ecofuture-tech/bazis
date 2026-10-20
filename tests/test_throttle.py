@@ -20,6 +20,7 @@ The request rate limits of routes (`bazis.core.throttle`): a fixed window in Red
 
 import inspect
 from types import SimpleNamespace
+from unittest import mock
 
 from django import forms
 from django.core.cache import cache
@@ -52,6 +53,15 @@ def throttle_counts():
     throttle_reset()
     yield
     throttle_reset()
+
+
+@pytest.fixture(autouse=True)
+def fixed_window():
+    # the requests of a test count in one window: a real clock may pass the end of a window
+    # (of a second, of a minute) between them; mock.patch, not monkeypatch, which a test
+    # undoes for its own patches
+    with mock.patch('bazis.core.throttle.time', SimpleNamespace(time=lambda: 1_800_000_030.5)):
+        yield
 
 
 def exempt_local(request, ident):
