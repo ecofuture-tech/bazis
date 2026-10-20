@@ -38,6 +38,7 @@ class Person(DtMixin, UuidMixin, JsonApiMixin):
     """A model that does not validate its items."""
 
     name = models.CharField('Name', max_length=255)
+    email = models.EmailField('Email', blank=True)
 
 
 class Booking(DtMixin, UuidMixin, JsonApiMixin):

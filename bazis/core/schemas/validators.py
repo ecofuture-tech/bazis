@@ -23,6 +23,8 @@ from pydantic import (
     ValidationInfo,
 )
 
+from pydantic_core import PydanticCustomError
+
 from bazis.core.models_abstract import InitialBase
 from bazis.core.utils.geo import geojson_geometry
 
@@ -140,21 +142,28 @@ def model_validate(model: type[BaseModel], value, loc: tuple):
             _id = value['id']
             _type = value['type']
 
-        # e.errors() makes new dicts on every call: change and raise the same ones
+        # e.errors() makes new dicts on every call: change them and raise the same ones
         errors = e.errors()
-        for errs in errors:
-            errs = errs if isinstance(errs, list) else [errs]
-            for _e in errs:
-                if isinstance(_e['loc'], tuple):
-                    _e['loc'] = loc + _e['loc']
-                else:
-                    _e['loc'] = loc + (_e['loc'],)
+        for _e in errors:
+            _e['loc'] = loc + tuple(_e['loc'])
+            ctx = _e.setdefault('ctx', {})
+            if _id:
+                ctx['_id'] = _id
+            if _type:
+                ctx['_type'] = _type
 
-                if 'ctx' not in _e:
-                    _e['ctx'] = {}
-
-                if _id:
-                    _e['ctx']['_id'] = _id
-                if _type:
-                    _e['ctx']['_type'] = _type
-        raise ValidationError.from_exception_data(str(e), errors) from e
+        # `from_exception_data` rebuilds the built-in error types only with the context
+        # they were made from (a ValueError of `value_error` is `ctx['error']`, which is
+        # not in the context of the errors of `EmailStr`): a custom error keeps the type,
+        # the message and the context as they are
+        raise ValidationError.from_exception_data(
+            e.title,
+            [
+                {
+                    'type': PydanticCustomError(_e['type'], _e['msg'], _e['ctx']),
+                    'loc': _e['loc'],
+                    'input': _e['input'],
+                }
+                for _e in errors
+            ],
+        ) from e
