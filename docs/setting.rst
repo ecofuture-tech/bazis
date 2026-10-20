@@ -27,6 +27,8 @@ The conf.py modules of all Bazis packages installed in the environment (``bazis.
 - the core (``bazis.core.conf``) declares the settings of Django that a project sets with ``BS_*``, with the defaults of Django, including ``AUTH_USER_MODEL`` (``auth.User``) and ``AUTHENTICATION_BACKENDS``; the project sets them, e.g. ``BS_AUTH_USER_MODEL=users.User``;
 - a package declares only the settings it owns (``BAZIS_*``, ``KAFKA_*``, or names of its own such as ``AUTH_ANONYMOUS_USER_MODEL`` of bazis-users), which have no effect without the code of the package, and never redeclares or defaults a setting of Django. bazis-users and bazis-authing drop their ``AUTH_USER_MODEL`` and ``AUTHENTICATION_BACKENDS`` in their next releases, which require this version of the core.
 
+The conf.py modules are merged into one settings class in the order: the project, the core, the packages. The default of a setting declared in several of them comes from the first one, so the conf.py of the project overrides the defaults of the core and of the packages, and the core is not overridden by a package; an environment variable ``BS_<NAME>`` wins over every default. Of the packages listed in ``BS_BAZIS_APPS`` the last one wins.
+
 ``BS_BAZIS_APPS`` (or ``BS_BAZIS_CONFIG_APPS``) is only an explicit override: the exact list of the packages to load the settings from.
 
 .. code-block:: bash
