@@ -26,11 +26,13 @@ from django.test.utils import isolate_apps
 
 import pytest
 from bazis_test_utils.utils import get_api_client
+from catalog.routes import AttachmentRouteSet, MemoRouteSet
 from entity.models import ExtendedEntity, ParentEntity
+from entity.routes import ParentEntityRouteSet
 from visibility.models import Folder, Label, Note, Tag
-from visibility.routes import NoteBriefRouteSet, NoteRouteSet, TagRouteSet
+from visibility.routes import FolderRouteSet, NoteBriefRouteSet, NoteRouteSet, TagRouteSet
 
-from bazis.core.checks import check_search_fields
+from bazis.core.checks import check_filter_keys_ignored, check_search_fields
 from bazis.core.utils.query_complex import QueryScope, QueryToOrm, route_search_fields
 
 from tests import factories
@@ -39,6 +41,7 @@ from tests import factories
 NOTES = '/api/v1/visibility/note/'
 BRIEF = '/api/v1/visibility/note_brief/'
 FOLDERS = '/api/v1/visibility/folder/'
+TAGS = '/api/v1/visibility/tag/'
 
 
 @pytest.fixture
@@ -115,10 +118,101 @@ def test_hidden_field_is_answered_as_unknown(sample_app, data):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_search_needs_search_fields(sample_app, data):
-    assert_bad_request(get(sample_app, BRIEF, search='Secret'), 'search')
+def test_search_needs_text_fields(sample_app, data):
+    """
+    A route without `search_fields` searches the text fields of its LIST schema: the brief
+    notes show none (only their relations), so a search there is 400, the same answer as
+    with `search_fields = []`.
+    """
+    assert route_search_fields(NoteBriefRouteSet) == []
+    error = assert_bad_request(get(sample_app, BRIEF, search='Secret'), 'search')
+    assert error['detail'] == 'The search is not available for visibility.Note'
+    assert_bad_request(get(sample_app, BRIEF, filter='$search=Secret'), 'filter')
     # no search, no error
     assert len(ids(sample_app, BRIEF, search=' ')) == 3
+
+
+@pytest.mark.django_db(transaction=True)
+def test_empty_search_fields_turn_the_search_off(sample_app, data, monkeypatch):
+    monkeypatch.setattr(NoteRouteSet, 'search_fields', [])
+    assert_bad_request(get(sample_app, NOTES, search='Secret'), 'search')
+    assert_bad_request(get(sample_app, NOTES, filter='$search=Secret'), 'filter')
+    assert_bad_request(get(sample_app, TAGS, filter='note__$search=plain'), 'filter')
+    assert len(ids(sample_app, NOTES, search='')) == 3
+
+
+@pytest.mark.django_db(transaction=True)
+def test_search_by_default_searches_the_text_fields_of_the_schema(sample_app, data):
+    """
+    The folders declare no `search_fields`: `search` and `$search` search their text
+    fields (name, code), every word in one of them.
+    """
+    folder = [str(data['folder'].pk)]
+    other = Folder.objects.create(name='archive', code='box-7')
+    assert route_search_fields(FolderRouteSet) == ['name', 'code']
+    assert ids(sample_app, FOLDERS, search='FOLD') == folder
+    assert ids(sample_app, FOLDERS, search='box') == [str(other.pk)]
+    assert ids(sample_app, FOLDERS, search=f'arch {other.code}') == [str(other.pk)]
+    assert ids(sample_app, FOLDERS, search='folder box') == []
+    assert ids(sample_app, FOLDERS, filter='$search=fold') == folder
+    assert len(ids(sample_app, FOLDERS, search=' , ')) == 2
+
+
+@pytest.mark.django_db(transaction=True)
+def test_search_by_default_through_a_relation(sample_app, data, monkeypatch):
+    """
+    `<relation>__$search` searches the search fields of the default route of the related
+    model, by default its text fields, in the objects the user can see (the many-to-many
+    `tags`: test_search_through_a_relation_reaches_only_visible_objects).
+    """
+    # the route of the tags declares no search fields: their name
+    assert ids(sample_app, NOTES, filter='tag__$search=visib') == [str(data['plain'].pk)]
+    # the hidden tag is not visible
+    assert ids(sample_app, NOTES, filter='tag__$search=hidden') == []
+    # the notes of the tags declare theirs (name, tag__name)
+    assert ids(sample_app, TAGS, filter='note__$search=plain') == [str(data['tags']['visible'].pk)]
+    monkeypatch.setattr(NoteRouteSet, 'search_fields', None)
+    assert route_search_fields(NoteRouteSet) == ['name']
+    assert ids(sample_app, TAGS, filter='note__$search=plain') == [str(data['tags']['visible'].pk)]
+    assert ids(sample_app, NOTES, search='visible') == []
+
+
+@pytest.mark.django_db(transaction=True)
+def test_search_by_default_leaves_out_a_hidden_field(sample_app, data, monkeypatch):
+    """
+    A text field that the LIST schema does not show the user (a package narrows it per
+    user, as bazis-permit) is not searched: its value finds nothing, and the search of the
+    other fields is not an error.
+    """
+    other = Folder.objects.create(name='archive', code='box-7')
+    query_fields = FolderRouteSet.query_fields.__func__
+
+    def without_code(cls, user=None, **kwargs):
+        return [it for it in query_fields(cls, user=user, **kwargs) if it.source != 'code']
+
+    monkeypatch.setattr(FolderRouteSet, 'query_fields', classmethod(without_code))
+    assert ids(sample_app, FOLDERS, search='box') == []
+    assert ids(sample_app, FOLDERS, filter='$search=box') == []
+    assert ids(sample_app, FOLDERS, search='arch') == [str(other.pk)]
+    # without a text field left, no search
+    monkeypatch.setattr(FolderRouteSet, 'query_fields', classmethod(lambda cls, **kw: []))
+    assert_bad_request(get(sample_app, FOLDERS, search='arch'), 'search')
+
+
+def test_default_search_fields_are_the_text_fields():
+    """
+    The text fields of the LIST schema in its order: not the primary key, the relations,
+    the calculated fields, the fields with choices (status, kind), the numbers (mood,
+    number), the UUID (ref) and array fields; `URLField` is a text field.
+    """
+    assert route_search_fields(MemoRouteSet) == ['title', 'body', 'code']
+    assert route_search_fields(TagRouteSet) == ['name']
+    assert route_search_fields(AttachmentRouteSet) == ['name', 'url']
+    assert route_search_fields(ParentEntityRouteSet) == ['name', 'description']
+    memo_fields = {it.source for it in MemoRouteSet.query_fields()}
+    assert {'status', 'kind', 'mood', 'number', 'category', 'cards_count'} <= memo_fields
+    assert 'ref' in {it.source for it in TagRouteSet.query_fields()}
+    assert 'field' in {it.source for it in ParentEntityRouteSet.query_fields()}
 
 
 @pytest.mark.django_db(transaction=True)
@@ -179,8 +273,9 @@ def test_search_through_a_relation_reaches_only_visible_objects(sample_app, data
     # the tag of the third note is hidden
     assert ids(sample_app, NOTES, search='hidden') == []
     assert ids(sample_app, NOTES, filter='$search=visible') == [str(data['plain'].pk)]
-    # the route of the tags has no search fields
-    assert_bad_request(get(sample_app, NOTES, filter='tags__$search=visible'), 'filter')
+    # the route of the tags declares no search fields: by default their name
+    assert ids(sample_app, NOTES, filter='tags__$search=visible') == [str(data['plain'].pk)]
+    assert ids(sample_app, NOTES, filter='tags__$search=hidden') == []
 
 
 @pytest.mark.django_db(transaction=True)
@@ -332,6 +427,11 @@ def test_route_search_fields(monkeypatch):
     assert route_search_fields(NoteBriefRouteSet) == []
     monkeypatch.setattr(NoteBriefRouteSet, 'search_fields', [])
     assert route_search_fields(NoteBriefRouteSet) == []
+    # not declared: the text fields of the LIST schema
+    monkeypatch.setattr(NoteRouteSet, 'search_fields', None)
+    assert route_search_fields(NoteRouteSet) == ['name']
+    monkeypatch.setattr(NoteRouteSet, 'search_fields', [])
+    assert route_search_fields(NoteRouteSet) == []
 
 
 @pytest.mark.django_db(transaction=True)
@@ -387,3 +487,85 @@ def test_filters_aliases_are_not_scoped():
     assert QueryToOrm('kids__child_name=x', ParentEntity, aliases, scope=scope).q
     with pytest.raises(ValueError, match="Unknown filter field 'nonexistent'"):
         QueryToOrm('kids__nonexistent=x', ParentEntity, aliases, scope=scope)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    'filter_str, expected',
+    [
+        # the key alone, whatever its lookup and value
+        ('dt_deleted=null', ['secret', 'plain', 'with_hidden']),
+        ('dt_deleted__gt=2020-01-01', ['secret', 'plain', 'with_hidden']),
+        ('dt_deleted__isnull=true', ['secret', 'plain', 'with_hidden']),
+        ('dt_deleted__in=a,b', ['secret', 'plain', 'with_hidden']),
+        ('dt_deleted__x__y=1', ['secret', 'plain', 'with_hidden']),
+        # negated
+        ('~dt_deleted=null', ['secret', 'plain', 'with_hidden']),
+        ('~(dt_deleted__lt=2020-01-01)', ['secret', 'plain', 'with_hidden']),
+        # with the other keys, which filter as without it
+        ('folder={folder}&dt_deleted=null', ['secret']),
+        ('dt_deleted=null&name=plain', ['plain']),
+        ('~dt_deleted=null&name=plain', ['plain']),
+        ('folder={folder}&dt_deleted__gte=2020-01-01&~name=plain', ['secret']),
+        # left out of an `or` as well: not a condition that every object meets
+        ('(name=plain|dt_deleted=null)', ['plain']),
+    ],
+)
+def test_filter_keys_ignored(sample_app, data, filter_str, expected):
+    """
+    `filter_keys_ignored` of the route of the notes (`dt_deleted`, which the notes do not
+    have): the filter of a request leaves the key out.
+    """
+    filter_str = filter_str.format(folder=data['folder'].pk)
+    assert sorted(ids(sample_app, NOTES, filter=filter_str)) == sorted(
+        str(data[it].pk) for it in expected
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    'url, filter_str',
+    [
+        # after a relation into the notes, whose route leaves it out
+        (TAGS, 'note__dt_deleted=null'),
+        (TAGS, '~note__dt_deleted__gt=2020-01-01'),
+        # another route of the notes
+        (BRIEF, 'dt_deleted=null'),
+        # a key that only starts the same
+        (NOTES, 'dt_deleted_at=null'),
+    ],
+)
+def test_filter_keys_ignored_only_of_the_route(sample_app, data, url, filter_str):
+    assert_bad_request(get(sample_app, url, filter=filter_str), 'filter')
+
+
+def test_filter_keys_ignored_only_in_the_filter_of_a_request():
+    """The conditions of the code (no scope) and the other scopes do not leave it out."""
+    with pytest.raises(ValueError, match="Unknown filter field 'dt_deleted'"):
+        QueryToOrm('dt_deleted=null', Note)
+    with pytest.raises(ValueError, match="Unknown filter field 'dt_deleted'"):
+        QueryToOrm('dt_deleted=null', Note, scope=QueryScope(['name']))
+    assert QueryScope.for_route(NoteRouteSet).filter_keys_ignored == {'dt_deleted'}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_filter_keys_ignored_are_not_filter_fields(sample_app):
+    response = get(sample_app, f'{NOTES}route_filter_fields/')
+    assert response.status_code == 200, response.text
+    names = {it['name'] for it in response.json()['fields']}
+    assert 'name' in names
+    assert 'dt_deleted' not in names
+
+
+@pytest.mark.django_db(transaction=True)
+def test_filter_keys_ignored_check(sample_app, monkeypatch):
+    """A key of `filter_keys_ignored` that is a filter key of the route is bazis.E002."""
+    assert check_filter_keys_ignored(None) == []
+    monkeypatch.setattr(NoteRouteSet, 'filters_aliases', {'kind': 'folder__name'})
+    monkeypatch.setattr(
+        NoteRouteSet, 'filter_keys_ignored', frozenset({'dt_deleted', 'name', 'pk', 'kind'})
+    )
+    errors = check_filter_keys_ignored(None)
+    assert {it.id for it in errors} == {'bazis.E002'}
+    assert {it.obj for it in errors} == {'visibility.routes.NoteRouteSet'}
+    assert [it.msg.split("'")[1] for it in errors] == ['kind', 'name', 'pk']

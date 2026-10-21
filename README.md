@@ -496,8 +496,12 @@ The `filter` query parameter holds one expression (URL-encode it):
 The filter, the sorting and the search reach only what the route shows the user: a key
 starts with a field of the LIST schema of the route, a relation of it leads into the
 objects the default route of the related model shows (its `restrict_queryset`) and its
-LIST fields, and the search uses the `search_fields` of the route (none: no search). Any
-other key is 400 `ERR_FILTER`, as an unknown field.
+LIST fields, and the search uses the `search_fields` of the route (not declared: the text
+fields of its LIST schema; `[]`: no search). Any
+other key is 400 `ERR_FILTER`, as an unknown field. For the compatibility with released
+clients that send a key the route has no field for, `filter_keys_ignored =
+frozenset({'dt_deleted'})` of the route leaves out the keys of its filter that start
+with such a name (any lookup, value or `~`; not after a relation).
 
 The lookup suffixes are not Django lookups; a field accepts only these (and `isnull`).
 A relation accepts `exists` and `isnull` (`true`/`false`) or a field of the related model:

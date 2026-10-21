@@ -183,6 +183,22 @@ def test_the_filter_and_the_search_apply_the_page_does_not(sample_app, parents, 
 
 
 @pytest.mark.django_db(transaction=True)
+def test_the_search_by_default_applies(sample_app, parents):
+    """The route declares no search fields: the search of its text fields counts too."""
+    ParentEntity.objects.filter(name='gamma').update(description='after alpha')
+    params = {'aggregate': 'count,sum(price)', 'search': 'alpha'}
+    assert aggregates(sample_app, **params) == {'count': 2, 'sum(price)': '40.00'}
+    response = get(
+        sample_app, PARENTS, meta='aggregates,pagination', **{'page[limit]': 1}, **params
+    )
+    assert response.status_code == 200, response.text
+    assert len(response.json()['data']) == 1
+    meta = response.json()['meta']
+    assert meta['aggregates'] == {'count': 2, 'sum(price)': '40.00'}
+    assert meta['pagination']['count'] == 2
+
+
+@pytest.mark.django_db(transaction=True)
 def test_an_empty_list(sample_app, parents):
     params = {'aggregate': 'count,sum(price),max(dt_approved)', 'filter': 'name=nothing'}
     assert aggregates(sample_app, **params) == {

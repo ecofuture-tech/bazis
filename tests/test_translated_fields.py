@@ -98,6 +98,29 @@ def test_search_in_the_language_of_the_request(sample_app, two_languages, catego
 
 
 @pytest.mark.django_db(transaction=True)
+def test_search_by_default_in_the_language_of_the_request(
+    sample_app, two_languages, categories, monkeypatch
+):
+    """
+    Without `search_fields` the route searches its translated text field (name) in the
+    language of the request, not the columns of the other languages; `scope` has choices
+    and is left out.
+    """
+    from catalog.routes import CategoryRouteSet
+
+    from bazis.core.utils.query_complex import route_search_fields
+
+    monkeypatch.setattr(CategoryRouteSet, 'search_fields', None)
+    assert route_search_fields(CategoryRouteSet) == ['name']
+    Category.objects.filter(pk=categories['plum'].pk).update(scope_en='draft')
+    assert names(sample_app, '&search=ear') == ['Pear']
+    assert names(sample_app, '&search=руш', lang='ru') == ['Груша']
+    assert names(sample_app, '&search=ear', lang='ru') == []
+    assert names(sample_app, '&filter=$search=блок', lang='ru') == ['Яблоко']
+    assert names(sample_app, '&search=draft') == []
+
+
+@pytest.mark.django_db(transaction=True)
 def test_write_the_columns_of_the_languages(sample_app, two_languages, categories):
     """The attribute is read-only (ignored); a route that adds the columns writes them."""
     pear = categories['pear']

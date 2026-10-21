@@ -15,12 +15,21 @@
 """
 A create and an update accept only the choices of a field that has them: the values of the
 `enum` of the OpenAPI (static, callable and grouped choices, the elements of an array field,
-the field of every language of a translated one).
+the field of every language of a translated one), as sent or as the type of the field
+converts it.
 """
+
+from datetime import date
+from decimal import Decimal
+from uuid import UUID
+
+from pydantic import Field, ValidationError, create_model
 
 import pytest
 from bazis_test_utils.utils import get_api_client
-from catalog.models import Category, Memo
+from catalog.models import Category, Memo, Tone
+
+from bazis.core.schemas.builders import SchemaResourceBuilder
 
 
 MEMOS = '/api/v1/catalog/memo/'
@@ -37,6 +46,17 @@ def document(type_, item=None, **attributes):
 
 def memo_document(memo=None, **attributes):
     return document('catalog.memo', memo, **{'title': 'Memo', **attributes})
+
+
+def openapi_enums(app, field):
+    """The `enum` of the field in the schemas of the memos in the OpenAPI."""
+    return {
+        tuple(props[field]['enum'])
+        for name, schema in app.openapi()['components']['schemas'].items()
+        if 'catalog' in name.lower() and 'memo' in name.lower()
+        for props in [schema.get('properties', {})]
+        if field in props and 'enum' in props[field]
+    }
 
 
 def refused(response, pointer):
@@ -131,10 +151,112 @@ def test_integer_choices(sample_app):
     response = client.post(MEMOS, json_data=memo_document(mood=3))
     refused(response, '/data/attributes/mood')
 
+    # as the type converts it: a number as a string, as in 2.18
+    response = client.post(MEMOS, json_data=memo_document(mood='2'))
+    assert response.status_code == 201, response.text
+    assert Memo.objects.get().mood == 2
+    response = client.post(MEMOS, json_data=memo_document(mood='3'))
+    refused(response, '/data/attributes/mood')
+
     response = client.post(MEMOS, json_data=memo_document(mood=2))
     assert response.status_code == 201, response.text
     response = client.post(MEMOS, json_data=memo_document(mood=None))
     assert response.status_code == 201, response.text
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_type_that_makes_an_object_of_the_code_accepts_the_codes(sample_app):
+    # the schema type of the field (`Tone`) makes an object of the code: the choices are
+    # checked on the code that the request sends
+    client = get_api_client(sample_app)
+
+    response = client.post(MEMOS, json_data=memo_document(tone='warm'))
+    assert response.status_code == 201, response.text
+    assert response.json()['data']['attributes']['tone'] == 'warm'
+    memo = Memo.objects.get()
+    assert memo.tone is Tone.WARM
+
+    response = client.patch(f'{MEMOS}{memo.pk}/', json_data=memo_document(memo, tone='cold'))
+    assert response.status_code == 200, response.text
+    assert response.json()['data']['attributes']['tone'] == 'cold'
+    memo.refresh_from_db()
+    assert memo.tone is Tone.COLD
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_type_that_makes_an_object_of_the_code_refuses_other_values(sample_app):
+    client = get_api_client(sample_app)
+
+    response = client.post(MEMOS, json_data=memo_document(tone='hot'))
+    refused(response, '/data/attributes/tone')
+    assert not Memo.objects.exists()
+
+    memo = Memo.objects.create(title='Memo', tone=Tone.WARM)
+    response = client.patch(f'{MEMOS}{memo.pk}/', json_data=memo_document(memo, tone='hot'))
+    refused(response, '/data/attributes/tone')
+    memo.refresh_from_db()
+    assert memo.tone is Tone.WARM
+
+
+KEYS = {
+    'rate': [Decimal('0.10'), Decimal('0.50')],
+    'due': [date(2026, 1, 1), date(2026, 7, 1)],
+    'ticket': [
+        UUID('8a6e0804-2bd0-4672-b79d-d97027f9071a'),
+        UUID('0f3b2c1d-58e4-4b7a-9c2e-6d1f0a9b8c7e'),
+    ],
+}
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    'field, other',
+    [('rate', '0.20'), ('due', '2026-02-01'), ('ticket', 'a3c1e7f0-5b2d-4e8a-9f61-2b7c0d4e5a19')],
+)
+def test_choices_whose_keys_are_not_json_values(sample_app, field, other):
+    # the request sends the keys as the OpenAPI shows them: the type of the field converts
+    # them to the keys of the choices
+    ((first, second),) = openapi_enums(sample_app, field)
+    client = get_api_client(sample_app)
+
+    response = client.post(MEMOS, json_data=memo_document(**{field: first}))
+    assert response.status_code == 201, response.text
+    memo = Memo.objects.get()
+    assert getattr(memo, field) == KEYS[field][0]
+
+    response = client.patch(f'{MEMOS}{memo.pk}/', json_data=memo_document(memo, **{field: second}))
+    assert response.status_code == 200, response.text
+    memo.refresh_from_db()
+    assert getattr(memo, field) == KEYS[field][1]
+
+    response = client.post(MEMOS, json_data=memo_document(**{field: other}))
+    refused(response, f'/data/attributes/{field}')
+    response = client.patch(f'{MEMOS}{memo.pk}/', json_data=memo_document(memo, **{field: other}))
+    refused(response, f'/data/attributes/{field}')
+    memo.refresh_from_db()
+    assert getattr(memo, field) == KEYS[field][1]
+
+
+def test_keys_converted_by_the_type_of_the_field():
+    # keys of another type than the field (strings of a decimal field): the value converted
+    # by the type is compared with the keys converted by it
+    choices = {'enum': ['0.10', '0.50']}
+    schema = create_model(
+        'Rates',
+        __validators__=SchemaResourceBuilder._value_validators(is_response_schema=False),
+        rate=(Decimal | None, Field(None, json_schema_extra=choices)),
+        rates=(list[Decimal], Field([], json_schema_extra=choices)),
+    )
+
+    assert schema(rate=0.1).rate == Decimal('0.1')
+    assert schema(rates=[0.5, '0.10']).rates == [Decimal('0.5'), Decimal('0.10')]
+    # one error, of the choices, also for a value the type refuses
+    for values, value in (({'rate': 0.2}, 0.2), ({'rates': [0.5, 0.2]}, 0.2), ({'rate': 'x'}, 'x')):
+        with pytest.raises(ValidationError) as error:
+            schema(**values)
+        assert [it['msg'] for it in error.value.errors()] == [
+            f'Value error, Value {value!r} is not a valid choice'
+        ]
 
 
 @pytest.mark.django_db(transaction=True)
@@ -187,22 +309,16 @@ def test_the_column_of_every_language_checks_the_choices(sample_app):
 
 @pytest.mark.django_db(transaction=True)
 def test_the_openapi_enum_is_what_the_write_accepts(sample_app):
-    schemas = sample_app.openapi()['components']['schemas']
-
-    def enums(field):
-        found = {
-            tuple(props[field]['enum'])
-            for name, schema in schemas.items()
-            if 'catalog' in name.lower() and 'memo' in name.lower()
-            for props in [schema.get('properties', {})]
-            if field in props and 'enum' in props[field]
-        }
-        return found
-
-    assert enums('status') == {('draft', 'sent')}
+    assert openapi_enums(sample_app, 'status') == {('draft', 'sent')}
     # the values of the groups, not the pairs
-    assert enums('kind') == {('task', 'meeting', 'idea')}
-    assert enums('mood') == {(1, 2)}
+    assert openapi_enums(sample_app, 'kind') == {('task', 'meeting', 'idea')}
+    assert openapi_enums(sample_app, 'mood') == {(1, 2)}
+    # the codes, not the objects of the schema type
+    assert openapi_enums(sample_app, 'tone') == {('warm', 'cold')}
+    # the keys that are not JSON values, as JSON
+    assert openapi_enums(sample_app, 'rate') == {('0.10', '0.50')}
+    assert openapi_enums(sample_app, 'due') == {('2026-01-01', '2026-07-01')}
+    assert openapi_enums(sample_app, 'ticket') == {tuple(str(key) for key in KEYS['ticket'])}
 
 
 @pytest.mark.django_db(transaction=True)

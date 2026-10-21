@@ -145,7 +145,8 @@ Full-Text Search in Filtering
 ------------------------------
 
 - ``$search=text``: Identical to the top-level query ``'?search=text'``: the search fields of the route
-  (``search_fields``); a route without them has no search (400 ``ERR_FILTER``).
+  (``search_fields``; not declared, the text fields of its LIST schema for the user); a route with
+  ``search_fields = []`` or without text fields has no search (400 ``ERR_FILTER``).
 - ``description__$search=some text``: Full-text search only in the *description* text field.
 - ``author__$search=text``: The search fields of the default route of the nested *author* model.
 - ``author__username__$search=text``: Full-text search only in the *username* text field of the nested *author* entity.
@@ -158,7 +159,9 @@ The filter, ``sort`` and ``search`` reach only what the route shows the user. A 
 ``restrict_queryset`` for ``view``), and the key goes on with the fields of the LIST schema of that route; a model
 without a route gives only ``id`` (``pk``), ``__exists`` and ``__isnull``. ``sort`` follows to-one relations only, an object
 the user cannot see sorts as null, and a relation itself sorts by the key of the related object. Any other key is 400 ``ERR_FILTER`` with the pointer ``/query/filter``,
-``/query/sort`` or ``/query/search``, the same answer as for a field that does not exist.
+``/query/sort`` or ``/query/search``, the same answer as for a field that does not exist. A route may leave
+out, for the compatibility with released clients, the filter keys that start with a name of its
+``filter_keys_ignored`` (any lookup, value or ``~``; not after a relation): they are not in ``route_filter_fields``.
 
 Working with Related Entities
 -----------------------------

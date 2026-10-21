@@ -25,8 +25,10 @@ from bazis.core.utils.query_complex import QueryScope, SearchToOrm
 
 class ServiceSearching:
     """
-    ServiceSearching handles the search functionality for a given queryset, using
-    the search fields defined in the route class.
+    ServiceSearching handles the search functionality for a given queryset: with a query
+    scope, the search fields of the scope (`QueryScope.search_fields`: the `search_fields`
+    of its route, else the text fields of the LIST schema for the user); without one, the
+    `search_fields` of the route class, else every text and integer field of the model.
 
     Tags: RAG, EXPORT
     """
@@ -37,8 +39,9 @@ class ServiceSearching:
     def __init__(self, search: str = None, route_ctx: RouteContext = Depends(get_route_ctx)):
         """
         Initializes the ServiceSearching class with an optional search string and a
-        route context. The route context provides the route class which contains the
-        search fields.
+        route context. The route context provides the route class, whose `search_fields`
+        are searched when `apply` gets no scope; with a scope the fields are those of the
+        scope.
         """
         self.search = search
         self.route_cls = route_ctx.route_cls
@@ -47,14 +50,18 @@ class ServiceSearching:
         """
         Applies the search query to the provided queryset by constructing a Q object and
         filtering the queryset based on the search terms. With a scope (by default the
-        scope of the route of the request) only the search fields of the route it reaches
-        are searched, and a search on a route without them is 400 ERR_FILTER; without a
-        scope (None) a route without search fields searches every text field of the model.
+        scope of the route of the request) its search fields are searched where it reaches
+        them (`search_fields` of the route, else the text fields of its LIST schema for the
+        user), and a search without one of them is 400 ERR_FILTER; without a scope (None)
+        the `search_fields` of the route, else every text and integer field of the model.
         """
         scope = request_query_scope(scope)
         try:
             search = SearchToOrm(
-                queryset.model, self.search, search_fields=self.route_cls.search_fields, scope=scope
+                queryset.model,
+                self.search,
+                search_fields=self.route_cls.search_fields if scope is None else None,
+                scope=scope,
             )
         except ValueError as e:
             raise JsonApiBazisException(

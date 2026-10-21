@@ -150,4 +150,4 @@ To define a route class based on ``JsonapiRouteBase``, you need to specify the f
 - ``fields``: A dictionary of ``bazis.core.schemas.SchemaFields`` objects. If not set, all explicit model fields will be used.
 - ``inclusions``: A dictionary of ``bazis.core.schemas.SchemaFields`` objects. If not set, all relation fields will be available for request as included.
 - ``meta_fields``: A dictionary of ``bazis.core.schemas.SchemaMetaFields`` objects. If not set, all declared metadata in the route will be available.
-- ``search_fields``: A list of fields of the LIST schema of the route for the search (``search``, ``$search``). If not set, the route has no search (400 ``ERR_FILTER``); before 2.9 all string fields of the model were searched.
+- ``search_fields``: A list of fields of the LIST schema of the route for the search (``search``, ``$search``). If not set (``None``), the text fields of the LIST schema for the user (``CharField``/``TextField`` without choices, ``TranslatedField``; since 2.20); ``[]``: the route has no search (400 ``ERR_FILTER``). From 2.9 to 2.19 a route without them had no search; before 2.9 all string fields of the model were searched.

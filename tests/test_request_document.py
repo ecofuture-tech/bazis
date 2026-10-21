@@ -179,3 +179,30 @@ def test_include_of_the_relations_of_the_schema(sample_app):
         f'{MEMOS}{memo.pk}/?include=cards', json_data=memo_document(memo, title='new')
     )
     assert response.status_code == 200, response.text
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_invalid_attribute_of_a_document_without_type(sample_app):
+    # `type` may be left out (the schema has it by default): the error of an attribute
+    # names the item by its id only
+    memo = Memo.objects.create(title='Memo')
+    client = get_api_client(sample_app)
+    document = {'data': {'id': str(memo.pk), 'attributes': {'title': ''}}}
+
+    response = client.patch(f'{MEMOS}{memo.pk}/', json_data=document)
+    error = error_of(response, 422, 'ERR_VALIDATE')
+    assert error['source'] == {'id': str(memo.pk), 'pointer': '/data/attributes/title'}
+    memo.refresh_from_db()
+    assert memo.title == 'Memo'
+
+    response = client.post(MEMOS, json_data=document)
+    error = error_of(response, 422, 'ERR_VALIDATE')
+    assert error['source']['pointer'] == '/data/attributes/title'
+    assert 'type' not in error['source']
+    assert Memo.objects.count() == 1
+
+    document['data']['attributes']['title'] = 'Renamed'
+    response = client.patch(f'{MEMOS}{memo.pk}/', json_data=document)
+    assert response.status_code == 200, response.text
+    memo.refresh_from_db()
+    assert memo.title == 'Renamed'

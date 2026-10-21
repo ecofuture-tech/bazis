@@ -19,6 +19,11 @@ fields that must not be blank and reference data translated into the languages o
 project.
 """
 
+from datetime import date
+from decimal import Decimal
+from enum import Enum
+from uuid import UUID
+
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Max, OuterRef, Subquery
@@ -27,6 +32,7 @@ from django.utils.translation import gettext_lazy as _
 from translated_fields import TranslatedField, TranslatedFieldWithFallback
 
 from bazis.core.models_abstract import JsonApiMixin, UniqNumberMixin
+from bazis.core.utils.django_types import TYPES_DJANGO_TO_SCHEMA
 from bazis.core.utils.orm import FieldAnnotate, FieldDynamic, calc_property
 
 
@@ -38,6 +44,35 @@ class MemoStatus(models.TextChoices):
 def memo_kinds():
     """Callable choices of a field, in groups."""
     return [('Work', [('task', 'Task'), ('meeting', 'Meeting')]), ('idea', 'Idea')]
+
+
+class Tone(Enum):
+    """A tone of a memo: an object of its code, which the database and the API hold."""
+
+    WARM = 'warm'
+    COLD = 'cold'
+
+
+class ToneField(models.CharField):
+    """
+    A CharField of the codes of the tones, whose value is the `Tone`. Its schema type is
+    `Tone` (`TYPES_DJANGO_TO_SCHEMA`, as `GeoJson` of a geometry field): a request sends the
+    code, the schema makes the object of it, a response shows the code.
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('max_length', 10)
+        kwargs.setdefault('choices', [(tone.value, tone.name.title()) for tone in Tone])
+        super().__init__(*args, **kwargs)
+
+    def from_db_value(self, value, expression, connection):
+        return Tone(value) if value else value
+
+    def get_prep_value(self, value):
+        return super().get_prep_value(value.value if isinstance(value, Tone) else value)
+
+
+TYPES_DJANGO_TO_SCHEMA[ToneField] = Tone
 
 
 class Attachment(JsonApiMixin):
@@ -74,6 +109,27 @@ class Memo(UniqNumberMixin, JsonApiMixin):
     kind = models.CharField('Kind', max_length=10, choices=memo_kinds, null=True, blank=True)
     # integer choices, null but not blank
     mood = models.IntegerField('Mood', choices=[(1, 'Bad'), (2, 'Good')], null=True)
+    # choices of a field whose schema type makes an object of the code
+    tone = ToneField('Tone', null=True)
+    # choices whose keys are not JSON values: the request sends them as the OpenAPI shows them
+    rate = models.DecimalField(
+        'Rate',
+        max_digits=3,
+        decimal_places=2,
+        choices=[(Decimal('0.10'), 'Low'), (Decimal('0.50'), 'High')],
+        null=True,
+    )
+    due = models.DateField(
+        'Due', choices=[(date(2026, 1, 1), 'New year'), (date(2026, 7, 1), 'Midyear')], null=True
+    )
+    ticket = models.UUIDField(
+        'Ticket',
+        choices=[
+            (UUID('8a6e0804-2bd0-4672-b79d-d97027f9071a'), 'First'),
+            (UUID('0f3b2c1d-58e4-4b7a-9c2e-6d1f0a9b8c7e'), 'Second'),
+        ],
+        null=True,
+    )
     category = models.ForeignKey(
         Category, null=True, blank=True, on_delete=models.SET_NULL, related_name='memos'
     )

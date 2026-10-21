@@ -19,8 +19,10 @@ from django.contrib.gis.db.models import GeometryField
 
 from pydantic import (
     BaseModel,
+    TypeAdapter,
     ValidationError,
     ValidationInfo,
+    ValidatorFunctionWrapHandler,
 )
 
 from pydantic_core import PydanticCustomError
@@ -62,24 +64,65 @@ def not_blank_validator(cls: type[BaseModel], v: Any, field: ValidationInfo):
     return v
 
 
-def choices_validator(cls: type[BaseModel], v: Any, field: ValidationInfo):
+def choices_validator(
+    cls: type[BaseModel], v: Any, handler: ValidatorFunctionWrapHandler, field: ValidationInfo
+):
     """
-    Validator to ensure that a value of a field with choices is one of them: the `enum` of
-    the field in the schema, which is the one of the OpenAPI (the choices of the model field,
-    also the callable and the grouped ones; the choices of the elements of an array field).
-    Null and empty values of the field are left to the null and the blank validators, as in
-    the validation of a Django model field; the elements of an array are all choices. Only the request schemas check it.
+    Validator (wrap, around the schema type of the field) to ensure that a value of a field
+    with choices is one of them: the `enum` of the field in the schema, which is the one of
+    the OpenAPI (the choices of the model field, also the callable and the grouped ones; the
+    choices of the elements of an array field). A value is a choice if it is a key of the
+    choices as sent (a type of `TYPES_DJANGO_TO_SCHEMA` may make an object of a code) or
+    once the type has converted it (`"2"` of an integer field, a Decimal, a UUID or a date
+    sent as JSON), also against the keys converted by the same type. A value the type
+    refuses is not a choice either: the error is the one of the choices. Null and empty
+    values of the field are left to the null and the blank validators, as in the validation
+    of a Django model field; the elements of an array are all choices. Only the request
+    schemas check it.
 
     Tags: RAG, INTERNAL
     """
     enum = cls.model_fields[field.field_name].json_schema_extra.get('enum')
-    if enum:
-        # an empty value of a field is left to the null and blank validators; an element of
-        # an array is a choice whatever it is
-        for value in v if isinstance(v, list) else [] if v in (None, '') else [v]:
-            if value not in enum:
-                raise ValueError(f'Value {value!r} is not a valid choice')
-    return v
+    if not enum or v is None or v == '':
+        # an empty value of a field is left to the null and blank validators
+        return handler(v)
+    is_array = isinstance(v, list)
+    values = v if is_array else [v]
+    if all(value in enum for value in values):
+        return handler(v)
+    try:
+        converted = handler(v)
+    except ValidationError:
+        value = next(value for value in values if value not in enum)
+        raise ValueError(f'Value {value!r} is not a valid choice') from None
+    if not is_array and converted in (None, ''):
+        return converted
+    keys = None
+    for value, item in zip(values, converted if is_array else [converted], strict=True):
+        if value in enum or item in enum:
+            continue
+        if keys is None:
+            keys = _converted_choices(cls.model_fields[field.field_name].annotation, enum, is_array)
+        if item not in keys:
+            raise ValueError(f'Value {value!r} is not a valid choice')
+    return converted
+
+
+def _converted_choices(annotation: Any, enum: list, is_array: bool) -> list:
+    """
+    The keys of the choices converted by the type of the field (of an element of an array
+    field); a key the type does not take is left out.
+    """
+    adapter = TypeAdapter(annotation)
+    keys = []
+    for key in enum:
+        try:
+            keys.append(
+                adapter.validate_python([key])[0] if is_array else adapter.validate_python(key)
+            )
+        except ValidationError:
+            pass
+    return keys
 
 
 def geometry_validator(cls: type[BaseModel], v: Any, field: ValidationInfo):
@@ -139,8 +182,9 @@ def model_validate(model: type[BaseModel], value, loc: tuple):
             _id = value.pk
             _type = value.get_resource_label()
         elif isinstance(value, dict) and 'id' in value:
+            # a document may leave out `type` (the schema has it by default)
             _id = value['id']
-            _type = value['type']
+            _type = value.get('type')
 
         # e.errors() makes new dicts on every call: change them and raise the same ones
         errors = e.errors()

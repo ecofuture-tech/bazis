@@ -152,6 +152,32 @@ def translated_lookup(model: type[models.Model], lookup: str) -> str:
     return LOOKUP_SEP.join(parts)
 
 
+def default_search_fields(model: type[models.Model], fields: Iterable) -> list[str]:
+    """
+    The search fields of a route that does not declare `search_fields`: the text fields of
+    its LIST schema `fields` (`query_fields`, for the user), in their order. A text field is
+    a `CharField` or a `TextField` of the model (also `SlugField`, `EmailField`, `URLField`)
+    without choices, or a `TranslatedField` of such a field (searched in the language of
+    the request). Not the relations, the calculated fields, the codes of choices, the
+    numbers, the UUID, file, JSON and array fields.
+
+    Tags: RAG, EXPORT
+    """
+    names = []
+    for field in fields:
+        if not field.can_filter or not isinstance(field.source, str):
+            continue
+        db_field = field.field_db_attr
+        if db_field is None and isinstance(
+            attr := getattr_static(model, field.source, None), TranslatedField
+        ):
+            # its columns are fields of the same kind, one per language
+            db_field = model._meta.get_field(translated_column(field.source, attr))
+        if isinstance(db_field, models.CharField | models.TextField) and not db_field.choices:
+            names.append(field.source)
+    return list(dict.fromkeys(names))
+
+
 class QueryScope:
     """
     What the `filter`, `sort` and `search` of an API request may reach. The first name of
@@ -161,7 +187,11 @@ class QueryScope:
     `restrict_queryset` for VIEW with the user), where the key goes on with the fields of
     the LIST schema of that route; a related model without a default route gives only its
     primary key (and `exists`/`isnull` of the relation). The search uses the search fields
-    of the route that the scope reaches.
+    of the route that the scope reaches: its `search_fields`, or, when the route does not
+    declare them (None), the text fields of its LIST schema for the user
+    (`default_search_fields`); `[]` turns the search off. A key of the filter of the request
+    whose first name is in `filter_keys_ignored` (of the route) is left out; the keys after
+    a relation are not.
 
     Without a scope (`scope=None`) QueryToOrm, SearchToOrm and the services are not
     restricted: the conditions written in the code (permissions, `filter:` restrictions)
@@ -176,18 +206,21 @@ class QueryScope:
         *,
         order_fields: Iterable[str] = (),
         search_fields: Iterable[str] = (),
+        filter_keys_ignored: Iterable[str] = (),
         user=None,
     ):
         self.fields = frozenset(fields)
         self.order_fields = frozenset(order_fields)
         self.search_fields = tuple(search_fields)
+        self.filter_keys_ignored = frozenset(filter_keys_ignored)
         self.user = user
 
     @classmethod
     def for_route(cls, route_cls, user=None, *, schema: bool = False) -> 'QueryScope':
         """
-        The scope of a route class for the user: the fields its `query_fields` gives and its
-        search fields. With `schema`, the LIST schema of the route class itself (the
+        The scope of a route class for the user: the fields its `query_fields` gives, its
+        search fields (declared, or the default of those fields) and its
+        `filter_keys_ignored`. With `schema`, the LIST schema of the route class itself (the
         `query_fields` of the core, not the override of a package per user): no queries,
         for the system checks.
         """
@@ -198,10 +231,14 @@ class QueryScope:
             fields = JsonapiRouteBase.query_fields.__func__(route_cls)
         else:
             fields = route_cls.query_fields(user=user)
+        search_fields = route_cls.search_fields
+        if search_fields is None:
+            search_fields = default_search_fields(route_cls.model, fields)
         return cls(
             (f.source for f in fields if f.can_filter and isinstance(f.source, str)),
             order_fields=(f.source for f in fields if f.can_order and isinstance(f.source, str)),
-            search_fields=route_cls.search_fields or (),
+            search_fields=search_fields,
+            filter_keys_ignored=route_cls.filter_keys_ignored,
             user=user,
         )
 
@@ -317,15 +354,17 @@ def route_search_fields(route_cls) -> list[str]:
     The search fields of a JSON:API route class that `search` (and `$search`) uses: its
     `search_fields` as declared (with their lookup prefix, `^name`), those the LIST schema
     of the route class itself reaches (through a relation, the LIST schema of the default
-    route of the related model). Empty for a route class without them: a search there is
-    400 `ERR_FILTER`. The others are left out of the search (`bazis.W007` reports them).
-    Read from the classes, without queries; a package that narrows the LIST schema per
-    user (bazis-permit) can narrow the search of a request further.
+    route of the related model); without them (None), the text fields of its LIST schema
+    (`default_search_fields`). Empty for a route class with `search_fields = []` or without
+    text fields: a search there is 400 `ERR_FILTER`. The declared fields out of the schema
+    are left out of the search (`bazis.W007` reports them). Read from the classes, without
+    queries; a package that narrows the LIST schema per user (bazis-permit) can narrow the
+    search of a request further.
 
     Tags: RAG, EXPORT
     """
     scope = QueryScope.for_route(route_cls, schema=True)
-    names = [str(field) for field in route_cls.search_fields or ()]
+    names = [str(field) for field in scope.search_fields]
     return [
         name
         for name in names
@@ -957,6 +996,10 @@ class QueryToOrm:
         :return: A tuple containing the Q object and fields calculation list.
         """
         first, *rest = key.split(LOOKUP_SEP)
+        # a key the route leaves out (`filter_keys_ignored`): only here, at the start of a
+        # key of the route, never after a relation, where the scope is of the related model
+        if self.scope is not None and first in self.scope.filter_keys_ignored:
+            return Q(), []
         # an alias of the route at the start of the key is a filter of the route (not scoped)
         params = [_AliasPart(it) for it in self.filters_aliases.get(first, '').split(LOOKUP_SEP) if it]
         params = params or [first]
@@ -1019,7 +1062,7 @@ class QueryToOrm:
             if scope is None:
                 queries_add(self._filters_apply_search(model, value))
             else:
-                queries_add(SearchToOrm(model, value, scope.search_fields, scope=scope).q)
+                queries_add(SearchToOrm(model, value, scope=scope).q)
         elif (
             isinstance(func_calc := get_attr(model, param), calc_cached_property)
             and func_calc.as_filter
@@ -1321,8 +1364,9 @@ class SearchToOrm:
         Initializes the SearchToOrm instance with the model, search string, and optional
         search fields. Without a scope, if no search fields are provided, it defaults to
         fields of types defined in DJANGO_SEARCH_FIELDS. With a scope (the search of an API
-        request) only the search fields the scope reaches are searched, a relation into the
-        objects the user can see; without one of them a search raises ValueError.
+        request) the search fields given, else those of the scope (`scope.search_fields`),
+        are searched where the scope reaches them, a relation into the objects the user can
+        see; without one of them a search raises ValueError.
         """
         self.search = search and search.strip()
         if scope is None:
@@ -1334,7 +1378,9 @@ class SearchToOrm:
                 for it in self.search_fields
             ]
         else:
-            self.search_fields = list(search_fields or ())
+            if search_fields is None:
+                search_fields = scope.search_fields
+            self.search_fields = list(search_fields)
             conditions = [
                 cond
                 for it in self.search_fields

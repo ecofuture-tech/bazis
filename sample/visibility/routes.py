@@ -55,9 +55,15 @@ class TagRouteSet(RestrictedQsRouteMixin):
 
 
 class NoteRouteSet(JsonapiRouteBase):
+    """
+    The released versions of a client filter the notes by `dt_deleted`, which they do not
+    have: the route leaves the key out of the filter.
+    """
+
     model = apps.get_model('visibility.Note')
     default_route = True
     search_fields = ['name', 'tag__name']
+    filter_keys_ignored = frozenset({'dt_deleted'})
 
     fields = {
         None: SchemaFields(include={'attached_tags': None}),

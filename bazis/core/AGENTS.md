@@ -688,10 +688,14 @@ class OrderRouteSet(JsonapiRouteBase):
   A field with `choices` accepts only their values (422 `ERR_VALIDATE` at the field,
   "Value 'x' is not a valid choice", bazis 2.18): the `enum` its OpenAPI schema shows,
   so the keys of the choices (also of callable and grouped ones, not the labels or the
-  names of the groups), every element of an array field. Null and empty values are left
-  to the checks of `null` and `blank` (an empty value of a `blank=True` field need not
-  be a choice). The choices are read when the schema is built, and a callable one is
-  called then; the responses and `save()` in the code do not check them.
+  names of the groups), every element of an array field. A value is a choice as sent, as
+  the schema type converts it, or matching a key converted by that type (bazis 2.20): a
+  type registered in `TYPES_DJANGO_TO_SCHEMA` that makes an object of a code accepts the
+  codes, a Decimal, UUID or date key is sent as the OpenAPI shows it, `"2"` is a choice of
+  integers; a value the type refuses is refused as not a choice. Null and empty values
+  are left to the checks of `null` and `blank` (an empty value of a `blank=True` field
+  need not be a choice). The choices are read when the schema is built, and a callable
+  one is called then; the responses and `save()` in the code do not check them.
   A relation read-only there (`SchemaField(read_only=True)`, the field permission
   `readonly` of bazis-permit) is ignored by an update, and the relationships endpoints
   refuse it as a relation that is not in the schema: 403 `ERR_RELATIONSHIP_READONLY` with
@@ -1134,7 +1138,9 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   `customer__exists=true|false` (`customer__isnull` is the opposite), full-text
   `$search=text` (the search fields of the route) or `customer__$search=text` (the search
   fields of the default route of the customers), `crm.customer=<id>,<id>` (the objects
-  related to those customers); `search=text` searches the search fields of the route:
+  related to those customers); `search=text` searches the search fields of the route
+  (`search_fields`; a route that does not declare them searches the text fields of its
+  LIST schema for the user, see below; `search_fields = []` turns the search off):
   the text is split into words (spaces and commas), and an object matches when each word
   is in one of its search fields (`search=Ann Smith` with the search fields `first_name`
   and `last_name` finds Ann Smith). A field of the model matches a substring in any case,
@@ -1149,8 +1155,17 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   `exists`, `isnull`). `sort` goes through to-one relations only (an invisible object sorts
   as null; a relation itself sorts by the key of the related object); the search uses only
   the `search_fields` of the route that are fields of its LIST schema (`bazis.W007` warns
-  about the others; `route_search_fields(route_cls)` of `bazis.core.utils.query_complex`
-  lists the ones searched), a route without them has no search. Anything else is
+  about the others). A route that does not declare `search_fields` (None) searches the
+  text fields of its LIST schema for the user, in its order (`default_search_fields`): a
+  `CharField` or `TextField` of the model (also `SlugField`, `EmailField`, `URLField`)
+  without choices and a `TranslatedField` of one (in the language of the request); not
+  the relations, the calculated fields, the fields with choices, the numbers, the UUID,
+  file, JSON and array fields. A route with `search_fields = []`, or without such fields
+  for the user, has no search. `route_search_fields(route_cls)` of
+  `bazis.core.utils.query_complex` lists the fields searched (declared or by default, of
+  the LIST schema of the class; bazis-permit narrows them per user). A search by
+  substring (`icontains`) uses no btree index: for a large list declare `search_fields`
+  (or `[]`), and a `pg_trgm` index if needed. Anything else is
   400 `ERR_FILTER` (pointer `/query/filter`, `/query/sort` or `/query/search`), the same
   answer as for a field that does not exist: to filter, sort or search by a field, show it
   in the LIST schema of the route. `filters_aliases` of the route are not checked (the
@@ -1158,6 +1173,15 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   conditions, `filter:` restrictions) and the services with `scope=None` are not
   restricted. A package that changes the LIST schema per user overrides the classmethod
   `query_fields(user=None, **kwargs)` of the route.
+  Only for the compatibility with released clients that send a key the route has no field
+  for (bazis 2.20): `filter_keys_ignored = frozenset({'dt_deleted'})` of the route leaves
+  out every key of the `filter` of its requests that starts with such a name, whatever
+  its lookup, value and `~` (in an `or` it is left out too, not true). Not after a
+  relation (`capsule__dt_deleted` on another route stays 400), not another route of the
+  model, not the conditions of the code (`QueryToOrm` without a scope: the permissions,
+  `filter:` restrictions). Not a filter key of the route: a field of its LIST schema,
+  `id`/`pk` or a filters alias (`bazis.E002`); it is not in `route_filter_fields/`. A new
+  client must not send it, and a missing field is never made a filter this way.
   The lookup suffixes after a field are not Django lookups; only these exist (plus `isnull`
   for every field):
   - text `TextField`: none (substring), `iexact`, `istartswith`, `iregex`, `search`, `$search`;
@@ -1316,6 +1340,8 @@ send_mail(_('Your certificate'), text, None, [user.email])   # None: DEFAULT_FRO
   other routes use `restrict_queryset`.
 - A route that hides fields of its model (a projection with `fields`) hides them from the
   filter, the sorting and the search too; do not list hidden fields in `search_fields`.
+  Without `search_fields` a route searches every text field of its LIST schema: declare
+  them to search fewer fields, `search_fields = []` for a route without a search.
 - The database connection of a thread other than the main one (the AnyIO worker threads
   that run the sync endpoints and dependencies, a thread a package starts) is closed by the
   core when the thread ends. While the thread lives it keeps its connection between the
