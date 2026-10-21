@@ -32,7 +32,7 @@ from entity.routes import ParentEntityRouteSet
 from visibility.models import Folder, Label, Note, Tag
 from visibility.routes import FolderRouteSet, NoteBriefRouteSet, NoteRouteSet, TagRouteSet
 
-from bazis.core.checks import check_search_fields
+from bazis.core.checks import check_filter_keys_ignored, check_search_fields
 from bazis.core.utils.query_complex import QueryScope, QueryToOrm, route_search_fields
 
 from tests import factories
@@ -487,3 +487,85 @@ def test_filters_aliases_are_not_scoped():
     assert QueryToOrm('kids__child_name=x', ParentEntity, aliases, scope=scope).q
     with pytest.raises(ValueError, match="Unknown filter field 'nonexistent'"):
         QueryToOrm('kids__nonexistent=x', ParentEntity, aliases, scope=scope)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    'filter_str, expected',
+    [
+        # the key alone, whatever its lookup and value
+        ('dt_deleted=null', ['secret', 'plain', 'with_hidden']),
+        ('dt_deleted__gt=2020-01-01', ['secret', 'plain', 'with_hidden']),
+        ('dt_deleted__isnull=true', ['secret', 'plain', 'with_hidden']),
+        ('dt_deleted__in=a,b', ['secret', 'plain', 'with_hidden']),
+        ('dt_deleted__x__y=1', ['secret', 'plain', 'with_hidden']),
+        # negated
+        ('~dt_deleted=null', ['secret', 'plain', 'with_hidden']),
+        ('~(dt_deleted__lt=2020-01-01)', ['secret', 'plain', 'with_hidden']),
+        # with the other keys, which filter as without it
+        ('folder={folder}&dt_deleted=null', ['secret']),
+        ('dt_deleted=null&name=plain', ['plain']),
+        ('~dt_deleted=null&name=plain', ['plain']),
+        ('folder={folder}&dt_deleted__gte=2020-01-01&~name=plain', ['secret']),
+        # left out of an `or` as well: not a condition that every object meets
+        ('(name=plain|dt_deleted=null)', ['plain']),
+    ],
+)
+def test_filter_keys_ignored(sample_app, data, filter_str, expected):
+    """
+    `filter_keys_ignored` of the route of the notes (`dt_deleted`, which the notes do not
+    have): the filter of a request leaves the key out.
+    """
+    filter_str = filter_str.format(folder=data['folder'].pk)
+    assert sorted(ids(sample_app, NOTES, filter=filter_str)) == sorted(
+        str(data[it].pk) for it in expected
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    'url, filter_str',
+    [
+        # after a relation into the notes, whose route leaves it out
+        (TAGS, 'note__dt_deleted=null'),
+        (TAGS, '~note__dt_deleted__gt=2020-01-01'),
+        # another route of the notes
+        (BRIEF, 'dt_deleted=null'),
+        # a key that only starts the same
+        (NOTES, 'dt_deleted_at=null'),
+    ],
+)
+def test_filter_keys_ignored_only_of_the_route(sample_app, data, url, filter_str):
+    assert_bad_request(get(sample_app, url, filter=filter_str), 'filter')
+
+
+def test_filter_keys_ignored_only_in_the_filter_of_a_request():
+    """The conditions of the code (no scope) and the other scopes do not leave it out."""
+    with pytest.raises(ValueError, match="Unknown filter field 'dt_deleted'"):
+        QueryToOrm('dt_deleted=null', Note)
+    with pytest.raises(ValueError, match="Unknown filter field 'dt_deleted'"):
+        QueryToOrm('dt_deleted=null', Note, scope=QueryScope(['name']))
+    assert QueryScope.for_route(NoteRouteSet).filter_keys_ignored == {'dt_deleted'}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_filter_keys_ignored_are_not_filter_fields(sample_app):
+    response = get(sample_app, f'{NOTES}route_filter_fields/')
+    assert response.status_code == 200, response.text
+    names = {it['name'] for it in response.json()['fields']}
+    assert 'name' in names
+    assert 'dt_deleted' not in names
+
+
+@pytest.mark.django_db(transaction=True)
+def test_filter_keys_ignored_check(sample_app, monkeypatch):
+    """A key of `filter_keys_ignored` that is a filter key of the route is bazis.E002."""
+    assert check_filter_keys_ignored(None) == []
+    monkeypatch.setattr(NoteRouteSet, 'filters_aliases', {'kind': 'folder__name'})
+    monkeypatch.setattr(
+        NoteRouteSet, 'filter_keys_ignored', frozenset({'dt_deleted', 'name', 'pk', 'kind'})
+    )
+    errors = check_filter_keys_ignored(None)
+    assert {it.id for it in errors} == {'bazis.E002'}
+    assert {it.obj for it in errors} == {'visibility.routes.NoteRouteSet'}
+    assert [it.msg.split("'")[1] for it in errors] == ['kind', 'name', 'pk']

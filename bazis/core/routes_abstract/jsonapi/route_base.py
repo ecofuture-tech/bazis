@@ -187,6 +187,12 @@ class JsonapiRouteBase(InitialRouteBase):
     #: search, a `search` is 400 ERR_FILTER
     search_fields: list[str] | None = None
     filters_aliases: dict[str, str] = {}
+    #: the first names of the keys of `filter` that the requests of the route may send and
+    #: that the filter leaves out, whatever their lookup, value and negation: the keys that
+    #: the released versions of a client send though the route has no such field. Only the
+    #: keys of the route itself, not after a relation; not a filter key of the route
+    #: (bazis.E002)
+    filter_keys_ignored: frozenset[str] = frozenset()
 
     item: JsonApiMixin | None = None
     #: the item was taken with `set_item(with_lock=True)` (after the parents of its

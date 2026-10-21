@@ -275,6 +275,39 @@ def check_search_fields(app_configs, **kwargs):
     return messages
 
 
+@register()
+def check_filter_keys_ignored(app_configs, **kwargs):
+    """
+    A key of `filter_keys_ignored` of a route must not be a filter key of the route: a field
+    of its LIST schema that filters, the primary key or a filters alias, whose filter it
+    would leave out. Needs the application (`bazis_doctor` loads it); skipped without it.
+    """
+    from bazis.core import introspect
+    from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
+    from bazis.core.utils.query_complex import QueryScope
+
+    if (app := introspect.loaded_app()) is None:
+        return []
+
+    messages = []
+    for route_cls in introspect.route_sets(app):
+        if not issubclass(route_cls, JsonapiRouteBase) or not route_cls.filter_keys_ignored:
+            continue
+        scope = QueryScope.for_route(route_cls, schema=True)
+        for key in sorted(route_cls.filter_keys_ignored):
+            if scope.allows(key, route_cls.model) or key in route_cls.filters_aliases:
+                messages.append(
+                    Error(
+                        f'The key {key!r} of `filter_keys_ignored` of the route set is a '
+                        'filter key of the route: its filter would be left out.',
+                        hint='Remove the key from `filter_keys_ignored`.',
+                        obj=_qualname(route_cls),
+                        id='bazis.E002',
+                    )
+                )
+    return messages
+
+
 def _qualname(cls) -> str:
     return f'{cls.__module__}.{cls.__qualname__}' if cls is not None else 'None'
 

@@ -189,7 +189,9 @@ class QueryScope:
     primary key (and `exists`/`isnull` of the relation). The search uses the search fields
     of the route that the scope reaches: its `search_fields`, or, when the route does not
     declare them (None), the text fields of its LIST schema for the user
-    (`default_search_fields`); `[]` turns the search off.
+    (`default_search_fields`); `[]` turns the search off. A key of the filter of the request
+    whose first name is in `filter_keys_ignored` (of the route) is left out; the keys after
+    a relation are not.
 
     Without a scope (`scope=None`) QueryToOrm, SearchToOrm and the services are not
     restricted: the conditions written in the code (permissions, `filter:` restrictions)
@@ -204,20 +206,23 @@ class QueryScope:
         *,
         order_fields: Iterable[str] = (),
         search_fields: Iterable[str] = (),
+        filter_keys_ignored: Iterable[str] = (),
         user=None,
     ):
         self.fields = frozenset(fields)
         self.order_fields = frozenset(order_fields)
         self.search_fields = tuple(search_fields)
+        self.filter_keys_ignored = frozenset(filter_keys_ignored)
         self.user = user
 
     @classmethod
     def for_route(cls, route_cls, user=None, *, schema: bool = False) -> 'QueryScope':
         """
-        The scope of a route class for the user: the fields its `query_fields` gives and its
-        search fields (declared, or the default of those fields). With `schema`, the LIST
-        schema of the route class itself (the `query_fields` of the core, not the override
-        of a package per user): no queries, for the system checks.
+        The scope of a route class for the user: the fields its `query_fields` gives, its
+        search fields (declared, or the default of those fields) and its
+        `filter_keys_ignored`. With `schema`, the LIST schema of the route class itself (the
+        `query_fields` of the core, not the override of a package per user): no queries,
+        for the system checks.
         """
         if schema:
             # the route modules import this one
@@ -233,6 +238,7 @@ class QueryScope:
             (f.source for f in fields if f.can_filter and isinstance(f.source, str)),
             order_fields=(f.source for f in fields if f.can_order and isinstance(f.source, str)),
             search_fields=search_fields,
+            filter_keys_ignored=route_cls.filter_keys_ignored,
             user=user,
         )
 
@@ -990,6 +996,10 @@ class QueryToOrm:
         :return: A tuple containing the Q object and fields calculation list.
         """
         first, *rest = key.split(LOOKUP_SEP)
+        # a key the route leaves out (`filter_keys_ignored`): only here, at the start of a
+        # key of the route, never after a relation, where the scope is of the related model
+        if self.scope is not None and first in self.scope.filter_keys_ignored:
+            return Q(), []
         # an alias of the route at the start of the key is a filter of the route (not scoped)
         params = [_AliasPart(it) for it in self.filters_aliases.get(first, '').split(LOOKUP_SEP) if it]
         params = params or [first]

@@ -65,6 +65,11 @@ import = "bazis.core.routes_abstract.jsonapi.JsonapiRouteBase"
 use_when = "a package changes the LIST schema of a route per user: the fields filter, sort and search reach"
 
 [[extension_points]]
+name = "JsonapiRouteBase.filter_keys_ignored"
+import = "bazis.core.routes_abstract.jsonapi.JsonapiRouteBase"
+use_when = "released clients send a filter key the route has no field for (400 ERR_FILTER since 2.5): frozenset({'dt_deleted'}) leaves it out of the filter of the requests of the route, only for compatibility"
+
+[[extension_points]]
 name = "route_search_fields"
 import = "bazis.core.utils.query_complex.route_search_fields"
 use_when = "a tool needs the search fields a route searches (declared, or by default the text fields of its LIST schema)"
@@ -251,6 +256,10 @@ text = "filter lookups are not Django lookups: __in, __icontains, an unknown fie
 
 [[pitfalls]]
 text = "filter, sort and search reach only the fields of the LIST schema of the route: show a field in `fields` to filter by it"
+
+[[pitfalls]]
+text = "filter_keys_ignored leaves a key out of the filter of the route only (not after a relation, not in an `or` as true): never a field of the LIST schema, the primary key or a filters alias"
+check = "bazis.E002"
 
 [[pitfalls]]
 text = "a search field that is not a field of the LIST schema of its route is left out of the search"

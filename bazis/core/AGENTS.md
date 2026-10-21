@@ -1173,6 +1173,15 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   conditions, `filter:` restrictions) and the services with `scope=None` are not
   restricted. A package that changes the LIST schema per user overrides the classmethod
   `query_fields(user=None, **kwargs)` of the route.
+  Only for the compatibility with released clients that send a key the route has no field
+  for (bazis 2.20): `filter_keys_ignored = frozenset({'dt_deleted'})` of the route leaves
+  out every key of the `filter` of its requests that starts with such a name, whatever
+  its lookup, value and `~` (in an `or` it is left out too, not true). Not after a
+  relation (`capsule__dt_deleted` on another route stays 400), not another route of the
+  model, not the conditions of the code (`QueryToOrm` without a scope: the permissions,
+  `filter:` restrictions). Not a filter key of the route: a field of its LIST schema,
+  `id`/`pk` or a filters alias (`bazis.E002`); it is not in `route_filter_fields/`. A new
+  client must not send it, and a missing field is never made a filter this way.
   The lookup suffixes after a field are not Django lookups; only these exist (plus `isnull`
   for every field):
   - text `TextField`: none (substring), `iexact`, `istartswith`, `iregex`, `search`, `$search`;
