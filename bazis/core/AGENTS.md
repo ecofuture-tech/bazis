@@ -688,13 +688,14 @@ class OrderRouteSet(JsonapiRouteBase):
   A field with `choices` accepts only their values (422 `ERR_VALIDATE` at the field,
   "Value 'x' is not a valid choice", bazis 2.18): the `enum` its OpenAPI schema shows,
   so the keys of the choices (also of callable and grouped ones, not the labels or the
-  names of the groups), every element of an array field. The check takes the value as
-  sent, before the conversion of the schema type (bazis 2.20; a type registered in
-  `TYPES_DJANGO_TO_SCHEMA` that makes an object of a code accepts its codes, and `"2"` is
-  not a choice of an integer field). Null and empty values are left to the checks of
-  `null` and `blank` (an empty value of a `blank=True` field need not be a choice). The
-  choices are read when the schema is built, and a callable one is called then; the
-  responses and `save()` in the code do not check them.
+  names of the groups), every element of an array field. A value is a choice as sent, as
+  the schema type converts it, or matching a key converted by that type (bazis 2.20): a
+  type registered in `TYPES_DJANGO_TO_SCHEMA` that makes an object of a code accepts the
+  codes, a Decimal, UUID or date key is sent as the OpenAPI shows it, `"2"` is a choice of
+  integers; a value the type refuses is refused as not a choice. Null and empty values
+  are left to the checks of `null` and `blank` (an empty value of a `blank=True` field
+  need not be a choice). The choices are read when the schema is built, and a callable
+  one is called then; the responses and `save()` in the code do not check them.
   A relation read-only there (`SchemaField(read_only=True)`, the field permission
   `readonly` of bazis-permit) is ignored by an update, and the relationships endpoints
   refuse it as a relation that is not in the schema: 403 `ERR_RELATIONSHIP_READONLY` with

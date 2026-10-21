@@ -241,7 +241,7 @@ text = "a create or an update naming a field outside the schema of its action is
 text = "a CharField/TextField without blank=True refuses an empty or whitespace-only value on the API (422)"
 
 [[pitfalls]]
-text = "a field with choices accepts only the keys of its enum on the API, as sent before the conversion of its type (422 ERR_VALIDATE at the field; \"2\" is not a choice of an integer field): a value stored by save() or a migration that is not a choice is read, but the next update that sends it is refused"
+text = "a field with choices accepts only the keys of its enum on the API, as sent or as its schema type converts them (422 ERR_VALIDATE at the field): a value stored by save() or a migration that is not a choice is read, but the next update that sends it is refused"
 
 [[pitfalls]]
 text = "a calculated field is read-only, does not sort and is not a search field; as_filter=True makes it a filter key"

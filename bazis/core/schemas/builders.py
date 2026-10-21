@@ -388,14 +388,17 @@ class SchemaResourceBuilder:
         """
         The validators of the null, the blank and the choices values of the fields. A response
         is not checked for blank values and choices: they are the values of the database. The
-        choices are checked on the value of the request, before the type of the field converts
-        it (the type of a field may make an object of a code).
+        choices validator wraps the type of the field (the first validator is the innermost):
+        it sees the value as sent and as converted, the null and blank validators run on its
+        result.
         """
-        validators = {'not_null_validator': field_validator('*')(not_null_validator)}
-        if not is_response_schema:
-            validators['not_blank_validator'] = field_validator('*')(not_blank_validator)
-            validators['choices_validator'] = field_validator('*', mode='before')(choices_validator)
-        return validators
+        if is_response_schema:
+            return {'not_null_validator': field_validator('*')(not_null_validator)}
+        return {
+            'choices_validator': field_validator('*', mode='wrap')(choices_validator),
+            'not_null_validator': field_validator('*')(not_null_validator),
+            'not_blank_validator': field_validator('*')(not_blank_validator),
+        }
 
     def _fields_config(self, is_response_schema: bool) -> ConfigDict | None:
         """

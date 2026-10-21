@@ -19,7 +19,10 @@ fields that must not be blank and reference data translated into the languages o
 project.
 """
 
+from datetime import date
+from decimal import Decimal
 from enum import Enum
+from uuid import UUID
 
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -108,6 +111,25 @@ class Memo(UniqNumberMixin, JsonApiMixin):
     mood = models.IntegerField('Mood', choices=[(1, 'Bad'), (2, 'Good')], null=True)
     # choices of a field whose schema type makes an object of the code
     tone = ToneField('Tone', null=True)
+    # choices whose keys are not JSON values: the request sends them as the OpenAPI shows them
+    rate = models.DecimalField(
+        'Rate',
+        max_digits=3,
+        decimal_places=2,
+        choices=[(Decimal('0.10'), 'Low'), (Decimal('0.50'), 'High')],
+        null=True,
+    )
+    due = models.DateField(
+        'Due', choices=[(date(2026, 1, 1), 'New year'), (date(2026, 7, 1), 'Midyear')], null=True
+    )
+    ticket = models.UUIDField(
+        'Ticket',
+        choices=[
+            (UUID('8a6e0804-2bd0-4672-b79d-d97027f9071a'), 'First'),
+            (UUID('0f3b2c1d-58e4-4b7a-9c2e-6d1f0a9b8c7e'), 'Second'),
+        ],
+        null=True,
+    )
     category = models.ForeignKey(
         Category, null=True, blank=True, on_delete=models.SET_NULL, related_name='memos'
     )
