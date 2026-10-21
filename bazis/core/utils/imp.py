@@ -13,8 +13,7 @@
 # limitations under the License.
 
 import os
-import sys
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from importlib import import_module
 from pkgutil import iter_modules
 
@@ -60,17 +59,16 @@ def pkg_load(pkg):
             import_module(f'{pkg.__name__}.{f_name}')
 
 
-def walk_packages_excluding(
-    path, prefix='', onerror: Callable[[str], None] = None, exclude: set[str] = None
-) -> Generator:
+def walk_packages_excluding(path, prefix='', exclude: set[str] = None) -> Generator:
     """
     Custom pkgutil.walk_packages with exclusion filter.
-    Recursively discovers modules while excluding by name substring.
+    Recursively discovers modules while excluding by name substring. The packages are
+    not imported: the search path of a subpackage is taken from the spec of its finder,
+    so the __init__ of a package nobody asked for is never executed.
 
     Args:
         path: Package path(s) to search
         prefix: Module name prefix (e.g., 'mypkg.')
-        onerror: Error callback function(module_name)
         exclude: Set of substrings to exclude from module names
 
     Yields:
@@ -104,32 +102,16 @@ def walk_packages_excluding(
         yield info
 
         if info.ispkg:
-            try:
-                __import__(info.name)
-            except ImportError:
-                if onerror:
-                    onerror(info.name)
-            except Exception:
-                if onerror:
-                    onerror(info.name)
-                else:
-                    raise
-            else:
-                # Recursively walk subpackages
-                sub_path = getattr(sys.modules[info.name], '__path__', [])
-                sub_path = [p for p in sub_path if not seen(p)]
-                yield from walk_packages_excluding(
-                    sub_path,
-                    info.name + '.',
-                    onerror,
-                    exclude=exclude,
-                )
+            spec = info.module_finder.find_spec(info.name)
+            sub_path = [p for p in (spec.submodule_search_locations or []) if not seen(p)]
+            yield from walk_packages_excluding(sub_path, info.name + '.', exclude=exclude)
 
 
 def get_modules_from_pkg(pkg, module_name: str, first_level_only: bool = False):
     """
     Discovers and yields the modules of a package named `module_name`, imported once
-    (a module imported before is the one of sys.modules).
+    (a module imported before is the one of sys.modules). Only the matching modules, with
+    the packages they sit in, are imported; the other subpackages are not.
 
     Args:
         pkg: Package or module to search
