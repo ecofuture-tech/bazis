@@ -81,7 +81,10 @@ declares the Django settings a project sets with `BS_*`, with the Django default
 declares only the settings it owns (`BAZIS_*`, `KAFKA_*`, or its own names such as
 `AUTH_ANONYMOUS_USER_MODEL` of bazis-users), inert without its code, and never redeclares or
 defaults a Django setting (bazis-users and bazis-authing drop theirs in their next releases).
-`BS_BAZIS_APPS` (or `BS_BAZIS_CONFIG_APPS`) is only an explicit override: the exact list of
+A project's own `conf.py` may redeclare a setting of the core or of a package with another
+default: the default of a field comes from the first conf in the order project, core,
+packages, and a `BS_*` variable beats every default. `BS_BAZIS_APPS` (or `BS_BAZIS_CONFIG_APPS`)
+is only an explicit override: the exact list of
 the packages to load the settings from. Leave it unset; `'[]'` turns off the settings of all Bazis packages, also
 of the ones the project uses (`bazis_doctor` warns, `bazis.W002`). Requirements:
 PostgreSQL with PostGIS and Redis (`BS_CACHES__DEFAULT__LOCATION`): the default cache must

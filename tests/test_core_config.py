@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import json
 import logging
 import os
@@ -256,7 +257,7 @@ def test_conf_modules_are_imported_once():
     # the discovery takes the modules named conf (not constance_conf) from sys.modules
     # instead of executing them again: one Settings class, one LazyConfig of Constance
     modules = list(configure.conf_modules())
-    assert modules[0] is sys.modules['bazis.core.conf']
+    assert sys.modules['bazis.core.conf'] in modules
     assert all(module is sys.modules[module.__name__] for module in modules)
     assert 'bazis.core.constance_conf' not in {module.__name__ for module in modules}
     assert sys.modules['bazis.core.constance_conf'] is configure.constance_conf
@@ -395,7 +396,7 @@ def test_core_auth_user_model_wins_over_package_default(
     fake_contrib, tmp_path, monkeypatch, env, expected
 ):
     # a package that still declares AUTH_USER_MODEL with its own default (bazis-users before
-    # it dropped it) does not override the core: the core conf is the first base
+    # it dropped it) does not override the core: the core conf comes before the packages
     conf = tmp_path / 'contrib' / 'cfgtest_used' / 'conf.py'
     conf.write_text(
         'from bazis.core.utils.schemas import BazisSettings\n\n\n'
@@ -435,3 +436,66 @@ def test_django_auth_settings_are_read_from_env(packages):
         **packages,
     )
     assert json.loads(output) == ['entity.User', ['sample.backends.Backend']]
+
+
+@pytest.fixture
+def project_conf(fake_contrib, tmp_path, monkeypatch):
+    """
+    A project package whose conf.py redeclares BAZIS_EMAIL_HOST of the core and
+    CFGTEST_USED of a package (the other fields of the project are its own).
+    """
+    package = tmp_path / 'cfgtest_project'
+    package.mkdir()
+    (package / '__init__.py').write_text('')
+    (package / 'conf.py').write_text(
+        'from bazis.core.utils.schemas import BazisSettings\n\n\n'
+        'class Settings(BazisSettings):\n'
+        "    BAZIS_EMAIL_HOST: str = 'project-host'\n"
+        "    CFGTEST_USED: str = 'project'\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setattr(configure, 'PROJECT_MODULE', importlib.import_module('cfgtest_project'))
+    monkeypatch.delenv('BS_BAZIS_EMAIL_HOST', raising=False)
+    monkeypatch.delenv('BS_CFGTEST_USED', raising=False)
+    monkeypatch.chdir(tmp_path)
+    yield
+    sys.modules.pop('cfgtest_project', None)
+    sys.modules.pop('cfgtest_project.conf', None)
+
+
+def merged_settings():
+    return create_model(
+        'Settings',
+        __base__=tuple(it.Settings for it in configure.conf_modules() if hasattr(it, 'Settings')),
+    )()
+
+
+def test_project_conf_overrides_defaults_of_core_and_packages(project_conf):
+    settings_ = merged_settings()
+    assert settings_.BAZIS_EMAIL_HOST == 'project-host'
+    assert settings_.CFGTEST_USED == 'project'
+
+
+def test_environment_wins_over_project_conf(project_conf, monkeypatch):
+    monkeypatch.setenv('BS_BAZIS_EMAIL_HOST', 'env-host')
+    assert merged_settings().BAZIS_EMAIL_HOST == 'env-host'
+
+
+def test_project_conf_comes_first_in_priority_order(project_conf):
+    names = [it.__name__ for it in configure.conf_modules()]
+    assert names[0] == 'cfgtest_project.conf'
+    assert names[1] == 'bazis.core.conf'
+
+
+def test_last_listed_package_wins(fake_contrib, tmp_path, monkeypatch):
+    for name in ('cfgtest_used', 'cfgtest_unused'):
+        (tmp_path / 'contrib' / name / 'conf.py').write_text(
+            'from bazis.core.utils.schemas import BazisSettings\n\n\n'
+            f"class Settings(BazisSettings):\n    CFGTEST_SHARED: str = '{name}'\n"
+        )
+    monkeypatch.delenv('BS_CFGTEST_SHARED', raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(
+        'BS_BAZIS_APPS', '["bazis.contrib.cfgtest_used", "bazis.contrib.cfgtest_unused"]'
+    )
+    assert merged_settings().CFGTEST_SHARED == 'cfgtest_unused'

@@ -214,14 +214,16 @@ def conf_modules():
     """
     Discovers and yields all configuration modules from Bazis framework and project.
 
-    Search order. The modules become the bases of one Settings class in this order and,
-    as in any Python class, the first base that declares a field gives its default: the
-    core wins over the packages and the packages over the project (an environment
-    variable BS_<NAME> wins over every default):
-    1. bazis.core.conf
-    2. Bazis contrib apps: all installed ones, or those listed in BS_BAZIS_CONFIG_APPS or
-       BS_BAZIS_APPS (an explicit override)
-    3. Project-level conf modules
+    Priority order. The modules become the bases of one Settings class in this order and,
+    as in any Python class, the first base that declares a field gives its default, so
+    the first module below beats the following ones (an environment variable BS_<NAME>
+    wins over every default):
+    1. Project-level conf modules: the project overrides any default
+    2. bazis.core.conf: the settings of Django declared by the core are not taken over by
+       a package (an older release of a package may still redeclare AUTH_USER_MODEL)
+    3. Bazis contrib apps: all installed ones, or those listed in BS_BAZIS_CONFIG_APPS or
+       BS_BAZIS_APPS (an explicit override; of the listed ones the last wins). The
+       packages declare settings of their own namespaces, so they do not overlap
 
     Yields:
         Configuration modules containing Settings classes
@@ -229,6 +231,11 @@ def conf_modules():
     RAG keywords: config discovery, settings modules, conf modules,
                   configuration discovery, settings assembly
     """
+    # Project configuration
+    if PROJECT_MODULE:
+        for conf in get_modules_from_pkg(PROJECT_MODULE, 'conf'):
+            yield conf
+
     # Core Bazis configuration
     yield import_module('bazis.core.conf')
 
@@ -242,11 +249,6 @@ def conf_modules():
                 yield conf
     elif hasattr(bazis, 'contrib'):
         for conf in get_modules_from_pkg(bazis.contrib, 'conf'):
-            yield conf
-
-    # Project configuration
-    if PROJECT_MODULE:
-        for conf in get_modules_from_pkg(PROJECT_MODULE, 'conf'):
             yield conf
 
 
