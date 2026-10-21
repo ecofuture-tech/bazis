@@ -42,6 +42,7 @@ from bazis.core.errors import (
     JsonApiItemInvalidException,
     JsonApiRequestValidationError,
     SchemaErrors,
+    relation_missing,
 )
 from bazis.core.item_validation import defer_validate_item, lock_on_write, lock_parents
 from bazis.core.models_abstract import JsonApiMixin
@@ -153,17 +154,6 @@ def relationship_body_loc(refused: set, positions: dict, is_list: bool) -> tuple
     return ('body', 'data')
 
 
-def relation_by_pk(field_info) -> bool:
-    """
-    Whether the identifiers of a relationship are primary keys of the related model: not
-    those of a forward foreign key with `to_field`, which are values of that field.
-    """
-    if field_info.reverse or field_info.to_many:
-        return True
-    target = getattr(field_info.model_field, 'target_field', None)
-    return target is None or target.primary_key
-
-
 def unlinked_deleted(field_info) -> bool:
     """
     Whether the objects a relationship unlinks are deleted (`relation_write`): those of a
@@ -174,31 +164,6 @@ def unlinked_deleted(field_info) -> bool:
         and field_info.to_many
         and not field_info.is_m2m
         and not field_info.related_field.null
-    )
-
-
-def relation_missing(
-    f_name: str, missing: set, positions: dict, is_list: bool, *, relationship_body: bool
-) -> JsonApiBazisException:
-    """
-    The error of a relationship that links an object that does not exist: 422
-    `ERR_VALIDATE` at the first missing identifier of the value (`positions`: its index by
-    key), in the document of a create or an update or in the body of the relationships
-    endpoints (`relationship_body`, the `data` of the relationship).
-    """
-    prefix = ('body', 'data') if relationship_body else ('body', 'data', 'relationships', f_name, 'data')
-    if is_list:
-        loc = (*prefix, min(positions[pk] for pk in missing), 'id')
-    else:
-        loc = (*prefix, 'id')
-    return JsonApiBazisException(
-        JsonApiBazisError(
-            detail=format_lazy(_('The related object of {name} does not exist'), name=f_name),
-            loc=loc,
-            code='ERR_VALIDATE',
-            status=422,
-        ),
-        status=422,
     )
 
 
@@ -1129,16 +1094,16 @@ class JsonapiRouteBase(InitialRouteBase):
         does not exist is 422
         `ERR_VALIDATE` at its identifier (`/data/relationships/<field>/data/id`, or
         `/data/relationships/<field>/data/<index>/id`; with `relationship_body` `/data/id`,
-        `/data/<index>/id`), not an `IntegrityError` at the commit; a forward relation by
-        another field than the primary key (`to_field`) is not looked up. The objects
-        that get linked are asked for with `link=True` (not the ones a reverse relationship
+        `/data/<index>/id`), not an `IntegrityError` at the commit; the identifiers are primary keys
+        also for a foreign key with `to_field`. The objects that get linked are asked for with `link=True` (not the ones a reverse relationship
         unlinks): an override may leave out objects the user sees but may not link (e.g.
         the files of other users). Fails with 403 `ERR_RELATION_ACCESS`
         for an object the user cannot see (change), else with 422 `ERR_RELATION_LINK` for
         an object he sees but may not link, pointing to `/data/relationships/<field>`; with
         `relationship_body` (the relationships endpoints, whose body is the `data` of the
         relationship) to the refused identifier of a to-many relationship, `/data/<index>`,
-        else to `/data`. `relation_targets_check = False` turns the check off.
+        else to `/data`. `relation_targets_check = False` turns the check off (a foreign key
+        with `to_field` still needs the object: `RelationInfo.fk_value`).
         """
         if self.relation_targets_check is False or not getattr(data, 'relationships', None):
             return
@@ -1155,8 +1120,6 @@ class JsonapiRouteBase(InitialRouteBase):
                 continue
             rel_model = field_info.related_model
             restrict = route_restrict_queryset(rel_model)
-            if not restrict and not relation_by_pk(field_info):
-                continue
 
             rel_data = (value or {}).get('data')
             is_list = isinstance(rel_data, list)
@@ -1230,7 +1193,7 @@ class JsonapiRouteBase(InitialRouteBase):
         if field_info.to_many:
             current = {str(pk) for pk in getattr(item, f_name).values_list('pk', flat=True)}
         elif not field_info.reverse:
-            pk = getattr(item, field_info.model_field.attname, None)
+            pk = field_info.related_pk(item)
             current = {str(pk)} if pk is not None else set()
         elif current_obj := getattr(item, f_name, None):
             current = {str(current_obj.pk)}

@@ -40,6 +40,10 @@ from django.utils.text import capfirst
 logger = logging.getLogger(__name__)
 
 
+# the annotation with the primary key of the object a foreign key with `to_field` links
+RELATED_PK_SUFFIX = '_related_pk'
+
+
 @dataclass
 class RelationInfo:
     """
@@ -64,6 +68,46 @@ class RelationInfo:
     reverse: bool
     is_m2m: bool
     through_model: Any = None
+
+    @cached_property
+    def key_field(self):
+        """
+        The field of the related model the relation references: the primary key, or the
+        `to_field` of a forward foreign key, whose value the foreign key stores. The
+        identifiers of a relationship are always primary keys; `related_pk` and `fk_value`
+        translate them.
+        """
+        if self.reverse or self.to_many:
+            return self.related_model._meta.pk
+        return self.model_field.target_field
+
+    def related_pk(self, item):
+        """
+        The primary key of the object a forward to-one relation of `item` links, or None.
+        For a foreign key with `to_field` it is read from the annotation of the queryset of
+        the route (`qs_fields_related`), else looked up by the value the foreign key stores.
+        """
+        value = getattr(item, self.model_field.attname)
+        if value is None or self.key_field.primary_key:
+            return value
+        if (pk := getattr(item, f'{self.name}{RELATED_PK_SUFFIX}', None)) is not None:
+            return pk
+        return self.related_model._base_manager.filter(
+            **{self.key_field.name: value}
+        ).values_list('pk', flat=True).first()
+
+    def fk_value(self, pk):
+        """
+        The value a forward foreign key stores to link the related object with the primary
+        key `pk`: `pk`, or the value of the `to_field` of that object, looked up. Raises
+        `DoesNotExist` of the related model when no object has the primary key: `pk` is
+        never stored as a value of the `to_field` (another object may have that value).
+        """
+        if pk is None or self.key_field.primary_key:
+            return pk
+        return self.related_model._base_manager.values_list(self.key_field.name, flat=True).get(
+            pk=pk
+        )
 
     @cached_property
     def m2m_field_rel(self):
@@ -119,18 +163,22 @@ class RelationInfo:
             ).filter(_is_exist=True)
         else:
             if self.reverse:
-                qs = self.related_model.objects.filter(**{self.related_field.name: OuterRef('pk')})
+                # the foreign key of the related objects stores the field it references
+                qs = self.related_model.objects.filter(
+                    **{self.related_field.name: OuterRef(self.related_field.target_field.attname)}
+                )
             else:
-                qs = self.related_model.objects.filter(**{'pk': OuterRef(self.name)})
+                qs = self.related_model.objects.filter(
+                    **{self.key_field.name: OuterRef(self.name)}
+                )
         return qs
 
-    def get_child_queryset(self, parent_pk, child_pk=None):
+    def get_child_queryset(self, parent_pk):
         """
         Generates queryset for related objects filtered by parent PK.
 
         Args:
             parent_pk: Parent model primary key
-            child_pk: Optional child PK for direct lookup
 
         Returns:
             Filtered queryset of related objects
@@ -145,22 +193,22 @@ class RelationInfo:
             ).filter(_is_exist=True)
         else:
             if self.reverse:
-                qs = self.related_model.objects.filter(**{self.related_field.name: parent_pk})
+                fk = self.related_field.name
+                if not self.related_field.target_field.primary_key:
+                    fk = f'{fk}{LOOKUP_SEP}pk'
+                qs = self.related_model.objects.filter(**{fk: parent_pk})
             else:
-                if child_pk:
-                    qs = self.related_model.objects.filter(**{'pk': child_pk})
-                else:
-                    # by the value of the foreign key of the parent, not by the reverse
-                    # relation: it may have none (`related_name='+'`), and then its name
-                    # names the hidden relation of another model
-                    field = self.model_field
-                    qs = self.related_model.objects.filter(
-                        **{
-                            f'{field.target_field.name}__in': field.model._base_manager.filter(
-                                pk=parent_pk
-                            ).values(field.attname)
-                        }
-                    )
+                # by the value of the foreign key of the parent, not by the reverse relation:
+                # it may have none (`related_name='+'`), and then its name names the hidden
+                # relation of another model
+                field = self.model_field
+                qs = self.related_model.objects.filter(
+                    **{
+                        f'{field.target_field.name}__in': field.model._base_manager.filter(
+                            pk=parent_pk
+                        ).values(field.attname)
+                    }
+                )
         return qs
 
 

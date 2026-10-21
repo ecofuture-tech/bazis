@@ -192,7 +192,9 @@ class ServiceAggregating:
             or field.many_to_one
             or field.one_to_one
         ):
-            return F(name)
+            # the id of the related object, a primary key also for a `to_field`
+            target = getattr(field, 'target_field', None)
+            return F(name if target is None or target.primary_key else f'{name}__pk')
         raise aggregate_error(
             'group',
             format_lazy(

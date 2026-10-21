@@ -17,6 +17,7 @@ from typing import Any, Literal, NamedTuple
 
 from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 
 from fastapi.encoders import jsonable_encoder
@@ -215,6 +216,31 @@ class JsonApiBazisException(Exception):  # noqa: N818
                 for err in exc.errors()
             ]
         )
+
+
+def relation_missing(
+    f_name: str, missing: set, positions: dict, is_list: bool, *, relationship_body: bool
+) -> JsonApiBazisException:
+    """
+    The error of a relationship that links an object that does not exist: 422
+    `ERR_VALIDATE` at the first missing identifier of the value (`positions`: its index by
+    key), in the document of a create or an update or in the body of the relationships
+    endpoints (`relationship_body`, the `data` of the relationship).
+    """
+    prefix = ('body', 'data') if relationship_body else ('body', 'data', 'relationships', f_name, 'data')
+    if is_list:
+        loc = (*prefix, min(positions[pk] for pk in missing), 'id')
+    else:
+        loc = (*prefix, 'id')
+    return JsonApiBazisException(
+        JsonApiBazisError(
+            detail=format_lazy(_('The related object of {name} does not exist'), name=f_name),
+            loc=loc,
+            code='ERR_VALIDATE',
+            status=422,
+        ),
+        status=422,
+    )
 
 
 class JsonApiItemInvalidException(JsonApiBazisException):

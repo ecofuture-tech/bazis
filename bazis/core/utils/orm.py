@@ -62,7 +62,7 @@ from translated_fields import TranslatedField, to_attribute
 
 from bazis.core.item_validation import reverse_items_link, saves_items
 from bazis.core.utils.imp import import_class
-from bazis.core.utils.model_meta import RelationInfo
+from bazis.core.utils.model_meta import RELATED_PK_SUFFIX, RelationInfo
 
 
 logger = logging.getLogger()
@@ -1144,7 +1144,9 @@ def qs_fields_calc(
 
 def qs_fields_related(qs: QuerySet, context: dict | None, fields_allowed: list) -> QuerySet:
     """
-    Adds related fields declared as calc_property to the base queryset.
+    Adds related fields declared as calc_property to the base queryset, and the primary
+    keys of the objects the foreign keys with `to_field` link (the identifiers of the
+    relationships are primary keys).
 
     Tags: RAG, EXPORT
     """
@@ -1155,6 +1157,12 @@ def qs_fields_related(qs: QuerySet, context: dict | None, fields_allowed: list) 
     fields_calc = []
 
     for f_name, f_rel in model.get_fields_info().relations.items():
+        if (
+            f_name in fields_allowed
+            and not (f_rel.reverse or f_rel.to_many or f_rel.key_field.primary_key)
+            and issubclass(f_rel.related_model, InitialBase)
+        ):
+            qs = qs.annotate(**{f'{f_name}{RELATED_PK_SUFFIX}': F(f'{f_name}__pk')})
         if (
             f_name in fields_allowed
             and f_rel.to_many

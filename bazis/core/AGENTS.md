@@ -736,11 +736,14 @@ leaves out the `None` entry of the same class only.
   routes reach only the visible objects through a relation. The objects a relationship
   links of a model whose default route does not override `restrict_queryset` (or that has
   no route) are only looked up (one query per relationship): one that does not exist is
-  422 `ERR_VALIDATE` at its identifier (bazis 2.16; a 500 at the commit before), not
-  looked up for a foreign key with `to_field`. A missing object of a model whose route
-  restricts its objects is 403 `ERR_RELATION_ACCESS`, as a hidden one (its existence is not
-  told). `relation_targets_check = False` turns the check off for the relationships of a
-  route, the lookup too.
+  422 `ERR_VALIDATE` at its identifier (bazis 2.16; a 500 at the commit before). A missing
+  object of a model whose route restricts its objects is 403 `ERR_RELATION_ACCESS`, as a
+  hidden one (its existence is not told). `relation_targets_check = False` turns the check
+  off for the relationships of a route, the lookup too, but for a foreign key with
+  `to_field`: its write looks the object up by the primary key to store its `to_field`, and
+  a primary key of no object is still refused: 422 `ERR_VALIDATE` at its identifier in a
+  create or an update, 400 `ERR_REQUEST` at the relationships endpoints (as for any
+  foreign key).
   The route's own list and item do not use `restrict_queryset` by themselves: apply it in
   `get_queryset` too. Who calls it: the core (`route_restrict_queryset(model)` of
   `bazis.core.routes_abstract.jsonapi.mixins`) for the relationship targets of the writes,
@@ -1102,10 +1105,15 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   Up to 2.10 `ERR_VALIDATE` pointed to `/attributes/<f>` and `/relationships/<f>`, also for
   an included item, and the relationships endpoints into the document of an update: a
   client that also serves older servers reads both forms.
-- A relation by a foreign key with `to_field`: its identifiers are values of that field
-  (checked as such), but the relation checks (`relations_access_check`, the relationships
-  endpoints) look the objects up by their primary key: such relations are not supported
-  there.
+- A relation by a foreign key with `to_field` (bazis 2.19): its identifiers are primary keys
+  of the related objects, as of every relationship (`relationships.<f>.data.id` equals
+  `included[].id` and the id of `/<prefix>/<id>/`); the foreign key stores the value of the
+  `to_field`. The core translates: a read gives the primary key (`RelationInfo.related_pk`,
+  annotated by the queryset of the route), a write stores the value of the object found by
+  its primary key (`RelationInfo.fk_value`; no object: 422, never the identifier stored as
+  a value of the `to_field`), the filter, sorting and `group` by the relation
+  work with primary keys. The checks of the targets are by the primary key. Up to 2.18 the
+  identifiers were values of the `to_field`, and the checks looked up by the primary key.
 - The titles and the fixed details of the errors of the core follow the language of the
   request (`ru` is translated), also the diagnostics of `ERR_FILTER` and `ERR_INCLUDE` (the
   names in them as given); the Pydantic messages (`ERR_VALIDATE`) and the messages of

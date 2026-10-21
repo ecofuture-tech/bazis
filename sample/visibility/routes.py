@@ -22,6 +22,14 @@ from bazis.core.schemas.fields import SchemaField, SchemaFields
 class FolderRouteSet(JsonapiRouteBase):
     model = apps.get_model('visibility.Folder')
 
+    fields = {
+        None: SchemaFields(include={'bookmarks': None}),
+    }
+
+
+class BookmarkRouteSet(JsonapiRouteBase):
+    model = apps.get_model('visibility.Bookmark')
+
 
 class TagRouteSet(RestrictedQsRouteMixin):
     """

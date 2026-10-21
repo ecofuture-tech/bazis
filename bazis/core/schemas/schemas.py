@@ -29,9 +29,11 @@ from pydantic import (
 
 from pydantic_core import PydanticUndefined
 
+from bazis.core.errors import relation_missing
 from bazis.core.models_abstract import InitialBase, JsonApiMixin
 from bazis.core.utils.functools import get_attr
 from bazis.core.utils.geo import geojson_geometry
+from bazis.core.utils.model_meta import RELATED_PK_SUFFIX
 from bazis.core.utils.orm import relation_targets, relation_write
 from bazis.core.utils.query_complex import QueryToOrm
 
@@ -51,6 +53,18 @@ JsonApiMetaT = TypeVar('JsonApiMetaT')
 
 #: the attribute of a validated included item that keeps its index in the request document
 INCLUDED_INDEX_ATTR = '_bs_document_index'
+
+
+def _fk_value(field_info, f_name: str, f_pk) -> Any:
+    """
+    The value of the foreign key that links the object with the primary key `f_pk`
+    (`RelationInfo.fk_value`): 422 at the identifier if there is none, also when the route
+    does not check the targets (`relation_targets_check = False`).
+    """
+    try:
+        return field_info.fk_value(f_pk)
+    except field_info.related_model.DoesNotExist:
+        raise relation_missing(f_name, {f_pk}, {}, False, relationship_body=False) from None
 
 
 def _attribute_value(model: type[InitialBase], name: str, value: Any) -> Any:
@@ -139,7 +153,9 @@ class JsonApiDataSchema(BaseModel):
                     f_pk = (val.get('data') or {}).get('id')
                     f_model = field_info.related_model
                     if self.check_restrict_rel(f_name, f_pk, f_model, instance=item):
-                        setattr(item, f'{f_name}_id', f_pk)
+                        setattr(item, f'{f_name}_id', _fk_value(field_info, f_name, f_pk))
+                        # the annotation of the queryset names the object linked before
+                        item.__dict__.pop(f'{f_name}{RELATED_PK_SUFFIX}', None)
 
         item.save(force_update=True)
         return item
@@ -165,7 +181,7 @@ class JsonApiDataSchema(BaseModel):
                     f_pk = (val.get('data') or {}).get('id')
                     f_model = field_info.related_model
                     if self.check_restrict_rel(f_name, f_pk, f_model):
-                        fields[f'{f_name}_id'] = f_pk
+                        fields[f'{f_name}_id'] = _fk_value(field_info, f_name, f_pk)
 
         # create instance
         return model(**fields)

@@ -17,13 +17,20 @@ Models of the tests of the route visibility of relationship targets: the route o
 hides some tags, the other models are not restricted.
 """
 
+import uuid
+
 from django.db import models
 
 from bazis.core.models_abstract import DtMixin, JsonApiMixin, UuidMixin
 
 
+def new_code() -> str:
+    return uuid.uuid4().hex[:12]
+
+
 class Folder(DtMixin, UuidMixin, JsonApiMixin):
     name = models.CharField('Name', max_length=255)
+    code = models.CharField('Code', max_length=32, unique=True, default=new_code)
 
 
 class Label(DtMixin, UuidMixin, JsonApiMixin):
@@ -34,6 +41,7 @@ class Label(DtMixin, UuidMixin, JsonApiMixin):
 
 class Tag(DtMixin, UuidMixin, JsonApiMixin):
     name = models.CharField('Name', max_length=255)
+    ref = models.UUIDField('Reference', unique=True, default=uuid.uuid4)
     is_hidden = models.BooleanField('Hidden', default=False)
     is_locked = models.BooleanField('Locked', default=False)
     note = models.ForeignKey(
@@ -53,3 +61,25 @@ class Note(DtMixin, UuidMixin, JsonApiMixin):
         Tag, null=True, blank=True, on_delete=models.SET_NULL, related_name='main_notes'
     )
     tags = models.ManyToManyField(Tag, blank=True, related_name='notes')
+
+
+class Bookmark(DtMixin, UuidMixin, JsonApiMixin):
+    """The relations by a foreign key with `to_field`: it stores that field, the API shows pks."""
+
+    name = models.CharField('Name', max_length=255)
+    folder = models.ForeignKey(
+        Folder,
+        to_field='code',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='bookmarks',
+    )
+    tag = models.ForeignKey(
+        Tag,
+        to_field='ref',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='bookmarks',
+    )
