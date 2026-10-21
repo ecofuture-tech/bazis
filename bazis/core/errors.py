@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal, NamedTuple
 
 from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -152,22 +152,41 @@ class JsonApiBazisError(Exception):
             self.meta = jsonable_encoder(meta_data)
 
 
+class JsonApiCookie(NamedTuple):
+    """
+    A cookie of a `JsonApiBazisException`, set on its error response with
+    `Response.set_cookie`. The defaults of the attributes are those of Starlette, so a plain
+    `(key, value, max_age)` tuple is the same cookie.
+
+    Tags: RAG, EXPORT
+    """
+
+    key: str
+    value: str
+    max_age: int | None
+    httponly: bool = False
+    secure: bool = False
+    samesite: Literal['lax', 'strict', 'none'] | None = 'lax'
+    path: str = '/'
+
+
 class JsonApiBazisException(Exception):  # noqa: N818
     """
     Custom exception class for handling multiple JsonApiBazisError instances.
-    Includes status and optional cookies.
+    Includes status and optional cookies: `JsonApiCookie` or `(key, value, max_age)`
+    tuples, set on the error response.
 
     Tags: RAG, EXPORT
     """
 
     status: str | int = HTTP_400_BAD_REQUEST
-    cookies: list[tuple[str, str, int]] = None
+    cookies: list[JsonApiCookie | tuple[str, str, int]] = None
 
     def __init__(
         self,
         errors: list[JsonApiBazisError] | JsonApiBazisError,
         status: str | int = None,
-        cookies: list[tuple[str, str, int]] = None,
+        cookies: list[JsonApiCookie | tuple[str, str, int]] = None,
     ) -> None:
         """
         Initializes the JsonApiBazisException with a list of errors, optional status,

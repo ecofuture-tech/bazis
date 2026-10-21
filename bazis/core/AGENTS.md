@@ -1027,7 +1027,10 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   by default); each error keeps its own (422 by default). `loc` is the source of the error:
   starting with `path`, the parameter `/<rest>`; otherwise the pointer, joined with `/`,
   without a leading `body` (`('attributes', f)` is `/attributes/f`, not a pointer into
-  the document).
+  the document). `cookies=[JsonApiCookie(key, value, max_age, httponly=..., secure=...,
+  samesite=..., path=...)]` sets cookies on the error response (bazis 2.19; a plain
+  `(key, value, max_age)` tuple is a cookie with the defaults of Starlette: path `/`,
+  SameSite `lax`).
 - What the application answers: `JsonApiBazisException` with its status and errors; the
   errors of the request schemas 422 `ERR_VALIDATE` (the title is the Pydantic error type,
   the detail its English message); an `item_id` that cannot be a key 404; a
