@@ -60,7 +60,12 @@ class SchemaField:
     Args:
         name (str): Name of the field in the API.
         source (str | Callable | CallableContext): Data source for the field.
-            By default, it is the attribute of the object name.
+            By default, it is the attribute of the object name. A callable
+            `source(route_cls, item)` gives the value of a read-only field that can neither
+            filter nor order (its return annotation is the type of the field); it must be a
+            function of the module level: the names of the schemas are hashed with it by
+            its qualified name, a lambda or a nested function makes them change between
+            processes.
         schema_out (Type[BaseModel | list]): Schema of the complex object field.
         primary_key (bool): Whether the field is a primary key.
         required (bool): Whether the field is required.
