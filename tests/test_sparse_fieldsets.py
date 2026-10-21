@@ -16,11 +16,21 @@
 Testing that passing a list of fields for the response in query parameters works.
 """
 
+from datetime import datetime
+
 import pytest
 from bazis_test_utils.utils import get_api_client
 from sparse_fieldsets.models import Article, Category, Gender, People
 
 from tests.utils.assert_sql import assert_sql_query, get_sql_query
+
+
+def parse_dates(attributes):
+    # the trigger of the core stores the time of the statement (STATEMENT_TIMESTAMP()), not the
+    # value of the object after create(): the dates are compared with the refreshed objects
+    for name in ('dt_created', 'dt_updated'):
+        if name in attributes:
+            attributes[name] = datetime.fromisoformat(attributes[name])
 
 
 @pytest.mark.django_db(transaction=True)
@@ -44,6 +54,8 @@ def test_sparse_fieldsets(sample_app):
     )
 
     article.author.add(author)
+    article.refresh_from_db()
+    author.refresh_from_db()
 
     url = f'/api/v1/sparse_fieldsets/article/{article.id}/?include=author'
 
@@ -51,22 +63,16 @@ def test_sparse_fieldsets(sample_app):
 
     assert response.status_code == 200
     data = response.json()
-    data['data']['attributes']['dt_created'] = data['data']['attributes']['dt_created'][:-8]
-    data['data']['attributes']['dt_updated'] = data['data']['attributes']['dt_updated'][:-8]
-    data['included'][0]['attributes']['dt_created'] = data['included'][0]['attributes'][
-        'dt_created'
-    ][:-8]
-    data['included'][0]['attributes']['dt_updated'] = data['included'][0]['attributes'][
-        'dt_updated'
-    ][:-8]
+    parse_dates(data['data']['attributes'])
+    parse_dates(data['included'][0]['attributes'])
     assert data == {
         'data': {
             'attributes': {
                 'author_count': 1,
                 'author_detail': [{'child_name': 'somestring 1', 'id': str(author.id)}],
                 'body': '3fa85f64-5717-4562-b3fc-2c963f66afa6',
-                'dt_created': article.dt_created.strftime('%Y-%m-%dT%H:%M:%S'),
-                'dt_updated': article.dt_updated.strftime('%Y-%m-%dT%H:%M:%S'),
+                'dt_created': article.dt_created,
+                'dt_updated': article.dt_updated,
                 'some_count_property': 1000,
                 'some_cached_property': 2000,
                 'title': 'somestring 3',
@@ -82,8 +88,8 @@ def test_sparse_fieldsets(sample_app):
         'included': [
             {
                 'attributes': {
-                    'dt_created': author.dt_created.strftime('%Y-%m-%dT%H:%M:%S'),
-                    'dt_updated': author.dt_updated.strftime('%Y-%m-%dT%H:%M:%S'),
+                    'dt_created': author.dt_created,
+                    'dt_updated': author.dt_updated,
                     'email': 'somestring 2',
                     'gender': 'm',
                     'name': 'somestring 1',
@@ -290,12 +296,12 @@ def test_sparse_fieldsets(sample_app):
 
     assert response.status_code == 200
     data = response.json()
-    data['data']['attributes']['dt_created'] = data['data']['attributes']['dt_created'][:-8]
+    parse_dates(data['data']['attributes'])
     assert data == {
         'data': {
             'attributes': {
                 'author_count': 1,
-                'dt_created': article.dt_created.strftime('%Y-%m-%dT%H:%M:%S'),
+                'dt_created': article.dt_created,
                 'title': 'somestring 3',
             },
             'bs:action': 'view',
