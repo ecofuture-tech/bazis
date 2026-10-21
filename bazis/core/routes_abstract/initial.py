@@ -820,7 +820,9 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
         A public route adds `security: [{}]` (an empty requirement: authentication is
         optional): FastAPI extends the `security` its own dependencies give (an
         `OAuth2PasswordBearer(auto_error=False)` of an authentication package) by it, so a
-        client does not take the route for one that requires a token.
+        client does not take the route for one that requires a token. It only reflects the flag
+        `public`: the authentication package must make its dependency of the user agree with it
+        (a route with `public=True` and a required user answers 401 anyway).
         """
         extra = {OPENAPI_EXTENSION: cls.route_meta(route_ctx)}
         if route_ctx.public:

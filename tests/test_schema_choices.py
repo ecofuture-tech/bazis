@@ -41,6 +41,16 @@ class Priority(models.IntegerChoices):
     HIGH = 2, _('Access denied')
 
 
+class Blank(models.TextChoices):
+    __empty__ = _('Not chosen')
+    ONE = 'one', _('Creation time')
+
+
+class BlankNumber(models.IntegerChoices):
+    __empty__ = _('Not chosen')
+    FIRST = 1, _('Access denied')
+
+
 class Plain(enum.Enum):
     A = 'a'
     B = 'b'
@@ -58,6 +68,8 @@ class Body(BaseModel):
     inner: Inner | None = None
     literal: Literal['plumbing', 'repair'] = 'plumbing'
     plain: Plain = Plain.A
+    blank: Blank | None = None
+    blank_number: BlankNumber | None = None
 
 
 @pytest.fixture
@@ -91,7 +103,6 @@ def test_choices_have_labels_in_the_order_of_the_choices():
     assert list(schemas['WorkType']['enumDict']) == ['plumbing', 'repair']
     assert schemas['Priority']['enum'] == [1, 2]
     # the keys of a JSON object are strings, as in the schemas of the model fields
-    # the keys of a JSON object are strings, as in the schemas of the model fields
     assert schemas['Priority']['enumDict'] == {'1': 'Creation time', '2': 'Access denied'}
 
 
@@ -124,3 +135,16 @@ def test_literal_and_plain_enum_have_no_labels():
     }
     assert 'enumDict' not in schemas['Plain']
     assert schemas['Plain']['enum'] == ['a', 'b']
+
+
+def test_blank_choice_is_not_a_variant():
+    """
+    The `__empty__` of the choices is the pair `(None, label)` of `choices`: it is no member,
+    so the `enum` has no null and `enumDict` neither (the `None` key broke the sorting of the
+    keys of the schema).
+    """
+    schemas = openapi()
+    assert schemas['Blank']['enum'] == ['one']
+    assert schemas['Blank']['enumDict'] == {'one': 'Creation time'}
+    assert schemas['BlankNumber']['enum'] == [1]
+    assert schemas['BlankNumber']['enumDict'] == {'1': 'Access denied'}

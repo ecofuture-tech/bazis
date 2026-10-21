@@ -196,7 +196,9 @@ class ChoicesJsonSchema(fastapi_compat.GenerateJsonSchema):
         json_schema = super().enum_schema(schema)
         enum_cls = schema.get('cls')
         if isinstance(enum_cls, type) and issubclass(enum_cls, Choices):
-            json_schema['enumDict'] = {value: str(label) for value, label in enum_cls.choices}
+            # by the members, like the `enum`: `choices` of a class with `__empty__` has the
+            # pair `(None, label)`, a null key that pydantic cannot sort
+            json_schema['enumDict'] = {member.value: str(member.label) for member in enum_cls}
         return json_schema
 
 

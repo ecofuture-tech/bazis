@@ -924,7 +924,10 @@ nested function gives names that change between processes (the OpenAPI is not st
   A `public=True` route has `security: [{}]` in its operation (bazis 2.21): FastAPI extends the
   `security` of the dependencies of the route (an `OAuth2PasswordBearer(auto_error=False)`
   gives `[{OAuth2PasswordBearer: []}]`) by it, the result `[{OAuth2PasswordBearer: []}, {}]`
-  means authentication is optional; a route that is not public is unchanged.
+  means authentication is optional; a route that is not public is unchanged. It only reflects
+  the flag `public`: the authentication package must make its dependency of the user agree
+  with it, a route with `public=True` and a required user dependency answers 401 anyway
+  (override the user for such a route, as bazis-uploadable does).
 
 ### Request rate limits (throttle)
 
