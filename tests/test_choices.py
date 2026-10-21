@@ -15,12 +15,13 @@
 """
 A create and an update accept only the choices of a field that has them: the values of the
 `enum` of the OpenAPI (static, callable and grouped choices, the elements of an array field,
-the field of every language of a translated one).
+the field of every language of a translated one), checked on the value as sent, before the
+type of the field converts it.
 """
 
 import pytest
 from bazis_test_utils.utils import get_api_client
-from catalog.models import Category, Memo
+from catalog.models import Category, Memo, Tone
 
 
 MEMOS = '/api/v1/catalog/memo/'
@@ -131,10 +132,48 @@ def test_integer_choices(sample_app):
     response = client.post(MEMOS, json_data=memo_document(mood=3))
     refused(response, '/data/attributes/mood')
 
+    # the value as sent: a number as a string is not a choice of numbers
+    response = client.post(MEMOS, json_data=memo_document(mood='2'))
+    refused(response, '/data/attributes/mood')
+
     response = client.post(MEMOS, json_data=memo_document(mood=2))
     assert response.status_code == 201, response.text
     response = client.post(MEMOS, json_data=memo_document(mood=None))
     assert response.status_code == 201, response.text
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_type_that_makes_an_object_of_the_code_accepts_the_codes(sample_app):
+    # the schema type of the field (`Tone`) makes an object of the code: the choices are
+    # checked on the code that the request sends
+    client = get_api_client(sample_app)
+
+    response = client.post(MEMOS, json_data=memo_document(tone='warm'))
+    assert response.status_code == 201, response.text
+    assert response.json()['data']['attributes']['tone'] == 'warm'
+    memo = Memo.objects.get()
+    assert memo.tone is Tone.WARM
+
+    response = client.patch(f'{MEMOS}{memo.pk}/', json_data=memo_document(memo, tone='cold'))
+    assert response.status_code == 200, response.text
+    assert response.json()['data']['attributes']['tone'] == 'cold'
+    memo.refresh_from_db()
+    assert memo.tone is Tone.COLD
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_type_that_makes_an_object_of_the_code_refuses_other_values(sample_app):
+    client = get_api_client(sample_app)
+
+    response = client.post(MEMOS, json_data=memo_document(tone='hot'))
+    refused(response, '/data/attributes/tone')
+    assert not Memo.objects.exists()
+
+    memo = Memo.objects.create(title='Memo', tone=Tone.WARM)
+    response = client.patch(f'{MEMOS}{memo.pk}/', json_data=memo_document(memo, tone='hot'))
+    refused(response, '/data/attributes/tone')
+    memo.refresh_from_db()
+    assert memo.tone is Tone.WARM
 
 
 @pytest.mark.django_db(transaction=True)
@@ -203,6 +242,8 @@ def test_the_openapi_enum_is_what_the_write_accepts(sample_app):
     # the values of the groups, not the pairs
     assert enums('kind') == {('task', 'meeting', 'idea')}
     assert enums('mood') == {(1, 2)}
+    # the codes, not the objects of the schema type
+    assert enums('tone') == {('warm', 'cold')}
 
 
 @pytest.mark.django_db(transaction=True)

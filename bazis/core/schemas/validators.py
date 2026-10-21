@@ -67,8 +67,11 @@ def choices_validator(cls: type[BaseModel], v: Any, field: ValidationInfo):
     Validator to ensure that a value of a field with choices is one of them: the `enum` of
     the field in the schema, which is the one of the OpenAPI (the choices of the model field,
     also the callable and the grouped ones; the choices of the elements of an array field).
-    Null and empty values of the field are left to the null and the blank validators, as in
-    the validation of a Django model field; the elements of an array are all choices. Only the request schemas check it.
+    It checks the value as sent, before the conversion of the schema type (a type of
+    `TYPES_DJANGO_TO_SCHEMA` may make an object of a code): a number sent as a string is not
+    a choice of numbers. Null and empty values of the field are left to the null and the
+    blank validators, as in the validation of a Django model field; the elements of an array
+    are all choices. Only the request schemas check it.
 
     Tags: RAG, INTERNAL
     """

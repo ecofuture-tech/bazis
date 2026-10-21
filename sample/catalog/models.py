@@ -19,6 +19,8 @@ fields that must not be blank and reference data translated into the languages o
 project.
 """
 
+from enum import Enum
+
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Max, OuterRef, Subquery
@@ -27,6 +29,7 @@ from django.utils.translation import gettext_lazy as _
 from translated_fields import TranslatedField, TranslatedFieldWithFallback
 
 from bazis.core.models_abstract import JsonApiMixin, UniqNumberMixin
+from bazis.core.utils.django_types import TYPES_DJANGO_TO_SCHEMA
 from bazis.core.utils.orm import FieldAnnotate, FieldDynamic, calc_property
 
 
@@ -38,6 +41,35 @@ class MemoStatus(models.TextChoices):
 def memo_kinds():
     """Callable choices of a field, in groups."""
     return [('Work', [('task', 'Task'), ('meeting', 'Meeting')]), ('idea', 'Idea')]
+
+
+class Tone(Enum):
+    """A tone of a memo: an object of its code, which the database and the API hold."""
+
+    WARM = 'warm'
+    COLD = 'cold'
+
+
+class ToneField(models.CharField):
+    """
+    A CharField of the codes of the tones, whose value is the `Tone`. Its schema type is
+    `Tone` (`TYPES_DJANGO_TO_SCHEMA`, as `GeoJson` of a geometry field): a request sends the
+    code, the schema makes the object of it, a response shows the code.
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('max_length', 10)
+        kwargs.setdefault('choices', [(tone.value, tone.name.title()) for tone in Tone])
+        super().__init__(*args, **kwargs)
+
+    def from_db_value(self, value, expression, connection):
+        return Tone(value) if value else value
+
+    def get_prep_value(self, value):
+        return super().get_prep_value(value.value if isinstance(value, Tone) else value)
+
+
+TYPES_DJANGO_TO_SCHEMA[ToneField] = Tone
 
 
 class Attachment(JsonApiMixin):
@@ -74,6 +106,8 @@ class Memo(UniqNumberMixin, JsonApiMixin):
     kind = models.CharField('Kind', max_length=10, choices=memo_kinds, null=True, blank=True)
     # integer choices, null but not blank
     mood = models.IntegerField('Mood', choices=[(1, 'Bad'), (2, 'Good')], null=True)
+    # choices of a field whose schema type makes an object of the code
+    tone = ToneField('Tone', null=True)
     category = models.ForeignKey(
         Category, null=True, blank=True, on_delete=models.SET_NULL, related_name='memos'
     )
