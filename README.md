@@ -463,7 +463,7 @@ class Settings(BaseSettings):
 - `readOnly` - field is read-only
 - `writeOnly` - field is write-only
 - `enum` - list of values the field can accept
-- `enumDict` - dictionary mapping values to human-readable names
+- `enumDict` - dictionary mapping values to human-readable names (also for a field of a request body typed by a Django `TextChoices` / `IntegerChoices`)
 - `format` - non-standard field format
 - `minLength` - minimum allowed string length
 - `maxLength` - maximum allowed string length

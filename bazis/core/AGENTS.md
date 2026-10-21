@@ -861,6 +861,18 @@ nested function gives names that change between processes (the OpenAPI is not st
           ...
   ```
 
+  A variant of a body is typed by the `TextChoices` / `IntegerChoices` of the model, not by
+  a `Literal` or an own `Enum`: a field of such a type is an `enum` in the OpenAPI schema
+  of the body, and its labels go as `enumDict` (value to the label in the language of the
+  generation, the same key as for the `choices` of a model field; bazis 2.21), so a client
+  shows the labels of the model without a route that lists them. A `Literal` and an `Enum`
+  that is not a Django `Choices` have no labels:
+
+  ```python
+  class SubmitRequest(BaseModel):
+      work_type: Order.WorkType  # TextChoices of the model: enum with enumDict
+  ```
+
   A required text of a body (a reason, a comment) strips the whitespace before its length
   is checked: `reason: Annotated[str, StringConstraints(strip_whitespace=True,
   min_length=1)]` (pydantic), since `Field(min_length=1)` accepts `"   "`; test it with a
@@ -900,7 +912,7 @@ nested function gives names that change between processes (the OpenAPI is not st
 
 - The OpenAPI operations document the errors they fail with (`SchemaErrors`): 400 and 422
   on the CRUD operations, 404 on every route of an item (`{item_id}` in the path), 403 on
-  the relationships routes. The core has no authentication, so no 401 and no `security`.
+  the relationships routes. The core has no authentication, so no 401 and no `security` (but for a `public=True` route, see below).
   An id in the path that cannot be a primary key of the model (`not-a-uuid`) is 404, like
   a missing item, on every route of an item (also the custom ones that take the item with
   `set_item`/`get_item`).
@@ -909,6 +921,13 @@ nested function gives names that change between processes (the OpenAPI is not st
   wins. Other facts of the operation (`security`, extensions) are added the same way by
   extending `route_openapi_extra(route_ctx)` (`x-bazis` is its base; never change the route
   context there). Document only what the route can really return.
+  A `public=True` route has `security: [{}]` in its operation (bazis 2.21): FastAPI extends the
+  `security` of the dependencies of the route (an `OAuth2PasswordBearer(auto_error=False)`
+  gives `[{OAuth2PasswordBearer: []}]`) by it, the result `[{OAuth2PasswordBearer: []}, {}]`
+  means authentication is optional; a route that is not public is unchanged. It only reflects
+  the flag `public`: the authentication package must make its dependency of the user agree
+  with it, a route with `public=True` and a required user dependency answers 401 anyway
+  (override the user for such a route, as bazis-uploadable does).
 
 ### Request rate limits (throttle)
 
