@@ -713,6 +713,14 @@ else its `None` entry, else the entries of the parents; so a `None` entry of a c
 overrides an action entry of its parent). `is_inherit=False` on the entry of an action
 leaves out the `None` entry of the same class only.
 
+`SchemaField(source=...)` names the attribute of the model a field shows (by default its
+own name). A callable source, `source(route_cls, item) -> <type>`, computes the value of
+the field (also one named as a column, which it replaces): the field is read-only, does not
+filter or order, and its type is the return annotation (bazis 2.19.1; before, the schema
+failed with a `TypeError`). The function must be of the module level: the schemas are
+named by a hash of their fields that takes it by its qualified name, and a lambda or a
+nested function gives names that change between processes (the OpenAPI is not stable).
+
 ### The visibility of the objects for the other routes: `restrict_queryset`
 
 - Visibility of the objects of a model for the other routes: override the classmethod

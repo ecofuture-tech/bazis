@@ -192,7 +192,9 @@ class SchemaFactory:
                     field.field_db_attr = fields_info.attributes[field.source]
                     field.can_filter = True
                     field.can_order = True
-                else:
+                # a callable source (`route_calls` of the builders) names no attribute of the
+                # model: it cannot filter or order
+                elif isinstance(field.source, str):
                     field_model = getattr(self.model, field.source)
                     if isinstance(field_model, calc_cached_property) and field_model.as_filter:
                         field.can_filter = True
