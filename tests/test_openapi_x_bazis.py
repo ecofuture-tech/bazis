@@ -226,3 +226,40 @@ def test_route_declare():
 
     with pytest.raises(TypeError):
         route_declare(base, path='/other/')
+
+
+def test_public_route_security_is_optional():
+    """
+    A public route adds an empty requirement to the `security` of the operation, which FastAPI
+    extends (not replaces) with the one of its dependencies: a token is optional. A route that
+    is not public has no `security` of its own.
+    """
+    from fastapi import Depends, FastAPI
+    from fastapi.security import OAuth2PasswordBearer
+
+    scheme = OAuth2PasswordBearer(tokenUrl='token', auto_error=False)
+
+    class SecuredRouteSet(InitialRouteBase):
+        @http_get('/open/', public=True, dependencies=[Depends(scheme)])
+        def action_open(self, **kwargs):
+            pass
+
+        @http_get('/open_bare/', public=True)
+        def action_open_bare(self, **kwargs):
+            pass
+
+        @http_get('/closed/', dependencies=[Depends(scheme)])
+        def action_closed(self, **kwargs):
+            pass
+
+        @http_get('/closed_bare/')
+        def action_closed_bare(self, **kwargs):
+            pass
+
+    app = FastAPI()
+    app.include_router(SecuredRouteSet.as_router())
+    paths = app.openapi()['paths']
+    assert paths['/open/']['get']['security'] == [{'OAuth2PasswordBearer': []}, {}]
+    assert paths['/open_bare/']['get']['security'] == [{}]
+    assert paths['/closed/']['get']['security'] == [{'OAuth2PasswordBearer': []}]
+    assert 'security' not in paths['/closed_bare/']['get']

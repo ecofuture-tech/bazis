@@ -816,8 +816,16 @@ class InitialRouteBase(metaclass=InitialRouteBaseMeta):
         result of `super()`, for example `security`). It is merged, key by key and on a copy,
         under the `openapi_extra` the route declares itself, which takes priority; the route
         context is never changed.
+
+        A public route adds `security: [{}]` (an empty requirement: authentication is
+        optional): FastAPI extends the `security` its own dependencies give (an
+        `OAuth2PasswordBearer(auto_error=False)` of an authentication package) by it, so a
+        client does not take the route for one that requires a token.
         """
-        return {OPENAPI_EXTENSION: cls.route_meta(route_ctx)}
+        extra = {OPENAPI_EXTENSION: cls.route_meta(route_ctx)}
+        if route_ctx.public:
+            extra['security'] = [{}]
+        return extra
 
     @classmethod
     def endpoint_register(cls, router: BazisRouter, route_ctx: RouteContext):
