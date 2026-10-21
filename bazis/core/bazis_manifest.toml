@@ -67,7 +67,7 @@ use_when = "a package changes the LIST schema of a route per user: the fields fi
 [[extension_points]]
 name = "route_search_fields"
 import = "bazis.core.utils.query_complex.route_search_fields"
-use_when = "a tool needs the search fields a route searches"
+use_when = "a tool needs the search fields a route searches (declared, or by default the text fields of its LIST schema)"
 
 [[extension_points]]
 name = "calc_property"
@@ -255,6 +255,9 @@ text = "filter, sort and search reach only the fields of the LIST schema of the 
 [[pitfalls]]
 text = "a search field that is not a field of the LIST schema of its route is left out of the search"
 check = "bazis.W007"
+
+[[pitfalls]]
+text = "a route without search_fields searches every text field of its LIST schema (CharField/TextField without choices, TranslatedField): declare search_fields to search fewer, search_fields = [] for no search"
 
 [[pitfalls]]
 text = "restricting the objects of a model only in get_queryset: the relationships and `included` of the other routes see them; use restrict_queryset"

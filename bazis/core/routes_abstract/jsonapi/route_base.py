@@ -182,7 +182,10 @@ class JsonapiRouteBase(InitialRouteBase):
     fields: dict[ApiAction, SchemaFields] = None
     inclusions: dict[ApiAction, SchemaInclusions] = None
     meta_fields: dict[ApiAction, SchemaMetaFields] = None
-    search_fields: list[str] = None
+    #: the fields `search` (and `$search` of `filter`) searches, of the LIST schema; None
+    #: (not declared): its text fields for the user (`default_search_fields`); `[]`: no
+    #: search, a `search` is 400 ERR_FILTER
+    search_fields: list[str] | None = None
     filters_aliases: dict[str, str] = {}
 
     item: JsonApiMixin | None = None
@@ -274,7 +277,6 @@ class JsonapiRouteBase(InitialRouteBase):
         cls.schema_responses_defaults = {}
         cls.schemas = {}
         cls.schemas_responses = {}
-        cls.search_fields = cls.search_fields or []
 
         for rc in cls.routes_ctx.values():
             # Get the original function and extract type hints
@@ -457,9 +459,10 @@ class JsonapiRouteBase(InitialRouteBase):
         """
         The fields of the LIST schema of the route for the user: the keys of `filter`
         (the fields that can filter) and `sort` (that can order) of a request start with
-        one of them (their source), and the search fields of the route must be among them.
-        A relation of them leads into the fields of the default route of the related model.
-        A package that changes the LIST schema per user overrides it (accept `**kwargs`).
+        one of them (their source), and the search fields of the route must be among them
+        (without `search_fields`, the route searches the text fields of them). A relation
+        of them leads into the fields of the default route of the related model. A package
+        that changes the LIST schema per user overrides it (accept `**kwargs`).
         """
         factory = cls.schema_factories.get(CrudApiAction.LIST)
         if factory is None:

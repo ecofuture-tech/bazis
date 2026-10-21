@@ -496,7 +496,8 @@ The `filter` query parameter holds one expression (URL-encode it):
 The filter, the sorting and the search reach only what the route shows the user: a key
 starts with a field of the LIST schema of the route, a relation of it leads into the
 objects the default route of the related model shows (its `restrict_queryset`) and its
-LIST fields, and the search uses the `search_fields` of the route (none: no search). Any
+LIST fields, and the search uses the `search_fields` of the route (not declared: the text
+fields of its LIST schema; `[]`: no search). Any
 other key is 400 `ERR_FILTER`, as an unknown field.
 
 The lookup suffixes are not Django lookups; a field accepts only these (and `isnull`).

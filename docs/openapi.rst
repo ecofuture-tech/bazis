@@ -145,7 +145,8 @@ Full-Text Search in Filtering
 ------------------------------
 
 - ``$search=text``: Identical to the top-level query ``'?search=text'``: the search fields of the route
-  (``search_fields``); a route without them has no search (400 ``ERR_FILTER``).
+  (``search_fields``; not declared, the text fields of its LIST schema for the user); a route with
+  ``search_fields = []`` or without text fields has no search (400 ``ERR_FILTER``).
 - ``description__$search=some text``: Full-text search only in the *description* text field.
 - ``author__$search=text``: The search fields of the default route of the nested *author* model.
 - ``author__username__$search=text``: Full-text search only in the *username* text field of the nested *author* entity.

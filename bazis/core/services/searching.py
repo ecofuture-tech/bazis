@@ -47,14 +47,18 @@ class ServiceSearching:
         """
         Applies the search query to the provided queryset by constructing a Q object and
         filtering the queryset based on the search terms. With a scope (by default the
-        scope of the route of the request) only the search fields of the route it reaches
-        are searched, and a search on a route without them is 400 ERR_FILTER; without a
-        scope (None) a route without search fields searches every text field of the model.
+        scope of the route of the request) its search fields are searched where it reaches
+        them (`search_fields` of the route, else the text fields of its LIST schema for the
+        user), and a search without one of them is 400 ERR_FILTER; without a scope (None)
+        the `search_fields` of the route, else every text field of the model.
         """
         scope = request_query_scope(scope)
         try:
             search = SearchToOrm(
-                queryset.model, self.search, search_fields=self.route_cls.search_fields, scope=scope
+                queryset.model,
+                self.search,
+                search_fields=self.route_cls.search_fields if scope is None else None,
+                scope=scope,
             )
         except ValueError as e:
             raise JsonApiBazisException(
