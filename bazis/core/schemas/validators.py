@@ -182,8 +182,9 @@ def model_validate(model: type[BaseModel], value, loc: tuple):
             _id = value.pk
             _type = value.get_resource_label()
         elif isinstance(value, dict) and 'id' in value:
+            # a document may leave out `type` (the schema has it by default)
             _id = value['id']
-            _type = value['type']
+            _type = value.get('type')
 
         # e.errors() makes new dicts on every call: change them and raise the same ones
         errors = e.errors()
