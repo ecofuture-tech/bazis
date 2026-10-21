@@ -795,6 +795,10 @@ leaves out the `None` entry of the same class only.
   (`/_id/`) and `get_route_filter_fields`. No action shows the attributes of an item past
   the schema of the route (the `dict_data` route was removed in 2.11.0). A route class of
   a proxy model excludes `action_create` and `action_update` in a list of its own.
+  A route set without `action_list` (a file upload with `create` and `retrieve`) is fine:
+  `route_filter_fields/` of a route with a relation to it lists the relation with
+  `py_type` `unknown` (bazis 2.19; before, the endpoint answered 500), as for a relation
+  to a model without a route.
 
 ## Custom routes and actions
 

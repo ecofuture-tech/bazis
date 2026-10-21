@@ -20,7 +20,8 @@ based on `JsonapiRouteBase` to gather metadata about fields that can be used for
 
 It supports:
 - Native database fields (with type conversion to OpenAPI types).
-- Related fields (resolved to list endpoints of related resources).
+- Related fields (resolved to list endpoints of related resources; `unknown` when the related
+  model has no route with a list).
 - Calculated fields (using annotated response types via `@calc_property`).
 
 The main entry point is `RouteFilterFieldsService.get_fields(route_cls)`, which returns a list of `InputField` objects
@@ -125,14 +126,17 @@ class RouteFilterFieldsService:
     @cache
     def _find_route_cls_for_model(model: type) -> type['JsonapiRouteBase'] | None:
         """
-        Search registered FastAPI routes and return route class that corresponds to the given Django model.
-        Only non-abstract InitialRouteBase subclasses are considered.
+        Search registered FastAPI routes and return the route class of the given Django model
+        that has a list route (the path of a relation filter). Only non-abstract
+        InitialRouteBase subclasses are considered; a route set registered without its list
+        (a file upload) is skipped, as a model without a route.
         """
         from bazis.core.app import app
 
         for route in iter_api_routes(app.router.routes):
             if (
                 hasattr(route.endpoint, 'route_ctx')
+                and route.endpoint.route_ctx.name == 'action_list'
                 and issubclass(route.endpoint.route_ctx.route_cls, InitialRouteBase)
                 and not getattr(route.endpoint.route_ctx.route_cls, 'abstract', False)
                 and getattr(route.endpoint.route_ctx.route_cls, 'model', None) == model
