@@ -71,7 +71,7 @@ route of the request is ``JsonApiMixin.CTX_ROUTE.get()``. An override should acc
   relationship keeps the identifiers of all linked objects.
 * The objects of a model whose default route does not override ``restrict_queryset``, or
   that has no route, are not checked (no extra query).
-* ``relation_targets_check = False`` on a route turns the check of its relationships off. A write by a foreign key with ``to_field`` still looks the object up by its primary key (the foreign key stores its ``to_field``): a primary key of no object is ``422`` ``ERR_VALIDATE`` at the identifier.
+* ``relation_targets_check = False`` on a route turns the check of its relationships off. A write by a foreign key with ``to_field`` still looks the object up by its primary key (the foreign key stores its ``to_field``): a primary key of no object is ``422`` ``ERR_VALIDATE`` at the identifier in a create or an update, and ``400`` ``ERR_REQUEST`` at the relationships endpoints, as for any foreign key.
 * The default route of a model is the last defined route class of the model (abstract ones
   never), unless a route class declares ``default_route = True`` in its body (the flag is
   not inherited). ``bazis_doctor`` warns (``bazis.W003``) about a model with several route

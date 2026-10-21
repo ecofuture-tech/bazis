@@ -741,7 +741,9 @@ leaves out the `None` entry of the same class only.
   hidden one (its existence is not told). `relation_targets_check = False` turns the check
   off for the relationships of a route, the lookup too, but for a foreign key with
   `to_field`: its write looks the object up by the primary key to store its `to_field`, and
-  a primary key of no object is still 422 `ERR_VALIDATE` at its identifier.
+  a primary key of no object is still refused: 422 `ERR_VALIDATE` at its identifier in a
+  create or an update, 400 `ERR_REQUEST` at the relationships endpoints (as for any
+  foreign key).
   The route's own list and item do not use `restrict_queryset` by themselves: apply it in
   `get_queryset` too. Who calls it: the core (`route_restrict_queryset(model)` of
   `bazis.core.routes_abstract.jsonapi.mixins`) for the relationship targets of the writes,
