@@ -113,6 +113,7 @@ def _initialize_app(app): # noqa: C901
     from fastapi.responses import RedirectResponse, Response
 
     from starlette.concurrency import run_in_threadpool
+    from starlette.datastructures import Headers
     from starlette.exceptions import HTTPException
     from starlette.middleware.sessions import SessionMiddleware
     from starlette.responses import JSONResponse
@@ -133,6 +134,7 @@ def _initialize_app(app): # noqa: C901
 
     from .errors import (
         JsonApiBazisException,
+        JsonApiBodyTooLargeException,
         JsonApiCookie,
         JsonApiItemInvalidException,
         SchemaError,
@@ -246,6 +248,46 @@ def _initialize_app(app): # noqa: C901
                 await run_in_threadpool(close_old_connections)
 
     app.add_middleware(CloseOldConnectionsMiddleware)
+
+    class MaxBodySizeMiddleware:
+        """
+        Refuses a request whose body is larger than `BAZIS_API_MAX_BODY_SIZE` bytes (0 - no
+        limit) with 413 `ERR_BODY_TOO_LARGE`: by its `Content-Length` before the application
+        runs, and a body without one (chunked) as soon as the bytes received exceed the
+        limit, so that no route reads or parses (JSON, multipart) a larger body. It is inside
+        the language and the CORS middlewares: the error is translated and a browser reads it.
+        """
+
+        def __init__(self, app) -> None:
+            self.app = app
+
+        async def __call__(self, scope, receive, send) -> None:
+            limit = settings.BAZIS_API_MAX_BODY_SIZE
+            if scope['type'] != 'http' or not limit:
+                await self.app(scope, receive, send)
+                return
+            content_length = Headers(scope=scope).get('content-length')
+            if content_length is not None and int(content_length) > limit:
+                response = await json_api_http_exception_handler(
+                    Request(scope), JsonApiBodyTooLargeException()
+                )
+                await response(scope, receive, send)
+                return
+            received = 0
+
+            async def receive_limited():
+                # raised in the route that reads the body: its exception handler answers
+                nonlocal received
+                message = await receive()
+                if message['type'] == 'http.request':
+                    received += len(message.get('body', b''))
+                    if received > limit:
+                        raise JsonApiBodyTooLargeException()
+                return message
+
+            await self.app(scope, receive_limited, send)
+
+    app.add_middleware(MaxBodySizeMiddleware)
 
     app.add_middleware(LanguageMiddleware)
 
