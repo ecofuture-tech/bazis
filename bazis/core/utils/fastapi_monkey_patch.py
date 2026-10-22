@@ -175,31 +175,17 @@ openapi_utils.OpenAPI = TranslatedOpenAPI
 
 ######################################################################
 
-from django.db.models import Choices
-
 from fastapi._compat import v2 as fastapi_compat
 
-from pydantic.json_schema import JsonSchemaValue
+from bazis.core.utils.schemas import ChoicesJsonSchemaMixin
 
 
-class ChoicesJsonSchema(fastapi_compat.GenerateJsonSchema):
+class ChoicesJsonSchema(ChoicesJsonSchemaMixin, fastapi_compat.GenerateJsonSchema):
     """
-    Monkey patch: the JSON schema generator of FastAPI with the labels of the Django choices.
-
-    A field typed by a subclass of `TextChoices` / `IntegerChoices` is an `enum` of the values
-    only; the labels are added as `enumDict` (value to the label in the active language), the
-    same key the schemas of the model fields carry for their `choices`, so a body of an action
-    shows the labels of the model. A `Literal` and an `Enum` that is not `Choices` have none.
+    Monkey patch: the JSON schema generator of FastAPI with the labels of the Django choices
+    (`enumDict`, see `ChoicesJsonSchemaMixin`), so a body of an action shows the labels of
+    the model.
     """
-
-    def enum_schema(self, schema) -> JsonSchemaValue:
-        json_schema = super().enum_schema(schema)
-        enum_cls = schema.get('cls')
-        if isinstance(enum_cls, type) and issubclass(enum_cls, Choices):
-            # by the members, like the `enum`: `choices` of a class with `__empty__` has the
-            # pair `(None, label)`, a null key that pydantic cannot sort
-            json_schema['enumDict'] = {member.value: str(member.label) for member in enum_cls}
-        return json_schema
 
 
 # FastAPI creates its generator by the name in the module of its compatibility layer

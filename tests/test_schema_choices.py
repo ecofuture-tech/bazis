@@ -14,10 +14,13 @@
 
 """
 The labels of the Django choices (`enumDict`) in the OpenAPI schemas of the pydantic models,
-e.g. the body of an action: the same key the schemas of the model fields carry.
+e.g. the body of an action: the same key the schemas of the model fields carry. The JSON
+schemas of `TranslatedJsonSchema` (`TranslatedSchemaModel.model_json_schema()`, the payload
+of a transit of bazis-statusy) have them too.
 """
 
 import enum
+import json
 from typing import Literal
 
 from django.db import models
@@ -29,6 +32,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 import pytest
+
+from bazis.core.utils.schemas import TranslatedJsonSchema, TranslatedSchemaModel
 
 
 class WorkType(models.TextChoices):
@@ -70,6 +75,10 @@ class Body(BaseModel):
     plain: Plain = Plain.A
     blank: Blank | None = None
     blank_number: BlankNumber | None = None
+
+
+class TranslatedBody(Body, TranslatedSchemaModel):
+    pass
 
 
 @pytest.fixture
@@ -148,3 +157,51 @@ def test_blank_choice_is_not_a_variant():
     assert schemas['Blank']['enumDict'] == {'one': 'Creation time'}
     assert schemas['BlankNumber']['enum'] == [1]
     assert schemas['BlankNumber']['enumDict'] == {'1': 'Access denied'}
+
+
+@pytest.fixture(
+    params=[
+        TranslatedBody.model_json_schema,
+        lambda: Body.model_json_schema(schema_generator=TranslatedJsonSchema),
+    ],
+    ids=['TranslatedSchemaModel', 'TranslatedJsonSchema'],
+)
+def translated_schemas(request):
+    """
+    The definitions of the JSON schema of the body by `TranslatedJsonSchema` in a language,
+    as a JSON document (its keys are strings).
+    """
+
+    def schemas(language: str = 'en') -> dict:
+        with translation.override(language):
+            schema = json.loads(json.dumps(request.param()))
+        return schema['$defs'] | {'Body': schema}
+
+    return schemas
+
+
+def test_translated_json_schema_has_the_labels(translated_schemas, two_languages):
+    schemas = translated_schemas()
+    assert schemas['WorkType'] == openapi()['WorkType']
+    assert list(schemas['WorkType']['enumDict']) == ['plumbing', 'repair']
+    assert schemas['Priority']['enumDict'] == {'1': 'Creation time', '2': 'Access denied'}
+    assert translated_schemas('ru')['WorkType']['enumDict'] == {
+        'plumbing': 'Время добавления',
+        'repair': 'Доступ запрещён',
+    }
+    props = schemas['Body']['properties']
+    assert props['many']['items'] == {'$ref': '#/$defs/WorkType'}
+    assert schemas['Inner']['properties']['kind'] == {'$ref': '#/$defs/WorkType'}
+
+
+def test_translated_json_schema_blank_literal_and_plain_enum(translated_schemas):
+    schemas = translated_schemas()
+    assert schemas['Blank']['enumDict'] == {'one': 'Creation time'}
+    assert schemas['BlankNumber']['enumDict'] == {'1': 'Access denied'}
+    assert 'enumDict' not in schemas['Body']['properties']['literal']
+    assert 'enumDict' not in schemas['Plain']
+
+
+def test_plain_pydantic_generator_has_no_labels():
+    """The labels come from the generators of the core, not from the type."""
+    assert 'enumDict' not in Body.model_json_schema()['$defs']['WorkType']
