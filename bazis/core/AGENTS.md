@@ -32,7 +32,7 @@ cover.
 
 | Section | Read it when |
 |---|---|
-| Project layout | you create a project or an app: its files, the media and static files, the `BS_*` settings and `BS_INSTALLED_APPS`, the dynamic settings, the translations (`bazis_messages`), the language of a request |
+| Project layout | you create a project or an app: its files, the media and static files, the size of a request body, the `BS_*` settings and `BS_INSTALLED_APPS`, the dynamic settings, the translations (`bazis_messages`), the language of a request |
 | Models | you write a model: the mixins and the resource type, `URLField`, the declarations in the code, the triggers (pgtrigger) and `migrate`, `UniqNumberMixin`, data named in every language, callable defaults |
 | Invariants of the items | a rule that every write of an item must keep: `validate_item` and `ItemChanges`, `defer_validate_item`, limits and unique values under concurrent requests (`lock_on_write`, `set_item(with_lock=True)`, tests with `parallel`), no overlapping intervals of a participant |
 | Calculated fields | a field the query of a route computes (`calc_property`, `FieldAnnotate`, `FieldDynamic`, a subquery, the user of the request), or one computed from the item itself |
@@ -68,6 +68,22 @@ production serve them by the web server or a media host (`BS_MEDIA_HOST_URL`); d
 mount `MEDIA_ROOT` in the project. The loop is detected against the Host of the request: a
 proxy in front of the application must preserve the Host header (not rewrite it to an
 internal address), or a host setting that names the public address redirects to itself.
+
+### Size of a request body
+
+`BS_BAZIS_API_MAX_BODY_SIZE` (bytes, `0` - no limit, the default; not dynamic; bazis 2.22)
+refuses a larger request with 413 `ERR_BODY_TOO_LARGE` (JSON:API, translated, with the
+headers of CORS) in the application of Bazis: by its `Content-Length` before the routes run,
+a chunked body as soon as the bytes received exceed it, so no route reads or parses a larger
+body; a body that exceeds it once a response has started (a streaming one) ends the request
+as a disconnection of the client. The middlewares the project or a package adds to the
+application afterwards run outside it and are not limited: the `AsyncRequestMiddleware` of
+bazis-async-request reads the whole body before it, answers 202, and its task ends with
+the 413. With such a middleware the limit of the reverse proxy is the one that holds. Set
+it in production above the largest request of the project (with bazis-uploadable at least
+`BAZIS_FILE_UPLOAD_MAX_SIZE` plus the multipart overhead), and limit the body on the reverse
+proxy as well (`client_max_body_size` of nginx). `DATA_UPLOAD_MAX_MEMORY_SIZE` of Django
+applies to the admin only.
 
 ### Settings: `BS_*`
 
@@ -192,7 +208,8 @@ as well (bazis 2.14; before, a lazy title broke `/openapi.json`). Lazy examples 
 it defines the model, and refuses a lazy text there. A model whose JSON schema the code
 reads itself (`model_json_schema()`, outside the OpenAPI) inherits `TranslatedSchemaModel`
 (`bazis.core.utils.schemas`), or passes `schema_generator=TranslatedJsonSchema`: the schema
-is then in the active language too. Every HTTP response has `Vary: Accept-Language`. Keep titles lazy (`gettext_lazy`,
+is then in the active language too, with the labels of the Django choices (`enumDict`) as
+in the OpenAPI (bazis 2.22). Every HTTP response has `Vary: Accept-Language`. Keep titles lazy (`gettext_lazy`,
 `verbose_name`): a `str` is fixed in the language of the code that made it. Compose the
 names of models and fields with `format_lazy`, not an f-string: a name made at import is in
 the language active then and gets into the migrations (the names of the models
@@ -864,9 +881,10 @@ nested function gives names that change between processes (the OpenAPI is not st
   A variant of a body is typed by the `TextChoices` / `IntegerChoices` of the model, not by
   a `Literal` or an own `Enum`: a field of such a type is an `enum` in the OpenAPI schema
   of the body, and its labels go as `enumDict` (value to the label in the language of the
-  generation, the same key as for the `choices` of a model field; bazis 2.21), so a client
-  shows the labels of the model without a route that lists them. A `Literal` and an `Enum`
-  that is not a Django `Choices` have no labels:
+  generation, the same key as for the `choices` of a model field; bazis 2.21; also in the
+  JSON schemas of `TranslatedJsonSchema`, such as the payload of a transit of bazis-statusy,
+  bazis 2.22), so a client shows the labels of the model without a route that lists them.
+  A `Literal` and an `Enum` that is not a Django `Choices` have no labels:
 
   ```python
   class SubmitRequest(BaseModel):
@@ -1092,7 +1110,8 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   relationships endpoints, an exclusion constraint) the single error, without a pointer
   and without a name of a field (`JsonapiRouteBase.unique_conflict`), anywhere in the
   request (bazis 2.16; a create answered 409 `ERR_REQUEST` "Data conflict" for any
-  integrity error before); a throttled request 429 `ERR_THROTTLED` with `Retry-After`; any
+  integrity error before); a throttled request 429 `ERR_THROTTLED` with `Retry-After`; a body
+  larger than `BAZIS_API_MAX_BODY_SIZE` 413 `ERR_BODY_TOO_LARGE`; any
   other exception 500 (the traceback in `detail` only with DEBUG), also another
   `IntegrityError` (a not-null or check constraint: keep such rules in `validate_item`,
   422; a foreign key to a missing object that a route links is 422 `ERR_VALIDATE`, see

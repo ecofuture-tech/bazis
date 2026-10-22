@@ -180,6 +180,9 @@ check = "bazis.W001"
 text = "without DEBUG the application serves no MEDIA_ROOT (404): set BS_MEDIA_HOST_URL or serve MEDIA_URL by the web server"
 
 [[pitfalls]]
+text = "the size of a request body is not limited by default: set BS_BAZIS_API_MAX_BODY_SIZE (413 ERR_BODY_TOO_LARGE) and the limit of the reverse proxy (client_max_body_size)"
+
+[[pitfalls]]
 text = "the default cache must be Redis (django-redis)"
 check = "bazis.E001"
 

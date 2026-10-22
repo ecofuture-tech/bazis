@@ -15,6 +15,7 @@
 import os
 from typing import Any
 
+from django.db.models import Choices
 from django.utils.functional import Promise
 
 from pydantic import BaseModel
@@ -41,13 +42,37 @@ def translated(value: Any) -> Any:
     return value
 
 
-class TranslatedJsonSchema(GenerateJsonSchema):
+class ChoicesJsonSchemaMixin:
+    """
+    A mixin of a JSON schema generator (`GenerateJsonSchema`) that adds the labels of the
+    Django choices: a field typed by a subclass of `TextChoices` / `IntegerChoices` is an `enum`
+    of the values only, and its schema gets `enumDict` (value to the label in the active
+    language), the key the schemas of the model fields carry for their `choices`, so a client
+    shows the labels of the model. A `Literal` and an `Enum` that is not `Choices` have none.
+    The generators of the OpenAPI (`bazis.core.utils.fastapi_monkey_patch`) and of
+    `TranslatedJsonSchema` use it.
+
+    Tags: RAG, EXPORT
+    """
+
+    def enum_schema(self, schema) -> JsonSchemaValue:
+        json_schema = super().enum_schema(schema)
+        enum_cls = schema.get('cls')
+        if isinstance(enum_cls, type) and issubclass(enum_cls, Choices):
+            # by the members, like the `enum`: `choices` of a class with `__empty__` has the
+            # pair `(None, label)`, a null key that pydantic cannot sort
+            json_schema['enumDict'] = {member.value: str(member.label) for member in enum_cls}
+        return json_schema
+
+
+class TranslatedJsonSchema(ChoicesJsonSchemaMixin, GenerateJsonSchema):
     """
     A JSON schema generator that writes the lazy texts of the models (`Field(title=_('…'))`,
     `description`, `json_schema_extra`: labels, examples) in the language active when the
     schema is generated: pydantic copies a lazy title as it is, and the schema would not be a JSON
     document. The models keep their texts lazy, so every generation is in its own language.
-    The OpenAPI of the core translates its whole document in the same way.
+    The OpenAPI of the core translates its whole document in the same way. The labels of the
+    Django choices are added as in the OpenAPI (`ChoicesJsonSchemaMixin`, bazis 2.22).
 
     Tags: RAG, EXPORT
     """

@@ -188,6 +188,10 @@ class Settings(BazisSettings):
     BAZIS_API_AGGREGATE_GROUPS_MAX: int = Field(
         1000, ge=1, title=_('Maximum number of groups of the aggregates of a list')
     )
+    # not dynamic: it is read on every request before its route, without the database
+    BAZIS_API_MAX_BODY_SIZE: int = Field(
+        0, ge=0, title=_('Maximum size of the body of an API request, bytes (0 - unlimited)')
+    )
     CONSTANCE_DATABASE_CACHE_BACKEND: str | None = Field(
         None, title=_('Default cache instance for storing CONSTANCE')
     )

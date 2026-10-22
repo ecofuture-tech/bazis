@@ -27,6 +27,7 @@ from starlette.status import (
     HTTP_400_BAD_REQUEST,
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
+    HTTP_413_CONTENT_TOO_LARGE,
     HTTP_422_UNPROCESSABLE_CONTENT,
     HTTP_429_TOO_MANY_REQUESTS,
 )
@@ -100,6 +101,19 @@ class JsonApiThrottledException(JsonApiHttpException):
     status = HTTP_429_TOO_MANY_REQUESTS
     code = 'ERR_THROTTLED'
     title = _('Too many requests: try again later')
+
+
+class JsonApiBodyTooLargeException(JsonApiHttpException):
+    """
+    HTTP 413 Content Too Large exception for JSON API: the request body is larger than
+    `BAZIS_API_MAX_BODY_SIZE` bytes.
+
+    Tags: RAG, EXPORT
+    """
+
+    status = HTTP_413_CONTENT_TOO_LARGE
+    code = 'ERR_BODY_TOO_LARGE'
+    title = _('Request body too large')
 
 
 class JsonApiRequestValidationError(RequestValidationError):
