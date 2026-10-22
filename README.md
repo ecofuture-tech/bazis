@@ -166,6 +166,11 @@ Required environment variables:
 - `BS_ADMIN_NAME` - admin username for admin service
 - `BS_ADMIN_PASSWORD` - admin password for admin service
 
+Optional: `BS_BAZIS_API_MAX_BODY_SIZE` - the maximum size of a request body in bytes (`0` -
+no limit, the default); a larger request is refused with `413` and the error code
+`ERR_BODY_TOO_LARGE` before the application reads it. Also limit the request size on the
+reverse proxy (e.g. `client_max_body_size`).
+
 ## Auto-Documentation
 
 ### Swagger UI
@@ -463,7 +468,7 @@ class Settings(BaseSettings):
 - `readOnly` - field is read-only
 - `writeOnly` - field is write-only
 - `enum` - list of values the field can accept
-- `enumDict` - dictionary mapping values to human-readable names (also for a field of a request body typed by a Django `TextChoices` / `IntegerChoices`)
+- `enumDict` - dictionary mapping values to human-readable names (also for a field of a request body typed by a Django `TextChoices` / `IntegerChoices`, and in the JSON schemas of `TranslatedSchemaModel` / `TranslatedJsonSchema`)
 - `format` - non-standard field format
 - `minLength` - minimum allowed string length
 - `maxLength` - maximum allowed string length
