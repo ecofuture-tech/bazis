@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-22 02:41+0200\n"
+"POT-Creation-Date: 2026-10-22 01:19+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,25 +16,25 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: app_factory.py:459 routes_abstract/jsonapi/route_base.py:902
+#: app_factory.py:477 routes_abstract/jsonapi/route_base.py:902
 #: routes_abstract/jsonapi/route_base.py:916
 #: routes_abstract/jsonapi/route_base.py:963
 msgid "Item not found"
 msgstr ""
 
-#: app_factory.py:551 app_factory.py:585 app_factory.py:647
+#: app_factory.py:569 app_factory.py:603 app_factory.py:665
 msgid "Conflict"
 msgstr ""
 
-#: app_factory.py:553
+#: app_factory.py:571
 msgid "The objects to delete are referred to by other objects"
 msgstr ""
 
-#: app_factory.py:571
+#: app_factory.py:589
 msgid "The change conflicts with the current data"
 msgstr ""
 
-#: app_factory.py:649
+#: app_factory.py:667
 msgid "The request conflicted with a parallel one: retry it"
 msgstr ""
 

@@ -254,8 +254,10 @@ def _initialize_app(app): # noqa: C901
         Refuses a request whose body is larger than `BAZIS_API_MAX_BODY_SIZE` bytes (0 - no
         limit) with 413 `ERR_BODY_TOO_LARGE`: by its `Content-Length` before the application
         runs, and a body without one (chunked) as soon as the bytes received exceed the
-        limit, so that no route reads or parses (JSON, multipart) a larger body. It is inside
+        limit, so that no route reads or parses (JSON, multipart) a larger body; once the
+        response has started, such a body ends the request as a disconnection. It is inside
         the language and the CORS middlewares: the error is translated and a browser reads it.
+        The middlewares added to the application later run outside it, unlimited.
         """
 
         def __init__(self, app) -> None:
@@ -266,26 +268,42 @@ def _initialize_app(app): # noqa: C901
             if scope['type'] != 'http' or not limit:
                 await self.app(scope, receive, send)
                 return
-            content_length = Headers(scope=scope).get('content-length')
-            if content_length is not None and int(content_length) > limit:
+            try:
+                content_length = int(Headers(scope=scope).get('content-length', ''))
+            except ValueError:
+                # none or malformed (a server that does not check it): the count below limits
+                content_length = 0
+            if content_length > limit:
                 response = await json_api_http_exception_handler(
                     Request(scope), JsonApiBodyTooLargeException()
                 )
                 await response(scope, receive, send)
                 return
             received = 0
+            started = False
+
+            async def send_started(message) -> None:
+                # the first message sent starts the response
+                nonlocal started
+                started = True
+                await send(message)
 
             async def receive_limited():
-                # raised in the route that reads the body: its exception handler answers
                 nonlocal received
                 message = await receive()
                 if message['type'] == 'http.request':
                     received += len(message.get('body', b''))
                     if received > limit:
+                        if started:
+                            # the response is under way (a streaming one listens for the
+                            # disconnection): the request ends as if the client had left
+                            return {'type': 'http.disconnect'}
+                        # raised in the route that reads the body: its exception handler
+                        # answers
                         raise JsonApiBodyTooLargeException()
                 return message
 
-            await self.app(scope, receive_limited, send)
+            await self.app(scope, receive_limited, send_started)
 
     app.add_middleware(MaxBodySizeMiddleware)
 

@@ -73,12 +73,17 @@ internal address), or a host setting that names the public address redirects to 
 
 `BS_BAZIS_API_MAX_BODY_SIZE` (bytes, `0` - no limit, the default; not dynamic; bazis 2.22)
 refuses a larger request with 413 `ERR_BODY_TOO_LARGE` (JSON:API, translated, with the
-headers of CORS) on every HTTP route: by its `Content-Length` before the application runs,
+headers of CORS) in the application of Bazis: by its `Content-Length` before the routes run,
 a chunked body as soon as the bytes received exceed it, so no route reads or parses a larger
-body. Set it in production above the largest request of the project (with bazis-uploadable
-at least `BAZIS_FILE_UPLOAD_MAX_SIZE` plus the multipart overhead), and limit the body on
-the reverse proxy as well (`client_max_body_size` of nginx). `DATA_UPLOAD_MAX_MEMORY_SIZE` of
-Django applies to the admin only.
+body; a body that exceeds it once a response has started (a streaming one) ends the request
+as a disconnection of the client. The middlewares the project or a package adds to the
+application afterwards run outside it and are not limited: the `AsyncRequestMiddleware` of
+bazis-async-request reads the whole body before it, answers 202, and its task ends with
+the 413. With such a middleware the limit of the reverse proxy is the one that holds. Set
+it in production above the largest request of the project (with bazis-uploadable at least
+`BAZIS_FILE_UPLOAD_MAX_SIZE` plus the multipart overhead), and limit the body on the reverse
+proxy as well (`client_max_body_size` of nginx). `DATA_UPLOAD_MAX_MEMORY_SIZE` of Django
+applies to the admin only.
 
 ### Settings: `BS_*`
 
