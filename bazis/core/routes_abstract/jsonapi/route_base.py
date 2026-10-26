@@ -1408,14 +1408,16 @@ class JsonapiRouteBase(InitialRouteBase):
     def _document_identity_check(self, data: JsonApiDataSchema, item: JsonApiMixin | None = None):
         """
         The resource of the `data` of a create or an update document is the resource of the
-        route, as JSON:API requires: its `type` (the schema gives it when the document leaves
-        it out) is the type of the route, on an update the type the route shows the item with,
-        and the `id` of an update (a key of the model, typed by the schema) is the id of the
-        path. Fails with 409 `ERR_RESOURCE_MISMATCH` at `/data/type` and (or) `/data/id`
-        before anything is written. The type of a model that inherits the model of the route
-        is another type. The `included` items are not checked here: their type chooses their
+        route, as JSON:API requires: a `type` the document gives is the type of the route (a
+        document may leave it out), on an update also the type the route shows the item with
+        (a route whose queryset gives the instances of a child model), and the `id` of an
+        update (a key of the model, typed by the schema) is the id of the path. Fails with
+        409 `ERR_RESOURCE_MISMATCH` at `/data/type` and (or) `/data/id` before anything is
+        written. On a create the type of a model that inherits the model of the route is
+        another type. The `included` items are not checked here: their type chooses their
         schema.
         """
+
         def mismatch(detail, member: str) -> JsonApiBazisError:
             return JsonApiBazisError(
                 detail=detail,
@@ -1425,9 +1427,11 @@ class JsonapiRouteBase(InitialRouteBase):
                 status=HTTP_409_CONFLICT,
             )
 
-        label = (type(item) if item is not None else self.model).get_resource_label()
+        label = self.model.get_resource_label()
+        labels = {label} if item is None else {label, type(item).get_resource_label()}
         errors = []
-        if data.type != label:
+        # a type left out is the default of the schema: the type of the route
+        if data.type not in labels:
             detail = _('The type {type} of the document is not the type {label} of the route')
             errors.append(mismatch(format_lazy(detail, type=data.type, label=label), 'type'))
         if item is not None and data.id != item.pk:

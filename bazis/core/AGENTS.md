@@ -1175,10 +1175,11 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
 ## API conventions
 
 - The `data` of a create or an update document is the resource of the route (bazis 2.24):
-  its `type` may be left out (the schema gives the type of the route), a `type` given is
-  exactly the type of the route (on an update the type the route shows the item with; a
-  model that inherits the model of the route has its own type and route), and the `id` of
-  an update (required, 422 `ERR_VALIDATE` without it) is the id of the path, compared as a
+  its `type` may be left out (on a create and on an update, whatever the route shows), a
+  `type` given is exactly the type of the route (on a create a model that inherits the
+  model of the route has its own type and route) or, on an update, the type the route
+  shows the item with (a route whose queryset gives the instances of a child model takes
+  both), and the `id` of an update (required, 422 `ERR_VALIDATE` without it) is the id of the path, compared as a
   key of the model (a UUID in any case). Anything else is 409 `ERR_RESOURCE_MISMATCH` at
   `/data/type` and (or) `/data/id`, before anything is written; the `id` of a create is
   the id of the client. The model of a write is the model of the schema of the route,

@@ -24,8 +24,8 @@ import uuid
 
 import pytest
 from bazis_test_utils.utils import get_api_client
-from catalog.models import Attachment, Memo, Upload
-from catalog.routes import AttachmentRouteSet
+from catalog.models import Attachment, BusyMemo, Memo, Upload
+from catalog.routes import AttachmentRouteSet, MemoRouteSet
 from entity.models import Country
 
 from bazis.core.schemas.enums import CrudApiAction
@@ -56,21 +56,31 @@ def mismatch_pointers(response):
 
 
 @pytest.fixture
-def item_creates(monkeypatch):
-    """The data of the items the route of the attachments creates (nothing on a mismatch)."""
-    created = []
-    item_create = AttachmentRouteSet.item_create
+def writes(monkeypatch):
+    """
+    The writes of the route of the attachments and their hooks, by name, in their order
+    (none on a mismatch).
+    """
+    called = []
+    for name in ('item_create', 'hook_before_create', 'item_update', 'hook_before_update'):
+        method = getattr(AttachmentRouteSet, name)
 
-    def spy(self, data):
-        created.append(data)
-        return item_create(self, data)
+        def spy(self, *args, _name=name, _method=method, **kwargs):
+            called.append(_name)
+            return _method(self, *args, **kwargs)
 
-    monkeypatch.setattr(AttachmentRouteSet, 'item_create', spy)
-    return created
+        monkeypatch.setattr(AttachmentRouteSet, name, spy)
+    return called
+
+
+@pytest.fixture
+def memos_of_a_child_model(monkeypatch):
+    """The route of the memos shows them as instances of a model that inherits Memo."""
+    monkeypatch.setattr(MemoRouteSet, 'get_queryset', lambda self: BusyMemo.objects.all())
 
 
 @pytest.mark.django_db(transaction=True)
-def test_create_with_the_type_of_another_model(sample_app, item_creates):
+def test_create_with_the_type_of_another_model(sample_app, writes):
     """
     The type of another model whose attributes have the same names created an object of
     that model through the route (201 with the attachment of the same id, if any).
@@ -88,7 +98,7 @@ def test_create_with_the_type_of_another_model(sample_app, item_creates):
     assert not Upload.objects.exists()
     assert list(Attachment.objects.values_list('name', flat=True)) == ['existing']
     # refused before the item is built: no hook of the create runs
-    assert item_creates == []
+    assert writes == []
 
 
 @pytest.mark.django_db(transaction=True)
@@ -129,7 +139,7 @@ def test_the_model_of_a_write_is_the_model_of_the_schema(sample_app):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_update_with_the_type_of_another_model(sample_app):
+def test_update_with_the_type_of_another_model(sample_app, writes):
     attachment = Attachment.objects.create(name='A')
 
     response = get_api_client(sample_app).patch(
@@ -140,10 +150,12 @@ def test_update_with_the_type_of_another_model(sample_app):
     assert mismatch_pointers(response) == ['/data/type']
     attachment.refresh_from_db()
     assert attachment.name == 'A'
+    # refused before the write: no hook of the update runs
+    assert writes == []
 
 
 @pytest.mark.django_db(transaction=True)
-def test_update_with_the_id_of_another_object(sample_app):
+def test_update_with_the_id_of_another_object(sample_app, writes):
     """The id of another object was ignored: the object of the path was changed."""
     first, second = Attachment.objects.create(name='A'), Attachment.objects.create(name='B')
 
@@ -157,10 +169,11 @@ def test_update_with_the_id_of_another_object(sample_app):
         'The id of the document is not the id of the path'
     )
     assert sorted(Attachment.objects.values_list('name', flat=True)) == ['A', 'B']
+    assert writes == []
 
 
 @pytest.mark.django_db(transaction=True)
-def test_update_with_another_type_and_id(sample_app):
+def test_update_with_another_type_and_id(sample_app, writes):
     """Both mismatches are answered at once, the type first."""
     first, second = Attachment.objects.create(name='A'), Attachment.objects.create(name='B')
 
@@ -170,6 +183,7 @@ def test_update_with_another_type_and_id(sample_app):
 
     assert mismatch_pointers(response) == ['/data/type', '/data/id']
     assert sorted(Attachment.objects.values_list('name', flat=True)) == ['A', 'B']
+    assert writes == []
 
 
 @pytest.mark.django_db(transaction=True)
@@ -233,3 +247,44 @@ def test_update_without_id(sample_app):
     assert (error['code'], error['source']['pointer']) == ('ERR_VALIDATE', '/data/id')
     attachment.refresh_from_db()
     assert attachment.name == 'A'
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('type_', [None, 'catalog.busy_memo', 'catalog.memo'])
+def test_update_on_a_route_of_the_instances_of_a_child_model(
+    sample_app, memos_of_a_child_model, type_
+):
+    """
+    A route whose queryset gives the instances of a child model shows them with the type
+    of that model: an update takes it, the type of the route, or none.
+    """
+    memo = Memo.objects.create(title='memo')
+
+    response = get_api_client(sample_app).patch(
+        f'{MEMOS}{memo.pk}/', json_data=document(type_, memo.pk, title='new')
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()['data']['type'] == 'catalog.busy_memo'
+    memo.refresh_from_db()
+    assert memo.title == 'new'
+
+
+@pytest.mark.django_db(transaction=True)
+def test_other_types_on_a_route_of_the_instances_of_a_child_model(
+    sample_app, memos_of_a_child_model
+):
+    """Another type is refused on an update, the type of the child model on a create."""
+    memo = Memo.objects.create(title='memo')
+    client = get_api_client(sample_app)
+
+    response = client.patch(
+        f'{MEMOS}{memo.pk}/', json_data=document('catalog.attachment', memo.pk, title='new')
+    )
+    assert mismatch_pointers(response) == ['/data/type']
+    memo.refresh_from_db()
+    assert memo.title == 'memo'
+
+    response = client.post(MEMOS, json_data=document('catalog.busy_memo', title='busy'))
+    assert mismatch_pointers(response) == ['/data/type']
+    assert list(Memo.objects.values_list('title', flat=True)) == ['memo']

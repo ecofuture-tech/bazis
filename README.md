@@ -538,8 +538,9 @@ Bazis implements the JSON:API specification for handling related resources throu
 
 - Expected errors return status code `422`
 - A create or an update whose `data` is not the resource of the route (a `type` other than
-  the type of the route, an update `id` other than the id of the path) returns `409`
-  `ERR_RESOURCE_MISMATCH`; `type` may be left out
+  the type of the route or, on an update, than the type the route shows the item with; an
+  update `id` other than the id of the path) returns `409` `ERR_RESOURCE_MISMATCH`; `type`
+  may be left out
 - Error message format follows JSON:API specification
 
 ## Examples
