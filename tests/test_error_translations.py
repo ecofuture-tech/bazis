@@ -122,6 +122,27 @@ def test_read_only_relationship(sample_app, two_languages):
 
 
 @pytest.mark.django_db(transaction=True)
+def test_resource_mismatch(sample_app, two_languages):
+    from catalog.models import Attachment
+
+    attachment = Attachment.objects.create(name='a')
+    url = f'/api/v1/catalog/attachment/{attachment.pk}/'
+    payload = {'data': {'type': 'catalog.upload', 'id': attachment.pk + 1, 'attributes': {}}}
+
+    response = request(sample_app, 'PATCH', url, json=payload, headers=RU)
+
+    assert response.status_code == 409
+    errors = response.json()['errors']
+    assert [(it['title'], it['detail']) for it in errors] == [
+        (
+            'Несоответствие ресурса',
+            'Тип catalog.upload документа не совпадает с типом catalog.attachment маршрута',
+        ),
+        ('Несоответствие ресурса', 'Идентификатор документа не совпадает с идентификатором пути'),
+    ]
+
+
+@pytest.mark.django_db(transaction=True)
 def test_invalid_filter(sample_app, two_languages):
     Booking.objects.create(title='Standup', start=1, end=2)
 

@@ -929,8 +929,8 @@ nested function gives names that change between processes (the OpenAPI is not st
 ### The errors in the OpenAPI
 
 - The OpenAPI operations document the errors they fail with (`SchemaErrors`): 400 and 422
-  on the CRUD operations, 404 on every route of an item (`{item_id}` in the path), 403 on
-  the relationships routes. The core has no authentication, so no 401 and no `security` (but for a `public=True` route, see below).
+  on the CRUD operations, 409 on the create and the update (bazis 2.24), 404 on every
+  route of an item (`{item_id}` in the path), 403 on the relationships routes. The core has no authentication, so no 401 and no `security` (but for a `public=True` route, see below).
   An id in the path that cannot be a primary key of the model (`not-a-uuid`) is 404, like
   a missing item, on every route of an item (also the custom ones that take the item with
   `set_item`/`get_item`).
@@ -1146,6 +1146,9 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   - `ERR_CONFLICT` (409) of a unique constraint of the model of a create or an update
     whose fields the user writes: `/data/attributes/<f>`, `/data/relationships/<f>`, an
     error for each field; none otherwise (also on the relationships endpoints).
+  - `ERR_RESOURCE_MISMATCH` (409, bazis 2.24) of a create or an update document that is
+    not the resource of the route (see API conventions): `/data/type`, `/data/id`, both
+    errors in one response when both differ.
   - `ERR_INCLUDE` (400): `/query/include`. `ERR_FILTER` (400): `/query/filter`,
     `/query/sort`, `/query/search`. `ERR_AGGREGATE` (400): `/query/aggregate`,
     `/query/group`.
@@ -1171,6 +1174,18 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
 
 ## API conventions
 
+- The `data` of a create or an update document is the resource of the route (bazis 2.24):
+  its `type` may be left out (on a create and on an update, whatever the route shows), a
+  `type` given is exactly the type of the route (on a create a model that inherits the
+  model of the route has its own type and route) or, on an update, the type the route
+  shows the item with (a route whose queryset gives the instances of a child model takes
+  both), and the `id` of an update (required, 422 `ERR_VALIDATE` without it) is the id of the path, compared as a
+  key of the model (a UUID in any case). Anything else is 409 `ERR_RESOURCE_MISMATCH` at
+  `/data/type` and (or) `/data/id`, before anything is written; the `id` of a create is
+  the id of the client. The model of a write is the model of the schema of the route,
+  never the text of the request; an `included` item is validated by the schema of its
+  type. Up to 2.23 the `type` was not checked (a create built the model it named) and the
+  `id` of an update was ignored.
 - `filter` is one expression: `filter=status=new&price__gte=20`, `filter=(a=1|b=2)`,
   `~a=1` (not), nested fields `filter=customer__name=Acme` (an `EXISTS` subquery),
   `customer__exists=true|false` (`customer__isnull` is the opposite), full-text

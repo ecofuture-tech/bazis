@@ -246,6 +246,9 @@ text = "reverse relations are not in the schemas by default; include of a relati
 text = "a create or an update naming a field outside the schema of its action is 422 ERR_VALIDATE extra_forbidden; a read-only one is ignored"
 
 [[pitfalls]]
+text = "the data of a create or an update document is the resource of the route: a type that is not exactly the type of the route (a create with the type of a child model too; an update also takes the type the route shows the item with) or an update id that is not the id of the path is 409 ERR_RESOURCE_MISMATCH; leave type out or send the type the route answers"
+
+[[pitfalls]]
 text = "a CharField/TextField without blank=True refuses an empty or whitespace-only value on the API (422)"
 
 [[pitfalls]]

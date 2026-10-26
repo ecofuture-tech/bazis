@@ -30,7 +30,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 
-from starlette.status import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
+from starlette.status import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 
 from pydantic import BaseModel, ValidationError
 
@@ -329,14 +329,18 @@ class JsonapiRouteBase(InitialRouteBase):
     def route_responses(cls, route_ctx: RouteContext) -> dict[int | str, dict[str, Any]]:
         """
         Adds the errors the core routes fail with: 404 for a route of an item (`item_id` in
-        the path, the item is not found) and 403 for a route of a relationship (the
-        relationship is read-only or the objects violate its restrictions).
+        the path, the item is not found), 403 for a route of a relationship (the
+        relationship is read-only or the objects violate its restrictions) and 409 for a
+        create or an update (the document is not the resource of the route, a unique
+        constraint).
         """
         responses = super().route_responses(route_ctx)
         if '{item_id}' in route_ctx.route_params.path:
             responses[HTTP_404_NOT_FOUND] = {'model': SchemaErrors}
         if route_ctx.kind is RouteKind.RELATIONSHIP:
             responses[HTTP_403_FORBIDDEN] = {'model': SchemaErrors}
+        if route_ctx.kind in (RouteKind.CREATE, RouteKind.UPDATE):
+            responses[HTTP_409_CONFLICT] = {'model': SchemaErrors}
         return responses
 
     @classmethod
@@ -1140,7 +1144,7 @@ class JsonapiRouteBase(InitialRouteBase):
         # the mixin module imports this one
         from .mixins import route_restrict_queryset
 
-        model = type(item) if item is not None else JsonApiMixin.get_model_by_label(data.type)
+        model = type(item) if item is not None else data.schema_factory.model
         relations = model.get_fields_info().relations
         user = getattr(self.inject, 'user', None)
 
@@ -1401,6 +1405,40 @@ class JsonapiRouteBase(InitialRouteBase):
             if (info := relations.get(name)) and (info.to_many or info.reverse)
         ]
 
+    def _document_identity_check(self, data: JsonApiDataSchema, item: JsonApiMixin | None = None):
+        """
+        The resource of the `data` of a create or an update document is the resource of the
+        route, as JSON:API requires: a `type` the document gives is the type of the route (a
+        document may leave it out), on an update also the type the route shows the item with
+        (a route whose queryset gives the instances of a child model), and the `id` of an
+        update (a key of the model, typed by the schema) is the id of the path. Fails with
+        409 `ERR_RESOURCE_MISMATCH` at `/data/type` and (or) `/data/id` before anything is
+        written. On a create the type of a model that inherits the model of the route is
+        another type. The `included` items are not checked here: their type chooses their
+        schema.
+        """
+
+        def mismatch(detail, member: str) -> JsonApiBazisError:
+            return JsonApiBazisError(
+                detail=detail,
+                loc=('body', 'data', member),
+                code='ERR_RESOURCE_MISMATCH',
+                title=_('Resource mismatch'),
+                status=HTTP_409_CONFLICT,
+            )
+
+        label = self.model.get_resource_label()
+        labels = {label} if item is None else {label, type(item).get_resource_label()}
+        errors = []
+        # a type left out is the default of the schema: the type of the route
+        if data.type not in labels:
+            detail = _('The type {type} of the document is not the type {label} of the route')
+            errors.append(mismatch(format_lazy(detail, type=data.type, label=label), 'type'))
+        if item is not None and data.id != item.pk:
+            errors.append(mismatch(_('The id of the document is not the id of the path'), 'id'))
+        if errors:
+            raise JsonApiBazisException(errors, status=HTTP_409_CONFLICT)
+
     def item_update(self, item: JsonApiMixin, data: JsonApiDataSchema):
         """
         Simple attributes are assigned immediately. updates the attributes and
@@ -1422,14 +1460,12 @@ class JsonapiRouteBase(InitialRouteBase):
 
     def item_create(self, data: JsonApiDataSchema) -> JsonApiMixin:
         """
-        Get model by type. creates a new item based on the provided data. The item is
-        validated (`validate_item`, source `create`) at the end of the write.
+        Creates a new item of the model of the schema of the data (never the model its
+        `type` names). The item is validated (`validate_item`, source `create`) at the end
+        of the write.
         """
         self.relations_access_check(data)
-        try:
-            item = data.build_for()
-        except ValueError:
-            raise HTTPException(status_code=400, detail=_('Data type is invalid')) from None
+        item = data.build_for()
 
         with defer_validate_item(user=self._write_user(), savepoint=False) as scope:
             self.hook_before_create(item)
@@ -1492,6 +1528,7 @@ class JsonapiRouteBase(InitialRouteBase):
                 except ValidationError as e:
                     raise RequestValidationError(e.errors()) from e
 
+            self._document_identity_check(item_data.data, self.item)
             # update main instance
             self.item_update(self.item, item_data.data)
 
@@ -1547,6 +1584,7 @@ class JsonapiRouteBase(InitialRouteBase):
                 except ValidationError as e:
                     raise RequestValidationError(e.errors(), body=item_raw) from e
 
+            self._document_identity_check(item_data.data)
             # create main instance
             self.item = self.item_create(item_data.data)
 

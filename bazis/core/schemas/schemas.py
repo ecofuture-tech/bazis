@@ -161,7 +161,11 @@ class JsonApiDataSchema(BaseModel):
         return item
 
     def build_for(self) -> Any:
-        model = JsonApiMixin.get_model_by_label(self.type)
+        """
+        The new item of the model of the schema, never of the model the `type` of the
+        document names (the route checks that `type`).
+        """
+        model = self.schema_factory.model
 
         fields = {}
         if self.attributes:
