@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-22 01:19+0000\n"
+"POT-Creation-Date: 2026-10-26 18:34+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,9 +16,9 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: app_factory.py:477 routes_abstract/jsonapi/route_base.py:902
-#: routes_abstract/jsonapi/route_base.py:916
-#: routes_abstract/jsonapi/route_base.py:963
+#: app_factory.py:477 routes_abstract/jsonapi/route_base.py:926
+#: routes_abstract/jsonapi/route_base.py:940
+#: routes_abstract/jsonapi/route_base.py:987
 msgid "Item not found"
 msgstr "Объект не найден"
 
@@ -218,61 +218,70 @@ msgstr ""
 "для случая уникализации только для заданного типа. Поле не должно "
 "использоваться напрямую, вместо него следует использовать :py:attr:`~number`"
 
-#: routes_abstract/jsonapi/route_base.py:513
+#: routes_abstract/jsonapi/route_base.py:533
 #, python-brace-format
 msgid "The relationships cannot be included: {names}"
 msgstr "Нельзя включить связи: {names}"
 
-#: routes_abstract/jsonapi/route_base.py:518
+#: routes_abstract/jsonapi/route_base.py:538
 msgid "Invalid include"
 msgstr "Недопустимый параметр include"
 
-#: routes_abstract/jsonapi/route_base.py:825
+#: routes_abstract/jsonapi/route_base.py:845
 msgid "Aggregates"
 msgstr "Агрегаты"
 
-#: routes_abstract/jsonapi/route_base.py:1044
+#: routes_abstract/jsonapi/route_base.py:1068
 #, python-brace-format
 msgid "The relationship {name} cannot be changed"
 msgstr "Связь {name} нельзя изменить"
 
-#: routes_abstract/jsonapi/route_base.py:1048
+#: routes_abstract/jsonapi/route_base.py:1072
 msgid "Relationship is read-only"
 msgstr "Связь только для чтения"
 
-#: routes_abstract/jsonapi/route_base.py:1251
+#: routes_abstract/jsonapi/route_base.py:1275
 #, python-brace-format
 msgid "The related object of {name} cannot be linked"
 msgstr "Связанный объект {name} нельзя привязать"
 
-#: routes_abstract/jsonapi/route_base.py:1253
+#: routes_abstract/jsonapi/route_base.py:1277
 msgid "Link not allowed"
 msgstr "Привязка запрещена"
 
-#: routes_abstract/jsonapi/route_base.py:1258
+#: routes_abstract/jsonapi/route_base.py:1282
 #, python-brace-format
 msgid "No access to the related object of {name}"
 msgstr "Нет доступа к связанному объекту {name}"
 
-#: routes_abstract/jsonapi/route_base.py:1260
+#: routes_abstract/jsonapi/route_base.py:1284
 msgid "Access denied"
 msgstr "Доступ запрещён"
 
-#: routes_abstract/jsonapi/route_base.py:1412
-msgid "Data type is invalid"
-msgstr "Недопустимый тип данных"
+#: routes_abstract/jsonapi/route_base.py:1424
+msgid "Resource mismatch"
+msgstr "Несоответствие ресурса"
 
-#: routes_abstract/jsonapi/route_base.py:1498
+#: routes_abstract/jsonapi/route_base.py:1431
+#, python-brace-format
+msgid "The type {type} of the document is not the type {label} of the route"
+msgstr "Тип {type} документа не совпадает с типом {label} маршрута"
+
+#: routes_abstract/jsonapi/route_base.py:1434
+msgid "The id of the document is not the id of the path"
+msgstr "Идентификатор документа не совпадает с идентификатором пути"
+
+#: routes_abstract/jsonapi/route_base.py:1551
 #, python-brace-format
 msgid "The object does not exist. Type: {type}. ID: {id}"
 msgstr "Объект не существует. Тип: {type}. ID: {id}"
 
-#: routes_abstract/jsonapi/route_base.py:1573
+#: routes_abstract/jsonapi/route_base.py:1627
 #, python-brace-format
 msgid "{model} is not JSON:API compliant"
 msgstr "{model} не является ресурсом JSON:API"
 
-#: routes_abstract/jsonapi/route_base.py:1577
+#: routes_abstract/jsonapi/route_base.py:1631
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has related objects in non-JSON:API models. "
@@ -281,11 +290,11 @@ msgstr ""
 "Нельзя удалить объект: на него ссылаются объекты моделей вне JSON:API "
 "(количество: {count})"
 
-#: routes_abstract/jsonapi/route_base.py:1596
+#: routes_abstract/jsonapi/route_base.py:1650
 msgid "Error deleting protected model"
 msgstr "Ошибка удаления защищённого объекта"
 
-#: routes_abstract/jsonapi/route_base.py:1599
+#: routes_abstract/jsonapi/route_base.py:1653
 #, python-brace-format
 msgid ""
 "Cannot delete object because it has protected related objects of type "
@@ -393,7 +402,7 @@ msgstr ""
 "Больше {limit} групп по '{group}': сузьте список фильтром или группируйте по "
 "дате по неделям или месяцам"
 
-#: services/filtering.py:74 services/searching.py:72 services/sorting.py:83
+#: services/filtering.py:74 services/searching.py:74 services/sorting.py:83
 msgid "Invalid filter"
 msgstr "Недопустимый фильтр"
 
@@ -427,27 +436,27 @@ msgstr "Расстояние задаётся числом метров или '
 msgid "Unknown filter field '{key}' of {model}"
 msgstr "Неизвестное поле фильтра '{key}' у {model}"
 
-#: utils/query_complex.py:328
+#: utils/query_complex.py:348
 #, python-brace-format
 msgid "Unknown sort field '{key}' of {model}"
 msgstr "Неизвестное поле сортировки '{key}' у {model}"
 
-#: utils/query_complex.py:1049
+#: utils/query_complex.py:1070
 #, python-brace-format
 msgid "The filter by objects of '{key}' takes no lookup"
 msgstr "Фильтр по объектам '{key}' не принимает суффикс"
 
-#: utils/query_complex.py:1060
+#: utils/query_complex.py:1081
 #, python-brace-format
 msgid "The filter '{key}' takes no lookup"
 msgstr "Фильтр '{key}' не принимает суффикс"
 
-#: utils/query_complex.py:1107
+#: utils/query_complex.py:1128
 #, python-brace-format
 msgid "Unknown filter field '{key}': not a model related to {model}"
 msgstr "Неизвестное поле фильтра '{key}': модель не связана с {model}"
 
-#: utils/query_complex.py:1205
+#: utils/query_complex.py:1226
 #, python-brace-format
 msgid ""
 "The filter lookup '{lookup}' is not supported for the field '{field}'; "
@@ -456,14 +465,14 @@ msgstr ""
 "Суффикс фильтра '{lookup}' не поддерживается для поля '{field}'; "
 "поддерживаемые суффиксы: {supported}"
 
-#: utils/query_complex.py:1210
+#: utils/query_complex.py:1231
 #, python-brace-format
 msgid ""
 "The filter field '{field}' requires a lookup; supported lookups: {supported}"
 msgstr ""
 "Поле фильтра '{field}' требует суффикс; поддерживаемые суффиксы: {supported}"
 
-#: utils/query_complex.py:1279
+#: utils/query_complex.py:1300
 #, python-brace-format
 msgid ""
 "The filter 'near' is '<longitude>,<latitude>[,<distance>]', not '{value}'"
@@ -471,7 +480,7 @@ msgstr ""
 "Фильтр 'near' задаётся как '<долгота>,<широта>[,<расстояние>]', а не "
 "'{value}'"
 
-#: utils/query_complex.py:1396
+#: utils/query_complex.py:1417
 #, python-brace-format
 msgid "The search is not available for {model}"
 msgstr "Поиск недоступен для {model}"

@@ -90,9 +90,9 @@ def test_relationship_routes_document_forbidden(operations):
     'kind, statuses',
     [
         ('collection', {'200', '400', '422'}),
-        ('create', {'201', '400', '422'}),
+        ('create', {'201', '400', '409', '422'}),
         ('item', {'200', '400', '404', '422'}),
-        ('update', {'200', '400', '404', '422'}),
+        ('update', {'200', '400', '404', '409', '422'}),
         ('delete', {'204', '400', '404', '422'}),
         ('relationship', {'204', '403', '404', '422'}),
     ],
@@ -113,6 +113,18 @@ def test_documented_not_found_is_what_the_route_returns(sample_app):
 
     assert response.status_code == 404
     assert SchemaErrors.model_validate(response.json()).errors[0].status == 404
+
+
+@pytest.mark.django_db(transaction=True)
+def test_documented_conflict_is_what_the_route_returns(sample_app):
+    """409 of a create or an update: a document of another resource (or a unique constraint)."""
+    response = get_api_client(sample_app).post(
+        '/api/v1/catalog/attachment/',
+        json_data={'data': {'type': 'catalog.upload', 'attributes': {'name': 'x'}}},
+    )
+
+    assert response.status_code == 409
+    assert SchemaErrors.model_validate(response.json()).errors[0].status == 409
 
 
 def test_openapi_is_deterministic():
