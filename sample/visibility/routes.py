@@ -110,3 +110,41 @@ class NoteBriefRouteSet(JsonapiRouteBase):
     @classmethod
     def get_url_prefix(cls) -> str:
         return '/visibility/note_brief'
+
+
+class NoteCardRouteSet(JsonapiRouteBase):
+    """
+    The list of the notes without their name, which their cards show: the search reaches
+    the name (the user reads it on the card), the filter and the sorting do not (the LIST
+    schema has no name).
+    """
+
+    model = apps.get_model('visibility.Note')
+    actions = ['action_list', 'action_retrieve', 'action_schema_list', 'action_schema_retrieve']
+
+    fields = {
+        CrudApiAction.LIST: SchemaFields(exclude={'name': None}),
+    }
+
+    @classmethod
+    def get_url_prefix(cls) -> str:
+        return '/visibility/note_card'
+
+
+class NoteColumnsRouteSet(JsonapiRouteBase):
+    """
+    The same list of the notes without the cards: their names are edited in place, so the
+    responses of an update show them (the RETRIEVE schema), but only of the notes the user
+    changes. The search does not reach the name.
+    """
+
+    model = apps.get_model('visibility.Note')
+    actions = ['action_list', 'action_update', 'action_schema_list']
+
+    fields = {
+        CrudApiAction.LIST: SchemaFields(exclude={'name': None}),
+    }
+
+    @classmethod
+    def get_url_prefix(cls) -> str:
+        return '/visibility/note_columns'

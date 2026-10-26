@@ -182,9 +182,9 @@ class JsonapiRouteBase(InitialRouteBase):
     fields: dict[ApiAction, SchemaFields] = None
     inclusions: dict[ApiAction, SchemaInclusions] = None
     meta_fields: dict[ApiAction, SchemaMetaFields] = None
-    #: the fields `search` (and `$search` of `filter`) searches, of the LIST schema; None
-    #: (not declared): its text fields for the user (`default_search_fields`); `[]`: no
-    #: search, a `search` is 400 ERR_FILTER
+    #: the fields `search` (and `$search` of `filter`) searches, of the fields the route
+    #: shows the user (its LIST or RETRIEVE schema); None (not declared): their text fields
+    #: (`default_search_fields`); `[]`: no search, a `search` is 400 ERR_FILTER
     search_fields: list[str] | None = None
     filters_aliases: dict[str, str] = {}
     #: the first names of the keys of `filter` that the requests of the route may send and
@@ -461,23 +461,39 @@ class JsonapiRouteBase(InitialRouteBase):
         }
 
     @classmethod
-    def query_fields(cls, user=None, **kwargs) -> list[SchemaField]:
+    def query_schema_factory(cls, api_action: CrudApiAction = CrudApiAction.LIST) -> SchemaFactory:
         """
-        The fields of the LIST schema of the route for the user: the keys of `filter`
-        (the fields that can filter) and `sort` (that can order) of a request start with
-        one of them (their source), and the search fields of the route must be among them
-        (without `search_fields`, the route searches the text fields of them). A relation
-        of them leads into the fields of the default route of the related model. A package
-        that changes the LIST schema per user overrides it (accept `**kwargs`).
+        The schema factory of a read action (LIST, RETRIEVE) that a query scope reads: that
+        of the action when an endpoint of the route serves it, else the LIST one (built once
+        for a route without the list action, e.g. the default route of a related model).
+        Not the RETRIEVE factory that only the responses of a create or an update use: they
+        show the objects the user writes, not every object of the list.
         """
-        factory = cls.schema_factories.get(CrudApiAction.LIST)
-        if factory is None:
-            # a route without the list action, e.g. the default route of a related model
+        served = (it.store.get('api_action') for it in cls.routes_ctx.values() if it.endpoint)
+        if api_action in served:
+            return cls.schema_factories[api_action]
+        if (factory := cls.schema_factories.get(CrudApiAction.LIST)) is None:
             if (factory := vars(cls).get('_query_schema_factory')) is None:
                 factory = cls._query_schema_factory = cls.build_schema_factory(
                     CrudApiAction.LIST
                 )
-        return factory.fields_list
+        return factory
+
+    @classmethod
+    def query_fields(
+        cls, user=None, *, api_action: CrudApiAction = CrudApiAction.LIST, **kwargs
+    ) -> list[SchemaField]:
+        """
+        The fields of the schema of a read action of the route for the user
+        (`query_schema_factory`; for RETRIEVE of a route that does not serve it, those of
+        LIST). The keys of `filter` (the fields that can filter) and `sort` (that can order)
+        of a request start with a field of the LIST schema (its source); the search reaches
+        the fields of the LIST and the RETRIEVE schemas (without `search_fields`, it
+        searches the text fields of them). A relation leads into the fields of the default
+        route of the related model. A package that changes the schemas per user overrides it
+        (keep `api_action` keyword-only and accept `**kwargs`).
+        """
+        return cls.query_schema_factory(api_action).fields_list
 
     def query_scope(self) -> QueryScope:
         """
@@ -895,6 +911,10 @@ class JsonapiRouteBase(InitialRouteBase):
         Assembles the QuerySet for a single item by its ID, optionally with a database
         lock. An ID that cannot be a primary key of the model (a malformed UUID) is an item
         that does not exist: 404, on every route of an item.
+
+        The item is looked up among the objects of the list (one `restrict_queryset` for
+        `view`): an override that shows fewer objects than the list keeps the search within
+        the LIST schema: declare `search_fields` of LIST fields or `[]` (bazis 2.23).
         """
         try:
             item_id = self.model._meta.pk.to_python(item_id)

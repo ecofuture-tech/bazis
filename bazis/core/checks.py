@@ -243,8 +243,8 @@ def check_default_routes(app_configs, **kwargs):
 @register()
 def check_search_fields(app_configs, **kwargs):
     """
-    A search field of a route must be a field of its LIST schema (`fields`): the search of a
-    request leaves out the others. Needs the application
+    A search field of a route must be a field the route shows (its LIST or RETRIEVE schema,
+    `fields`): the search of a request leaves out the others. Needs the application
     (`bazis_doctor` loads it); skipped without it.
     """
     from bazis.core import introspect
@@ -263,8 +263,8 @@ def check_search_fields(app_configs, **kwargs):
             if str(field) not in searched:
                 messages.append(
                     Warning(
-                        f'The search field {field!r} of the route set is not a field of its '
-                        'LIST schema (or, through a relation, of the LIST schema of the '
+                        f'The search field {field!r} of the route set is not a field the '
+                        'route shows (its LIST or RETRIEVE schema; through a relation, of the '
                         'default route of the related model): the search leaves it out.',
                         hint='Add the field to `fields` of the route or remove it from '
                         '`search_fields`.',
