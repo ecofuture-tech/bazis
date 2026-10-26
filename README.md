@@ -499,10 +499,11 @@ The `filter` query parameter holds one expression (URL-encode it):
 (`?search=test`) searches the search fields of the route.
 
 The filter, the sorting and the search reach only what the route shows the user: a key
-starts with a field of the LIST schema of the route, a relation of it leads into the
-objects the default route of the related model shows (its `restrict_queryset`) and its
-LIST fields, and the search uses the `search_fields` of the route (not declared: the text
-fields of its LIST schema; `[]`: no search). Any
+of the filter and of the sorting starts with a field of the LIST schema of the route, a
+relation of it leads into the objects the default route of the related model shows (its
+`restrict_queryset`) and its LIST fields; the search uses the `search_fields` of the route
+that it shows in the LIST or the RETRIEVE schema (not declared: the text fields of those
+schemas; `[]`: no search). Any
 other key is 400 `ERR_FILTER`, as an unknown field. For the compatibility with released
 clients that send a key the route has no field for, `filter_keys_ignored =
 frozenset({'dt_deleted'})` of the route leaves out the keys of its filter that start

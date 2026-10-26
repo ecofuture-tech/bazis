@@ -1177,40 +1177,56 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   `$search=text` (the search fields of the route) or `customer__$search=text` (the search
   fields of the default route of the customers), `crm.customer=<id>,<id>` (the objects
   related to those customers); `search=text` searches the search fields of the route
-  (`search_fields`; a route that does not declare them searches the text fields of its
-  LIST schema for the user, see below; `search_fields = []` turns the search off):
+  (`search_fields`; a route that does not declare them searches the text fields it shows
+  the user, see below; `search_fields = []` turns the search off):
   the text is split into words (spaces and commas), and an object matches when each word
   is in one of its search fields (`search=Ann Smith` with the search fields `first_name`
   and `last_name` finds Ann Smith). A field of the model matches a substring in any case,
   or as the prefix of the field in `search_fields` says (`^name` starts with, `=name`
   exact, `@name` full-text, `$name` regex); a field through a relation (`tag__name`)
   matches only the whole value, as written.
-- The filter, `sort` and `search` reach only what the route shows the user: a key starts with a field of the LIST
-  schema of the route (its `fields`; `filterLabel`/`orderLabel` of the schema) or `id` (`pk`); a
+- The filter, `sort` and `search` reach only what the route shows the user: a key of the
+  filter and of `sort` starts with a field of the LIST schema of the route (its `fields`;
+  `filterLabel`/`orderLabel` of the schema) or `id` (`pk`); the search reaches the fields
+  the user reads in the objects of the list or on their cards, of the LIST or the RETRIEVE
+  schema (bazis 2.23; of LIST alone when the route does not serve RETRIEVE, without
+  `action_retrieve`: the RETRIEVE schema of the responses of a create or an update does
+  not count). A
   relation of it leads into the objects the default route of the related model shows (its
   `restrict_queryset` for `view` with the user of the route), where the key goes on with
-  the fields of the LIST schema of that route (a model without a route: only `id`/`pk`,
-  `exists`, `isnull`). `sort` goes through to-one relations only (an invisible object sorts
+  the fields of that route, the same way (a model without a route: only `id`/`pk`,
+  `exists`, `isnull`). A field only the card shows is searched but is 400 in `filter` and
+  `sort`. `sort` goes through to-one relations only (an invisible object sorts
   as null; a relation itself sorts by the key of the related object); the search uses only
-  the `search_fields` of the route that are fields of its LIST schema (`bazis.W007` warns
+  the `search_fields` of the route that are fields it shows (`bazis.W007` warns
   about the others). A route that does not declare `search_fields` (None) searches the
-  text fields of its LIST schema for the user, in its order (`default_search_fields`): a
+  text fields it shows the user: of its LIST schema in its order, then those only its
+  RETRIEVE schema has, in that order (`default_search_fields`): a
   `CharField` or `TextField` of the model (also `SlugField`, `EmailField`, `URLField`)
   without choices and a `TranslatedField` of one (in the language of the request); not
   the relations, the calculated fields, the fields with choices, the numbers, the UUID,
   file, JSON and array fields. A route with `search_fields = []`, or without such fields
   for the user, has no search. `route_search_fields(route_cls)` of
   `bazis.core.utils.query_complex` lists the fields searched (declared or by default, of
-  the LIST schema of the class; bazis-permit narrows them per user). A search by
+  the LIST and RETRIEVE schemas of the registered class; bazis-permit narrows them per
+  user). The search assumes that the card shows every object of the list (the core and
+  bazis-permit restrict both with one `restrict_queryset` for `view`): a route whose item
+  shows fewer objects than its list (its own `get_queryset_for_item`) shows on the card
+  only the fields that may be searched in every object of the list. A search by
   substring (`icontains`) uses no btree index: for a large list declare `search_fields`
   (or `[]`), and a `pg_trgm` index if needed. Anything else is
   400 `ERR_FILTER` (pointer `/query/filter`, `/query/sort` or `/query/search`), the same
-  answer as for a field that does not exist: to filter, sort or search by a field, show it
-  in the LIST schema of the route. `filters_aliases` of the route are not checked (the
+  answer as for a field that does not exist: to filter or sort by a field, show it in the
+  LIST schema of the route, to search by it, in the LIST or the RETRIEVE schema.
+  `filters_aliases` of the route are not checked (the
   relations they lead to are). `QueryToOrm`/`SearchToOrm` without `scope` (permission
   conditions, `filter:` restrictions) and the services with `scope=None` are not
-  restricted. A package that changes the LIST schema per user overrides the classmethod
-  `query_fields(user=None, **kwargs)` of the route.
+  restricted. A package that changes the schemas per user overrides the classmethod
+  `query_fields(user=None, *, api_action=CrudApiAction.LIST, **kwargs)` of the route: the
+  fields of the schema of `api_action` (LIST or RETRIEVE) for the user, the schema factory
+  from `query_schema_factory(api_action)`. An override written before bazis 2.23 (without
+  `api_action`, which it takes in `**kwargs`) gives its LIST fields for RETRIEVE too: the
+  search stays within the LIST schema, as before.
   Only for the compatibility with released clients that send a key the route has no field
   for (bazis 2.20): `filter_keys_ignored = frozenset({'dt_deleted'})` of the route leaves
   out every key of the `filter` of its requests that starts with such a name, whatever
@@ -1377,9 +1393,11 @@ send_mail(_('Your certificate'), text, None, [user.email])   # None: DEFAULT_FRO
   list and item, the relationships, `included` and the filters through a relation of the
   other routes use `restrict_queryset`.
 - A route that hides fields of its model (a projection with `fields`) hides them from the
-  filter, the sorting and the search too; do not list hidden fields in `search_fields`.
-  Without `search_fields` a route searches every text field of its LIST schema: declare
-  them to search fewer fields, `search_fields = []` for a route without a search.
+  filter and the sorting (out of the LIST schema) and from the search (out of the LIST and
+  the RETRIEVE schemas: a field the card shows is searched); do not list hidden fields in
+  `search_fields`. Without `search_fields` a route searches every text field it shows (LIST
+  and RETRIEVE): declare them to search fewer fields, `search_fields = []` for a route
+  without a search.
 - The database connection of a thread other than the main one (the AnyIO worker threads
   that run the sync endpoints and dependencies, a thread a package starts) is closed by the
   core when the thread ends. While the thread lives it keeps its connection between the
