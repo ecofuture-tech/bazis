@@ -911,6 +911,10 @@ class JsonapiRouteBase(InitialRouteBase):
         Assembles the QuerySet for a single item by its ID, optionally with a database
         lock. An ID that cannot be a primary key of the model (a malformed UUID) is an item
         that does not exist: 404, on every route of an item.
+
+        The item is looked up among the objects of the list (one `restrict_queryset` for
+        `view`): an override that shows fewer objects than the list keeps the search within
+        the LIST schema: declare `search_fields` of LIST fields or `[]` (bazis 2.23).
         """
         try:
             item_id = self.model._meta.pk.to_python(item_id)

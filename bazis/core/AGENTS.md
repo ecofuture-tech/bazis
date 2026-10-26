@@ -1212,10 +1212,11 @@ A request runs in one transaction: an exception anywhere rolls all its writes ba
   user). The search assumes that the card shows every object of the list (the core and
   bazis-permit restrict both with one `restrict_queryset` for `view`): a route whose item
   shows fewer objects than its list (its own `get_queryset_for_item`) shows on the card
-  only the fields that may be searched in every object of the list. A search by
-  substring (`icontains`) uses no btree index: for a large list declare `search_fields`
-  (or `[]`), and a `pg_trgm` index if needed. Anything else is
-  400 `ERR_FILTER` (pointer `/query/filter`, `/query/sort` or `/query/search`), the same
+  only the fields that may be searched in every object of the list: declare
+  `search_fields` of LIST fields, or make the list a route without `action_retrieve`. A
+  search by substring (`icontains`) uses no btree index: for a large list declare
+  `search_fields` (or `[]`), and a `pg_trgm` index if needed. Anything else is 400
+  `ERR_FILTER` (pointer `/query/filter`, `/query/sort` or `/query/search`), the same
   answer as for a field that does not exist: to filter or sort by a field, show it in the
   LIST schema of the route, to search by it, in the LIST or the RETRIEVE schema.
   `filters_aliases` of the route are not checked (the
@@ -1397,7 +1398,9 @@ send_mail(_('Your certificate'), text, None, [user.email])   # None: DEFAULT_FRO
   the RETRIEVE schemas: a field the card shows is searched); do not list hidden fields in
   `search_fields`. Without `search_fields` a route searches every text field it shows (LIST
   and RETRIEVE): declare them to search fewer fields, `search_fields = []` for a route
-  without a search.
+  without a search. A route whose own `get_queryset_for_item` shows fewer objects than its
+  list declares `search_fields` of LIST fields, or makes the list a route without
+  `action_retrieve`.
 - The database connection of a thread other than the main one (the AnyIO worker threads
   that run the sync endpoints and dependencies, a thread a package starts) is closed by the
   core when the thread ends. While the thread lives it keeps its connection between the
