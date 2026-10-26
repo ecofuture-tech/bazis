@@ -27,7 +27,8 @@ class ServiceSearching:
     """
     ServiceSearching handles the search functionality for a given queryset: with a query
     scope, the search fields of the scope (`QueryScope.search_fields`: the `search_fields`
-    of its route, else the text fields of the LIST schema for the user); without one, the
+    of its route, else the text fields the route shows the user, its LIST and RETRIEVE
+    schemas); without one, the
     `search_fields` of the route class, else every text and integer field of the model.
 
     Tags: RAG, EXPORT
@@ -51,8 +52,9 @@ class ServiceSearching:
         Applies the search query to the provided queryset by constructing a Q object and
         filtering the queryset based on the search terms. With a scope (by default the
         scope of the route of the request) its search fields are searched where it reaches
-        them (`search_fields` of the route, else the text fields of its LIST schema for the
-        user), and a search without one of them is 400 ERR_FILTER; without a scope (None)
+        them (`search_fields` of the route, else the text fields the route shows the user,
+        its LIST and RETRIEVE schemas), and a search without one of them is 400 ERR_FILTER;
+        without a scope (None)
         the `search_fields` of the route, else every text and integer field of the model.
         """
         scope = request_query_scope(scope)

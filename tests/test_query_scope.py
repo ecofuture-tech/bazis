@@ -13,11 +13,12 @@
 # limitations under the License.
 
 """
-The filter, the sorting and the search of a request reach only the fields of the LIST
-schema of the route, and through a relation of the schema only
-the objects the default route of the related model shows, with the fields of its schema.
-`visibility.note_brief` is a route of the notes without their name and label; the route of
-`visibility.Tag` hides the hidden tags.
+The filter and the sorting of a request reach only the fields of the LIST schema of the
+route, the search those of its LIST or RETRIEVE schema, and through a relation of the
+schema only the objects the default route of the related model shows, with the fields of
+its schemas. `visibility.note_brief` is a route of the notes without their name and label,
+`visibility.note_card` shows the name only on the card, `visibility.note_columns` has no
+card; the route of `visibility.Tag` hides the hidden tags.
 """
 
 from django.db import models
@@ -30,16 +31,32 @@ from catalog.routes import AttachmentRouteSet, MemoRouteSet
 from entity.models import ExtendedEntity, ParentEntity
 from entity.routes import ParentEntityRouteSet
 from visibility.models import Folder, Label, Note, Tag
-from visibility.routes import FolderRouteSet, NoteBriefRouteSet, NoteRouteSet, TagRouteSet
+from visibility.routes import (
+    FolderRouteSet,
+    NoteBriefRouteSet,
+    NoteCardRouteSet,
+    NoteColumnsRouteSet,
+    NoteRouteSet,
+    TagRouteSet,
+)
 
 from bazis.core.checks import check_filter_keys_ignored, check_search_fields
-from bazis.core.utils.query_complex import QueryScope, QueryToOrm, route_search_fields
+from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
+from bazis.core.schemas.enums import CrudApiAction
+from bazis.core.utils.query_complex import (
+    QueryScope,
+    QueryToOrm,
+    SearchToOrm,
+    route_search_fields,
+)
 
 from tests import factories
 
 
 NOTES = '/api/v1/visibility/note/'
 BRIEF = '/api/v1/visibility/note_brief/'
+CARD = '/api/v1/visibility/note_card/'
+COLUMNS = '/api/v1/visibility/note_columns/'
 FOLDERS = '/api/v1/visibility/folder/'
 TAGS = '/api/v1/visibility/tag/'
 
@@ -120,9 +137,9 @@ def test_hidden_field_is_answered_as_unknown(sample_app, data):
 @pytest.mark.django_db(transaction=True)
 def test_search_needs_text_fields(sample_app, data):
     """
-    A route without `search_fields` searches the text fields of its LIST schema: the brief
-    notes show none (only their relations), so a search there is 400, the same answer as
-    with `search_fields = []`.
+    A route without `search_fields` searches the text fields it shows: the brief notes show
+    none, in the list nor on the card (only their relations), so a search there is 400, the
+    same answer as with `search_fields = []`.
     """
     assert route_search_fields(NoteBriefRouteSet) == []
     error = assert_bad_request(get(sample_app, BRIEF, search='Secret'), 'search')
@@ -180,9 +197,9 @@ def test_search_by_default_through_a_relation(sample_app, data, monkeypatch):
 @pytest.mark.django_db(transaction=True)
 def test_search_by_default_leaves_out_a_hidden_field(sample_app, data, monkeypatch):
     """
-    A text field that the LIST schema does not show the user (a package narrows it per
-    user, as bazis-permit) is not searched: its value finds nothing, and the search of the
-    other fields is not an error.
+    A text field that neither the LIST nor the RETRIEVE schema shows the user (a package
+    narrows them per user, as bazis-permit) is not searched: its value finds nothing, and
+    the search of the other fields is not an error.
     """
     other = Folder.objects.create(name='archive', code='box-7')
     query_fields = FolderRouteSet.query_fields.__func__
@@ -197,6 +214,175 @@ def test_search_by_default_leaves_out_a_hidden_field(sample_app, data, monkeypat
     # without a text field left, no search
     monkeypatch.setattr(FolderRouteSet, 'query_fields', classmethod(lambda cls, **kw: []))
     assert_bad_request(get(sample_app, FOLDERS, search='arch'), 'search')
+
+
+def card_only(route_cls, *names):
+    """
+    The `query_fields` of a package that shows the fields only on the card of the route
+    (RETRIEVE), not in its list.
+    """
+    core = JsonapiRouteBase.query_fields.__func__
+
+    def query_fields(cls, user=None, *, api_action=CrudApiAction.LIST, **kwargs):
+        fields = core(cls, user=user, **kwargs)
+        if api_action is CrudApiAction.RETRIEVE:
+            return fields
+        return [it for it in fields if it.source not in names]
+
+    return classmethod(query_fields)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_search_reaches_a_field_of_the_card(sample_app, data):
+    """
+    The name is not in the list of `note_card`, but its card shows it: the search finds
+    by it, the filter and the sorting by it are answered as by a field that does not exist.
+    """
+    secret = [str(data['secret'].pk)]
+    assert 'name' not in {it.source for it in NoteCardRouteSet.query_fields()}
+    card = NoteCardRouteSet.query_fields(api_action=CrudApiAction.RETRIEVE)
+    assert 'name' in {it.source for it in card}
+    assert route_search_fields(NoteCardRouteSet) == ['name']
+    assert ids(sample_app, CARD, search='secret') == secret
+    assert ids(sample_app, CARD, filter='$search=Secret') == secret
+    assert ids(sample_app, CARD, search='secret topic') == secret
+    assert ids(sample_app, CARD, search='secret plain') == []
+    hidden = assert_bad_request(get(sample_app, CARD, filter='name=Secret topic'), 'filter')
+    unknown = assert_bad_request(get(sample_app, CARD, filter='nonexistent=x'), 'filter')
+    assert hidden['detail'] == unknown['detail'].replace('nonexistent', 'name')
+    assert_bad_request(get(sample_app, CARD, filter='name__$search=Secret'), 'filter')
+    assert_bad_request(get(sample_app, CARD, sort='name'), 'sort')
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    'search, expected',
+    [
+        ('juice', ['juice', 'thousand']),
+        ('100%', ['juice']),
+        ('e_c', ['snake']),
+        ('f(x)', ['camel']),
+        ('.*', []),
+        ('juice 100', ['juice', 'thousand']),
+        ('juice,1000', ['thousand']),
+        ('juice snake', []),
+        ('Ju\x00ice 1000', ['thousand']),
+        (' , ', ['camel', 'juice', 'snake', 'thousand']),
+    ],
+)
+def test_search_of_a_field_of_the_card_is_literal(sample_app, db, search, expected):
+    """
+    The words of the search by a field only the card shows are literal substrings, as in
+    the list: `%`, `_` and the metacharacters of a regex match themselves, the commas split
+    the words, the null characters are dropped, an empty search does not filter.
+    """
+    notes = {
+        'juice': Note.objects.create(name='Juice 100%'),
+        'thousand': Note.objects.create(name='Juice 1000'),
+        'snake': Note.objects.create(name='snake_case'),
+        'camel': Note.objects.create(name='snakeXcase f(x)'),
+    }
+    found = set(ids(sample_app, CARD, search=search))
+    assert sorted(key for key, it in notes.items() if str(it.pk) in found) == expected
+
+
+@pytest.mark.django_db(transaction=True)
+def test_search_of_a_route_without_the_card(sample_app, data):
+    """
+    `note_columns` serves no RETRIEVE: its search reaches only its list, which has no text
+    field. Not the RETRIEVE schema of the responses of its update either: they show the
+    notes the user changes, not every note of the list.
+    """
+    assert CrudApiAction.RETRIEVE in NoteColumnsRouteSet.schema_factories
+    listed = NoteColumnsRouteSet.query_fields()
+    assert 'name' not in {it.source for it in listed}
+    assert NoteColumnsRouteSet.query_fields(api_action=CrudApiAction.RETRIEVE) == listed
+    assert route_search_fields(NoteColumnsRouteSet) == []
+    error = assert_bad_request(get(sample_app, COLUMNS, search='Secret'), 'search')
+    assert error['detail'] == 'The search is not available for visibility.Note'
+    assert_bad_request(get(sample_app, COLUMNS, filter='$search=Secret'), 'filter')
+    assert len(ids(sample_app, COLUMNS, search=' ')) == 3
+
+
+@pytest.mark.django_db(transaction=True)
+def test_search_reaches_a_field_a_package_shows_on_the_card(sample_app, data, monkeypatch):
+    """
+    A package that shows the code of the folders only on their cards (`query_fields` for
+    RETRIEVE): the search finds by it, the filter by it is 400.
+    """
+    other = Folder.objects.create(name='archive', code='box-7')
+    monkeypatch.setattr(FolderRouteSet, 'query_fields', card_only(FolderRouteSet, 'code'))
+    assert ids(sample_app, FOLDERS, search='box') == [str(other.pk)]
+    assert ids(sample_app, FOLDERS, filter='$search=box') == [str(other.pk)]
+    assert_bad_request(get(sample_app, FOLDERS, filter='code=box-7'), 'filter')
+    assert_bad_request(get(sample_app, FOLDERS, sort='code'), 'sort')
+
+
+@pytest.mark.django_db(transaction=True)
+def test_search_with_an_override_without_the_action(sample_app, data, monkeypatch):
+    """
+    An override of `query_fields` written before the RETRIEVE schema counted (it takes
+    `api_action` in `**kwargs` and gives the LIST fields): the search stays within the list.
+    """
+    core = JsonapiRouteBase.query_fields.__func__
+
+    def query_fields(cls, user=None, **kwargs):
+        return core(cls, user=user)
+
+    monkeypatch.setattr(NoteCardRouteSet, 'query_fields', classmethod(query_fields))
+    assert_bad_request(get(sample_app, CARD, search='Secret'), 'search')
+
+
+@pytest.mark.django_db(transaction=True)
+def test_search_through_a_relation_reaches_the_card_of_the_related_objects(
+    sample_app, data, monkeypatch
+):
+    """
+    The name of the tags shown only on their cards: `tag__name` of the search fields of the
+    notes and `tag__$search` find by it in the visible tags, the filter by it is 400.
+    """
+    plain = [str(data['plain'].pk)]
+    monkeypatch.setattr(TagRouteSet, 'query_fields', card_only(TagRouteSet, 'name'))
+    assert ids(sample_app, NOTES, search='visible') == plain
+    assert ids(sample_app, NOTES, search='hidden') == []
+    assert ids(sample_app, NOTES, filter='tag__$search=visib') == plain
+    assert ids(sample_app, NOTES, filter='tag__$search=hidden') == []
+    assert_bad_request(get(sample_app, NOTES, filter='tag__name=visible'), 'filter')
+    # the relation only on the card of the notes: searched, not a key of the filter
+    monkeypatch.setattr(NoteRouteSet, 'query_fields', card_only(NoteRouteSet, 'tag'))
+    assert ids(sample_app, NOTES, search='visible') == plain
+    assert_bad_request(get(sample_app, NOTES, filter='tag__$search=visib'), 'filter')
+
+
+def test_search_by_default_of_the_list_and_the_card(monkeypatch):
+    """
+    The text fields of the LIST schema in its order, then those only the RETRIEVE schema
+    has, in its order; the filter and the sorting have only the former. A calculated field
+    (headline) is not a search field.
+    """
+    monkeypatch.setattr(MemoRouteSet, 'query_fields', card_only(MemoRouteSet, 'body', 'headline'))
+    scope = QueryScope.for_route(MemoRouteSet)
+    assert scope.search_fields == ('title', 'code', 'body')
+    assert 'body' in scope.read_fields
+    assert 'body' not in scope.fields
+    assert 'body' not in scope.order_fields
+    assert 'headline' not in scope.read_fields
+
+
+def test_scope_of_the_search():
+    """
+    `allows` with `read` checks the fields of the search; the primary key always. A
+    relation into a model without a default route reaches only its primary key.
+    """
+    scope = QueryScope(['folder'], read_fields=['name', 'label'])
+    assert scope.allows('name', Note, read=True)
+    assert not scope.allows('name', Note)
+    assert not scope.allows('folder', Note, read=True)
+    assert QueryScope().allows('pk', Note, read=True)
+    assert QueryScope().allows('id', Note, read=True)
+    assert not QueryScope().allows('name', Note, read=True)
+    with pytest.raises(ValueError, match='The search is not available'):
+        SearchToOrm(Note, 'label', ['label__name'], scope=scope)
 
 
 def test_default_search_fields_are_the_text_fields():
@@ -404,6 +590,24 @@ def test_search_field_out_of_the_schema_is_left_out(sample_app, data, monkeypatc
 
 
 @pytest.mark.django_db(transaction=True)
+def test_search_field_of_the_card_is_not_reported(sample_app, monkeypatch):
+    monkeypatch.setattr(NoteCardRouteSet, 'search_fields', ['name'])
+    assert [it for it in check_search_fields(None) if it.id == 'bazis.W007'] == []
+    monkeypatch.setattr(NoteCardRouteSet, 'search_fields', ['name', 'label_missing'])
+    monkeypatch.setattr(NoteColumnsRouteSet, 'search_fields', ['name'])
+    warnings = [it for it in check_search_fields(None) if it.id == 'bazis.W007']
+    assert [(it.obj, it.msg) for it in warnings] == [
+        (
+            f'visibility.routes.{route}',
+            f'The search field {field!r} of the route set is not a field the route shows '
+            '(its LIST or RETRIEVE schema; through a relation, of the default route of the '
+            'related model): the search leaves it out.',
+        )
+        for route, field in [('NoteCardRouteSet', 'label_missing'), ('NoteColumnsRouteSet', 'name')]
+    ]
+
+
+@pytest.mark.django_db(transaction=True)
 def test_search_field_through_a_relation_is_checked_to_the_end(sample_app, monkeypatch):
     assert [it for it in check_search_fields(None) if it.id == 'bazis.W007'] == []
     monkeypatch.setattr(NoteRouteSet, 'search_fields', ['name', 'tag__nonexistent'])
@@ -415,8 +619,8 @@ def test_search_field_through_a_relation_is_checked_to_the_end(sample_app, monke
 def test_route_search_fields(monkeypatch):
     """
     The search fields a route searches (the ones W007 does not report), as declared: with
-    their lookup prefix, through a relation only into the LIST schema of the default route
-    of the related model.
+    their lookup prefix, through a relation only into the schemas of the default route of
+    the related model.
     """
     assert route_search_fields(NoteRouteSet) == ['name', 'tag__name']
     monkeypatch.setattr(
@@ -448,7 +652,9 @@ def test_search_fields_check_uses_the_schemas_of_the_routes(
 
     monkeypatch.setattr(TagRouteSet, 'query_fields', classmethod(no_fields))
     monkeypatch.setattr(NoteRouteSet, 'query_fields', classmethod(no_fields))
-    # the search fields of the notes: name, tag__name
+    monkeypatch.setattr(NoteCardRouteSet, 'query_fields', classmethod(no_fields))
+    monkeypatch.setattr(NoteCardRouteSet, 'search_fields', ['name'])
+    # the search fields of the notes: name, tag__name; of their cards: name
     with django_assert_num_queries(0):
         assert [it for it in check_search_fields(None) if it.id == 'bazis.W007'] == []
 

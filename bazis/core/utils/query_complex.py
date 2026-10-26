@@ -155,7 +155,8 @@ def translated_lookup(model: type[models.Model], lookup: str) -> str:
 def default_search_fields(model: type[models.Model], fields: Iterable) -> list[str]:
     """
     The search fields of a route that does not declare `search_fields`: the text fields of
-    its LIST schema `fields` (`query_fields`, for the user), in their order. A text field is
+    the `fields` the route shows the user (`QueryScope.for_route`: its LIST schema, then
+    the fields only its RETRIEVE schema has), in their order. A text field is
     a `CharField` or a `TextField` of the model (also `SlugField`, `EmailField`, `URLField`)
     without choices, or a `TranslatedField` of such a field (searched in the language of
     the request). Not the relations, the calculated fields, the codes of choices, the
@@ -181,17 +182,18 @@ def default_search_fields(model: type[models.Model], fields: Iterable) -> list[s
 class QueryScope:
     """
     What the `filter`, `sort` and `search` of an API request may reach. The first name of
-    a key is a field of the LIST schema of the route for the user (its source: `fields`
-    for the filter, `order_fields` for the sorting) or the primary key. A relation of the
-    scope leads into the objects the default route of the related model shows (its
-    `restrict_queryset` for VIEW with the user), where the key goes on with the fields of
-    the LIST schema of that route; a related model without a default route gives only its
-    primary key (and `exists`/`isnull` of the relation). The search uses the search fields
-    of the route that the scope reaches: its `search_fields`, or, when the route does not
-    declare them (None), the text fields of its LIST schema for the user
-    (`default_search_fields`); `[]` turns the search off. A key of the filter of the request
-    whose first name is in `filter_keys_ignored` (of the route) is left out; the keys after
-    a relation are not.
+    a key is the primary key or a field (its source) the route shows the user: of its LIST
+    schema for the filter (`fields`) and the sorting (`order_fields`), of its LIST or its
+    RETRIEVE schema for the search (`read_fields`: the fields the user reads in the objects
+    of the list or on their cards; LIST alone for a route that does not serve RETRIEVE). A
+    relation of the scope leads into the objects the default route of the related model
+    shows (its `restrict_queryset` for VIEW with the user), where the key goes on with the
+    fields of that route; a related model without a default route gives only its primary
+    key (and `exists`/`isnull` of the relation). The search uses the search fields of the
+    route that the scope reaches: its `search_fields`, or, when the route does not declare
+    them (None), the text fields of its `read_fields` (`default_search_fields`); `[]` turns
+    the search off. A key of the filter of the request whose first name is in
+    `filter_keys_ignored` (of the route) is left out; the keys after a relation are not.
 
     Without a scope (`scope=None`) QueryToOrm, SearchToOrm and the services are not
     restricted: the conditions written in the code (permissions, `filter:` restrictions)
@@ -205,12 +207,14 @@ class QueryScope:
         fields: Iterable[str] = (),
         *,
         order_fields: Iterable[str] = (),
+        read_fields: Iterable[str] = (),
         search_fields: Iterable[str] = (),
         filter_keys_ignored: Iterable[str] = (),
         user=None,
     ):
         self.fields = frozenset(fields)
         self.order_fields = frozenset(order_fields)
+        self.read_fields = frozenset(read_fields)
         self.search_fields = tuple(search_fields)
         self.filter_keys_ignored = frozenset(filter_keys_ignored)
         self.user = user
@@ -218,25 +222,39 @@ class QueryScope:
     @classmethod
     def for_route(cls, route_cls, user=None, *, schema: bool = False) -> 'QueryScope':
         """
-        The scope of a route class for the user: the fields its `query_fields` gives, its
-        search fields (declared, or the default of those fields) and its
-        `filter_keys_ignored`. With `schema`, the LIST schema of the route class itself (the
-        `query_fields` of the core, not the override of a package per user): no queries,
-        for the system checks.
+        The scope of a route class for the user: the fields its `query_fields` gives for
+        LIST (the filter and the sorting) and for LIST and RETRIEVE (the search: the LIST
+        fields, then the ones only RETRIEVE has), its search fields (declared, or the default
+        of the latter) and its `filter_keys_ignored`. With `schema`, the schemas of the route
+        class itself (the `query_fields` of the core, not the override of a package per
+        user): no queries, for the system checks.
         """
-        if schema:
-            # the route modules import this one
-            from bazis.core.routes_abstract.jsonapi.route_base import JsonapiRouteBase
+        # the route modules import this one
+        from bazis.core.routes_abstract.jsonapi.route_base import JsonapiRouteBase
+        from bazis.core.schemas.enums import CrudApiAction
 
-            fields = JsonapiRouteBase.query_fields.__func__(route_cls)
-        else:
-            fields = route_cls.query_fields(user=user)
+        def fields_of(api_action):
+            if schema:
+                return JsonapiRouteBase.query_fields.__func__(route_cls, api_action=api_action)
+            return route_cls.query_fields(user=user, api_action=api_action)
+
+        fields = fields_of(CrudApiAction.LIST)
+        listed = {f.source for f in fields if isinstance(f.source, str)}
+        read = [
+            *fields,
+            *(
+                f
+                for f in fields_of(CrudApiAction.RETRIEVE)
+                if isinstance(f.source, str) and f.source not in listed
+            ),
+        ]
         search_fields = route_cls.search_fields
         if search_fields is None:
-            search_fields = default_search_fields(route_cls.model, fields)
+            search_fields = default_search_fields(route_cls.model, read)
         return cls(
             (f.source for f in fields if f.can_filter and isinstance(f.source, str)),
             order_fields=(f.source for f in fields if f.can_order and isinstance(f.source, str)),
+            read_fields=(f.source for f in read if f.can_filter and isinstance(f.source, str)),
             search_fields=search_fields,
             filter_keys_ignored=route_cls.filter_keys_ignored,
             user=user,
@@ -255,14 +273,15 @@ class QueryScope:
             return cls(user=user)
         return cls.for_route(route_cls, user, schema=schema)
 
-    def allows(self, name: str, model: type[models.Model], *, order: bool = False) -> bool:
+    def allows(
+        self, name: str, model: type[models.Model], *, order: bool = False, read: bool = False
+    ) -> bool:
         """
-        Whether a key of the model may start with the name (for the sorting if `order`):
-        the primary key (`pk` or its name) always.
+        Whether a key of the model may start with the name: for the filter, for the sorting
+        if `order`, for the search if `read`; the primary key (`pk` or its name) always.
         """
-        return name in (self.order_fields if order else self.fields) or (
-            name in ('pk', model._meta.pk.name)
-        )
+        names = self.order_fields if order else self.read_fields if read else self.fields
+        return name in names or name in ('pk', model._meta.pk.name)
 
     @staticmethod
     def _route_restrict(model: type[models.Model]):
@@ -295,12 +314,13 @@ class QueryScope:
     def reaches(self, model: type[models.Model], lookup: str) -> bool:
         """
         Whether the scope reaches a lookup of the model (a search field), for the system
-        checks: every name of it up to a field that is not a relation, a relation into the
-        LIST schema of the default route of the related model itself (`for_model` with
-        `schema`: not the fields a package gives per user, and no queries).
+        checks: every name of it up to a field that is not a relation is a field the route
+        shows (`read_fields`), a relation into the schemas of the default route of the
+        related model itself (`for_model` with `schema`: not the fields a package gives per
+        user, and no queries).
         """
         name, __, rest = lookup.partition(LOOKUP_SEP)
-        if not self.allows(name, model):
+        if not self.allows(name, model, read=True):
             return False
         relation = FieldsInfo.get_fields_info(model).relations.get(name)
         if relation is None or not rest:
@@ -352,13 +372,14 @@ class QueryScope:
 def route_search_fields(route_cls) -> list[str]:
     """
     The search fields of a JSON:API route class that `search` (and `$search`) uses: its
-    `search_fields` as declared (with their lookup prefix, `^name`), those the LIST schema
-    of the route class itself reaches (through a relation, the LIST schema of the default
-    route of the related model); without them (None), the text fields of its LIST schema
-    (`default_search_fields`). Empty for a route class with `search_fields = []` or without
-    text fields: a search there is 400 `ERR_FILTER`. The declared fields out of the schema
-    are left out of the search (`bazis.W007` reports them). Read from the classes, without
-    queries; a package that narrows the LIST schema per user (bazis-permit) can narrow the
+    `search_fields` as declared (with their lookup prefix, `^name`), those the LIST or the
+    RETRIEVE schema of the route class itself reaches (through a relation, the schemas of
+    the default route of the related model); without them (None), the text fields of those
+    schemas (`default_search_fields`). Empty for a route class with `search_fields = []` or
+    without text fields: a search there is 400 `ERR_FILTER`. The declared fields out of the
+    schemas are left out of the search (`bazis.W007` reports them). Read from the classes,
+    without queries, of a registered route (the RETRIEVE schema counts once its route
+    serves it); a package that narrows the schemas per user (bazis-permit) can narrow the
     search of a request further.
 
     Tags: RAG, EXPORT
@@ -1412,7 +1433,7 @@ class SearchToOrm:
         a relation is searched in the related objects the user can see.
         """
         name, __, rest = lookup.partition(LOOKUP_SEP)
-        if not scope.allows(name, model):
+        if not scope.allows(name, model, read=True):
             return None
         relation = FieldsInfo.get_fields_info(model).relations.get(name)
         if relation is None or not rest:
