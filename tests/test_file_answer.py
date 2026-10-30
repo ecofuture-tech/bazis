@@ -20,6 +20,8 @@ and the meta, and CORS shows both headers to a client of another origin.
 
 import enum
 import json
+from datetime import date
+from typing import Literal
 
 from django.utils import translation
 from django.utils.translation import gettext_lazy as _
@@ -28,7 +30,8 @@ from fastapi import FastAPI
 from fastapi.responses import Response
 from fastapi.testclient import TestClient
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic.alias_generators import to_camel
 
 import pytest
 from catalog.models import Memo
@@ -179,6 +182,46 @@ def test_the_schema_is_the_meta_as_sent():
     assert set(schema['properties']) == {'count', 'pages', 'label'}
     response = file_answer('', 'a.csv', 'text/csv', Totals(count=2, pages=1))
     sent = json.loads(response.headers[FILE_META_HEADER])
+    assert set(sent) == set(schema['properties'])
+
+
+class Camel(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel)
+
+    row_count: int
+    sheet_name: str = ''
+
+
+class Aliased(BaseModel):
+    row_count: int = Field(serialization_alias='rows')
+    total: float
+
+
+class Flat(BaseModel):
+    day: date | None = None
+    kind: Literal['a', 'b'] = 'a'
+    tags: list[str] = []
+    totals: dict[str, int] = {}
+
+
+@pytest.mark.parametrize(
+    'model, meta',
+    [(Camel, Camel(rowCount=3)), (Aliased, Aliased(row_count=3, total=1.5)), (Flat, Flat())],
+)
+def test_the_keys_sent_are_those_of_the_schema(model, meta):
+    """
+    The meta is sent by alias, as the schema of the header declares it (`alias_generator`,
+    `serialization_alias`); dates, `Optional`, `Literal`, lists and dicts are flat.
+    """
+
+    class MetaRouteSet(InitialRouteBase):
+        @http_post('/meta/', response_class=CsvResponse, file_meta=model)
+        def action_meta(self, **kwargs):
+            pass
+
+    answer = operations(MetaRouteSet)['/meta/']['responses']['200']
+    schema = answer['headers'][FILE_META_HEADER]['schema']
+    sent = json.loads(file_answer('', 'a.csv', 'text/csv', meta).headers[FILE_META_HEADER])
     assert set(sent) == set(schema['properties'])
 
 

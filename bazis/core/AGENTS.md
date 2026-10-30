@@ -902,15 +902,17 @@ nested function gives names that change between processes (the OpenAPI is not st
   OpenAPI then shows a file, not JSON) and returns `file_answer(content, filename,
   media_type, meta=None)` (`bazis.core.routes_abstract.initial`, bazis 2.25): the content,
   `Content-Disposition: attachment` with the name (`filename*`, percent-encoded, for a name
-  that is not ASCII or has control characters). What the client shows next to the file (the number of rows, a total) is its meta:
-  a small flat Pydantic model declared with `file_meta=` of the decorator, which puts the
-  header `X-Bazis-Meta` with the JSON schema of the model as it is sent (with its computed
-  fields) in the OpenAPI answer of the route (`responses=` of the route win). Its fields are
-  scalars (`str`, `int`, `float`, `bool`, None, dates): an enum or a nested model is a
-  `ValueError` of the decorator (type an enum as `str`). It is passed to `file_answer`,
-  which sends it as JSON in ASCII in that header (at most 4096 characters, else
-  `ValueError`). CORS lets a client of another origin (`CSRF_TRUSTED_ORIGINS`) read both
-  headers; a reverse proxy must pass them. bazis-front shows the properties of the meta in the result of the form (`{count}`):
+  that is not ASCII or has control characters). What the client shows next to the file (the
+  number of rows, a total) is its meta: a small flat Pydantic model declared with
+  `file_meta=` of the decorator, which puts the header `X-Bazis-Meta` with the JSON schema
+  of the model as it is sent (by alias, with its computed fields) in the OpenAPI answer of
+  the route (`responses=` of the route win). Its fields are scalars (`str`, `int`, `float`,
+  `bool`, None), dates, `Optional`, `Literal`, lists and dicts of them; an enum (also
+  `TextChoices`) or a nested model is a `ValueError` of the decorator (type an enum as
+  `str`). It is passed to `file_answer`, which sends it by alias as JSON in ASCII in that
+  header (at most 4096 characters, else `ValueError`). CORS lets a client of another origin
+  (`CSRF_TRUSTED_ORIGINS`) read both headers; a reverse proxy must pass them. bazis-front shows the properties of the meta in
+  the result of the form (`{count}`):
 
   ```python
   class XlsxResponse(Response):  # fastapi.responses
