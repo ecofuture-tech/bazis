@@ -14,11 +14,13 @@
 
 from django.apps import apps
 
+from fastapi.responses import Response
+
 from pydantic import BaseModel
 
-from bazis.core.routes_abstract.initial import http_post
+from bazis.core.routes_abstract.initial import file_answer, http_post
 from bazis.core.routes_abstract.jsonapi import JsonapiRouteBase
-from bazis.core.schemas.enums import CrudApiAction
+from bazis.core.schemas.enums import CrudApiAction, RouteKind
 from bazis.core.schemas.fields import SchemaField, SchemaFields
 
 
@@ -45,6 +47,14 @@ class SubscribeRequest(BaseModel):
 
 class SubscribeResponse(BaseModel):
     id: int
+
+
+class CsvResponse(Response):
+    media_type = 'text/csv'
+
+
+class ExportMeta(BaseModel):
+    count: int
 
 
 class MemoRouteSet(JsonapiRouteBase):
@@ -91,6 +101,14 @@ class MemoRouteSet(JsonapiRouteBase):
             reader.email = reader.email.lower()
             reader.save()
         return SubscribeResponse(id=memo.pk)
+
+    @http_post('/export/', kind=RouteKind.OTHER, response_class=CsvResponse, file_meta=ExportMeta)
+    def action_export(self, **kwargs):
+        """The titles of the memos as a file, with their count in the meta of the file."""
+        titles = list(self.model.objects.order_by('title').values_list('title', flat=True))
+        return file_answer(
+            '\n'.join(titles), 'memos.csv', CsvResponse.media_type, ExportMeta(count=len(titles))
+        )
 
 
 class CardRouteSet(JsonapiRouteBase):

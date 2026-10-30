@@ -110,6 +110,11 @@ import = "bazis.core.routes_abstract.initial.http_get"
 use_when = "who may call a custom action: public=True (anonymous, throttled), access_action= (the permission bazis-permit enforces)"
 
 [[extension_points]]
+name = "file_answer"
+import = "bazis.core.routes_abstract.initial.file_answer"
+use_when = "an action answers a file: its name (Content-Disposition) and its meta (file_meta= of the decorator, the header X-Bazis-Meta) that a client shows next to it"
+
+[[extension_points]]
 name = "route_declare"
 import = "bazis.core.routes_abstract.initial.route_declare"
 use_when = "change kind, public, access_action or dependencies of an inherited route without repeating its decorator"
