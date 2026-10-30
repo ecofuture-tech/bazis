@@ -55,6 +55,7 @@ by setting the endpoint in the specified FastAPI router.
 
 import dataclasses
 import inspect
+import json
 from collections.abc import Callable, Sequence
 from copy import deepcopy
 from enum import Enum
@@ -63,6 +64,7 @@ from typing import Any
 
 from django.conf import settings
 from django.utils.functional import cached_property
+from django.utils.http import content_disposition_header
 from django.utils.module_loading import import_string
 
 from fastapi import Depends, Request
@@ -75,6 +77,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import BaseRoute
 
 from pydantic import BaseModel
+from pydantic.json_schema import GenerateJsonSchema
 
 from asgiref.sync import async_to_sync
 
@@ -94,6 +97,13 @@ ROUTE_INHERITED = ('kind', 'public', 'access_action')
 
 #: the facts `route_declare` changes in an inherited route
 ROUTE_DECLARABLE = ('kind', 'public', 'access_action', 'dependencies')
+
+#: the header of an answer that is a file with the JSON of its meta (`file_meta`, `file_answer`)
+FILE_META_HEADER = 'X-Bazis-Meta'
+
+#: the most characters of the JSON of the meta of a file: the headers of an answer pass
+#: through proxies whose buffers are a few kilobytes
+FILE_META_MAX = 4096
 
 
 def route_declare(route: RouteContext, **facts) -> RouteContext:
@@ -199,6 +209,7 @@ def http_action_decor(
     callbacks: list[BaseRoute] | None = None,
     openapi_extra: dict[str, Any] | None = None,
     generate_unique_id_function: Callable[[APIRoute], str] = generate_unique_id,
+    file_meta: type[BaseModel] | None = None,
 ) -> Callable[[Callable[..., Any]], RouteContext]:
     """
     Universal decorator for registering HTTP handlers of all types.
@@ -209,9 +220,41 @@ def http_action_decor(
     `BAZIS_THROTTLE_PUBLIC` per user or IP address unless it declares its own `throttle`;
     `access_action` is the permission the action requires (bazis-permit checks both, see
     its guide). An override that leaves them None keeps those of the route it overrides.
+    `file_meta` (a flat Pydantic model, no enum or nested model) declares the header `X-Bazis-Meta` of the
+    answer of a route that answers a file (`file_answer`) with the JSON schema of the model
+    as it is sent, in the `responses` of its status (200 by default); the `responses` the
+    route declares win. A model with an enum or a nested model is a `ValueError`.
 
     Tags: RAG
     """
+
+    if file_meta is not None:
+        # the meta as `file_answer` sends it (`model_dump`, by alias: also the computed
+        # fields); the plain generator keeps a lazy title lazy (also of a
+        # `TranslatedSchemaModel`), the OpenAPI translates it with the document
+        meta_schema = file_meta.model_json_schema(
+            schema_generator=GenerateJsonSchema, mode='serialization'
+        )
+        if '$defs' in meta_schema:
+            # its references (`#/$defs/...`) cannot be resolved in the OpenAPI document
+            raise ValueError(
+                f'file_meta {file_meta.__name__}: the meta of a file is a flat model (scalars, '
+                f'dates, Optional, Literal, lists and dicts of them); an enum (also '
+                f'TextChoices) or a nested model is not allowed (type an enum as str)'
+            )
+        responses = deep_merge(
+            {
+                status_code or 200: {
+                    'headers': {
+                        FILE_META_HEADER: {
+                            'description': 'The meta of the file, JSON (ASCII)',
+                            'schema': meta_schema,
+                        }
+                    }
+                }
+            },
+            responses or {},
+        )
 
     if http_method is HttpMethod.DELETE:
         # if the method is DELETE, the response will have no body, response_model is not needed
@@ -476,6 +519,30 @@ def http_internal(
         endpoint_callbacks,
         **kwargs,
     )
+
+
+def file_answer(
+    content: bytes | str, filename: str, media_type: str, meta: BaseModel | None = None
+) -> Response:
+    """
+    The answer of a route that answers a file: the content of the media type, saved under
+    `filename` (`Content-Disposition: attachment`, a name that is not ASCII as
+    `filename*`), and the model of `file_meta` of the route as the JSON (by alias) of the
+    header `X-Bazis-Meta` (ASCII, at most `FILE_META_MAX` characters, else `ValueError`).
+
+    Tags: RAG, EXPORT
+    """
+    headers = {'Content-Disposition': content_disposition_header(True, filename)}
+    if meta is not None:
+        # with the aliases, as the schema of `file_meta` and the answers of the routes
+        data = meta.model_dump(mode='json', by_alias=True)
+        value = json.dumps(data, ensure_ascii=True, separators=(',', ':'))
+        if len(value) > FILE_META_MAX:
+            raise ValueError(
+                f'The meta of the file is {len(value)} characters, at most {FILE_META_MAX}'
+            )
+        headers[FILE_META_HEADER] = value
+    return Response(content, media_type=media_type, headers=headers)
 
 
 class InitialRouteBaseMeta(type):

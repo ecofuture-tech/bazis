@@ -128,6 +128,7 @@ def _initialize_app(app): # noqa: C901
     )
 
     from bazis.core.i18n import LanguageMiddleware, expand_lang
+    from bazis.core.routes_abstract.initial import FILE_META_HEADER
     from bazis.core.routes_abstract.jsonapi.route_base import ROUTE_SCOPE_KEY
     from bazis.core.utils.functools import get_attr
     from bazis.core.utils.orm import close_old_connections
@@ -340,6 +341,9 @@ def _initialize_app(app): # noqa: C901
         allow_credentials=True,
         allow_methods=['*'],
         allow_headers=['*'],
+        # the name of a file the client saves and the meta of the file (`file_answer`):
+        # a browser hides from a script of another origin the headers not listed here
+        expose_headers=['Content-Disposition', FILE_META_HEADER],
     )
 
     @app.router.get('/api/schemas.json')

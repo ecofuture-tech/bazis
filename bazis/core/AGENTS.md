@@ -37,7 +37,7 @@ cover.
 | Invariants of the items | a rule that every write of an item must keep: `validate_item` and `ItemChanges`, `defer_validate_item`, limits and unique values under concurrent requests (`lock_on_write`, `set_item(with_lock=True)`, tests with `parallel`), no overlapping intervals of a participant |
 | Calculated fields | a field the query of a route computes (`calc_property`, `FieldAnnotate`, `FieldDynamic`, a subquery, the user of the request), or one computed from the item itself |
 | Routes | you write a route set: its schemas (`fields`, `SchemaFields`), `restrict_queryset`, the default route, the routers, a second route set of a model, read-only routes and reports |
-| Custom routes and actions | an endpoint that is no CRUD: `@http_get`/`@http_post`, the models of its body and response, `public` and `access_action`, `route_declare`, the errors in the OpenAPI, the rate limits (`throttle`), the code around every route (`BAZIS_MIDDLEWARES`, `<action>__before`/`__after`) |
+| Custom routes and actions | an endpoint that is no CRUD: `@http_get`/`@http_post`, the models of its body and response, an answer that is a file with its meta (`file_answer`, `file_meta`), `public` and `access_action`, `route_declare`, the errors in the OpenAPI, the rate limits (`throttle`), the code around every route (`BAZIS_MIDDLEWARES`, `<action>__before`/`__after`) |
 | Writes and errors | the hooks of the create, the update and the relationships endpoints and their order, the errors the API answers (`ValidationError`, `JsonApiBazisException`, 409 `ERR_CONFLICT`) and their pointers |
 | API conventions | a client builds a request: `filter` and its lookups, `sort`, `search`, `include`, the pages, sparse fieldsets, the points and the distances (`near`, `distance`) |
 | E-mail | the product sends mail: the dynamic SMTP settings, the sender, the console backend in development, mail from a task |
@@ -897,6 +897,37 @@ nested function gives names that change between processes (the OpenAPI is not st
   text of only spaces (422). The attributes of a JSON:API document already refuse such a
   text in a field that is not `blank`, and the payloads of the transits of bazis-statusy
   are stripped.
+
+  An action that answers a file declares the class of its answer with the media type (the
+  OpenAPI then shows a file, not JSON) and returns `file_answer(content, filename,
+  media_type, meta=None)` (`bazis.core.routes_abstract.initial`, bazis 2.25): the content,
+  `Content-Disposition: attachment` with the name (`filename*`, percent-encoded, for a name
+  that is not ASCII or has control characters). What the client shows next to the file (the
+  number of rows, a total) is its meta: a small flat Pydantic model declared with
+  `file_meta=` of the decorator, which puts the header `X-Bazis-Meta` with the JSON schema
+  of the model as it is sent (by alias, with its computed fields) in the OpenAPI answer of
+  the route (`responses=` of the route win). Its fields are scalars (`str`, `int`, `float`,
+  `bool`, None), dates, `Optional`, `Literal`, lists and dicts of them; an enum (also
+  `TextChoices`) or a nested model is a `ValueError` of the decorator (type an enum as
+  `str`). It is passed to `file_answer`, which sends it by alias as JSON in ASCII in that
+  header (at most 4096 characters, else `ValueError`). CORS lets a client of another origin
+  (`CSRF_TRUSTED_ORIGINS`) read both headers; a reverse proxy must pass them. bazis-front shows the properties of the meta in
+  the result of the form (`{count}`):
+
+  ```python
+  class XlsxResponse(Response):  # fastapi.responses
+      media_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+  class ExportMeta(BaseModel):
+      count: int
+
+  @http_post('/export/', kind=RouteKind.OTHER, response_class=XlsxResponse, file_meta=ExportMeta)
+  def action_export(self, data: ExportRequest, **kwargs):
+      rows = ...
+      return file_answer(
+          render_xlsx(rows), 'bookings.xlsx', XlsxResponse.media_type, ExportMeta(count=len(rows))
+      )
+  ```
 
   A route that changes the item goes through the checks of an update (see Rules). Every
   operation of a route class has the OpenAPI extension
