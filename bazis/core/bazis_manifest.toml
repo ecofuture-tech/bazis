@@ -112,7 +112,7 @@ use_when = "who may call a custom action: public=True (anonymous, throttled), ac
 [[extension_points]]
 name = "file_answer"
 import = "bazis.core.routes_abstract.initial.file_answer"
-use_when = "an action answers a file: its name (Content-Disposition) and its meta (file_meta= of the decorator, the header X-Bazis-Meta) that a client shows next to it"
+use_when = "an action answers a file: its name (Content-Disposition) and its meta (file_meta= of the decorator: a flat model of scalars, no enum or nested model; the header X-Bazis-Meta) that a client shows next to it"
 
 [[extension_points]]
 name = "route_declare"

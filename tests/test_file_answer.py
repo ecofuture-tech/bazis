@@ -18,6 +18,7 @@ declares the header `X-Bazis-Meta` in the OpenAPI, `file_answer` sends the file,
 and the meta, and CORS shows both headers to a client of another origin.
 """
 
+import enum
 import json
 
 from django.utils import translation
@@ -27,7 +28,7 @@ from fastapi import FastAPI
 from fastapi.responses import Response
 from fastapi.testclient import TestClient
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 import pytest
 from catalog.models import Memo
@@ -150,6 +151,77 @@ def test_file_answer():
 
     with pytest.raises(ValueError):
         file_answer('', 'a.csv', 'text/csv', Meta(count=1, title='x' * FILE_META_MAX))
+
+
+class Totals(BaseModel):
+    count: int
+    pages: int
+
+    @computed_field
+    @property
+    def label(self) -> str:
+        return f'{self.count} rows'
+
+
+def test_the_schema_is_the_meta_as_sent():
+    """
+    The schema of the header describes the JSON `file_answer` sends (`model_dump(mode='json')`):
+    a computed field is in it.
+    """
+
+    class TotalsRouteSet(InitialRouteBase):
+        @http_post('/totals/', response_class=CsvResponse, file_meta=Totals)
+        def action_totals(self, **kwargs):
+            pass
+
+    answer = operations(TotalsRouteSet)['/totals/']['responses']['200']
+    schema = answer['headers'][FILE_META_HEADER]['schema']
+    assert set(schema['properties']) == {'count', 'pages', 'label'}
+    response = file_answer('', 'a.csv', 'text/csv', Totals(count=2, pages=1))
+    sent = json.loads(response.headers[FILE_META_HEADER])
+    assert set(sent) == set(schema['properties'])
+
+
+class Kind(enum.Enum):
+    A = 'a'
+
+
+class WithEnum(BaseModel):
+    kind: Kind
+
+
+class WithModel(BaseModel):
+    totals: Totals
+
+
+@pytest.mark.parametrize('model', [WithEnum, WithModel])
+def test_a_meta_that_is_not_flat_is_refused(model):
+    """
+    An enum or a nested model is a reference (`#/$defs/...`) the OpenAPI cannot resolve: the
+    decorator refuses the model, naming it.
+    """
+    with pytest.raises(ValueError, match=model.__name__):
+        http_post('/x/', response_class=CsvResponse, file_meta=model)
+
+
+def test_the_limit_of_the_meta():
+    """The JSON of the meta of `FILE_META_MAX` characters is sent, one more is refused."""
+    empty = len(json.dumps({'count': 1, 'title': ''}, separators=(',', ':')))
+    fits = Meta(count=1, title='x' * (FILE_META_MAX - empty))
+    value = file_answer('', 'a.csv', 'text/csv', fits).headers[FILE_META_HEADER]
+    assert len(value) == FILE_META_MAX
+    with pytest.raises(ValueError):
+        file_answer('', 'a.csv', 'text/csv', Meta(count=1, title='x' * (FILE_META_MAX - empty + 1)))
+
+
+def test_a_file_name_cannot_add_a_header():
+    """Control characters (CR, LF) of a name are percent-encoded in `filename*`."""
+    response = file_answer('', 'a\r\nX-Evil: 1.csv', 'text/csv')
+    assert response.headers['Content-Disposition'] == (
+        "attachment; filename*=utf-8''a%0D%0AX-Evil%3A%201.csv"
+    )
+    assert 'X-Evil' not in response.headers
+    assert all(b'\r' not in value and b'\n' not in value for _, value in response.raw_headers)
 
 
 @pytest.mark.django_db(transaction=True)

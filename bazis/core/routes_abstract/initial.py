@@ -77,6 +77,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import BaseRoute
 
 from pydantic import BaseModel
+from pydantic.json_schema import GenerateJsonSchema
 
 from asgiref.sync import async_to_sync
 
@@ -84,7 +85,6 @@ from bazis.core.routes_abstract.context import RouteContext, RouteParams
 from bazis.core.routing import BazisRoute, BazisRouter
 from bazis.core.schemas.enums import AccessAction, ApiAction, HttpMethod, RouteKind
 from bazis.core.throttle import Throttle, public_rate, split_throttles
-from bazis.core.utils.fastapi_monkey_patch import ChoicesJsonSchema
 from bazis.core.utils.functools import func_sig_params_append, func_sig_transfer, get_class_name
 from bazis.core.utils.orm import close_old_connections
 
@@ -220,25 +220,35 @@ def http_action_decor(
     `BAZIS_THROTTLE_PUBLIC` per user or IP address unless it declares its own `throttle`;
     `access_action` is the permission the action requires (bazis-permit checks both, see
     its guide). An override that leaves them None keeps those of the route it overrides.
-    `file_meta` (a Pydantic model) declares the header `X-Bazis-Meta` of the answer of a
-    route that answers a file (`file_answer`) with the JSON schema of the model, in the
-    `responses` of its status (200 by default); the `responses` the route declares win.
+    `file_meta` (a flat Pydantic model of scalars) declares the header `X-Bazis-Meta` of the
+    answer of a route that answers a file (`file_answer`) with the JSON schema of the model
+    as it is sent, in the `responses` of its status (200 by default); the `responses` the
+    route declares win. A model with an enum or a nested model is a `ValueError`.
 
     Tags: RAG
     """
 
     if file_meta is not None:
+        # the meta as `file_answer` sends it (`model_dump(mode='json')`: also the computed
+        # fields); the plain generator keeps a lazy title lazy (also of a
+        # `TranslatedSchemaModel`), the OpenAPI translates it with the document
+        meta_schema = file_meta.model_json_schema(
+            schema_generator=GenerateJsonSchema, mode='serialization'
+        )
+        if '$defs' in meta_schema:
+            # its references (`#/$defs/...`) cannot be resolved in the OpenAPI document
+            raise ValueError(
+                f'file_meta {file_meta.__name__}: the meta of a file is a flat model of '
+                f'scalars (str, int, float, bool, None, dates); an enum or a nested model '
+                f'is not allowed (type an enum as str)'
+            )
         responses = deep_merge(
             {
                 status_code or 200: {
                     'headers': {
                         FILE_META_HEADER: {
                             'description': 'The meta of the file, JSON (ASCII)',
-                            # the generator of the OpenAPI (the labels of the choices); a
-                            # lazy title stays lazy and is translated with the document
-                            'schema': file_meta.model_json_schema(
-                                schema_generator=ChoicesJsonSchema
-                            ),
+                            'schema': meta_schema,
                         }
                     }
                 }
